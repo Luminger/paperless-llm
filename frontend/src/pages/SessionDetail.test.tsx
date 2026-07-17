@@ -541,9 +541,8 @@ describe("Finished turns fold their work", () => {
     expect(await screen.findByText("please check the tags")).toBeInTheDocument();
     expect(screen.getByText("All tags are fine.")).toBeInTheDocument();
     // The work is folded behind one collapsed section with counts.
-    expect(
-      screen.getByText(/The agent's work — 1 tool call · 1 reasoning step/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("The agent's work")).toBeInTheDocument();
+    expect(screen.getByText(/1 tool call · 1 reasoning step/)).toBeInTheDocument();
   });
 });
 
@@ -591,9 +590,8 @@ describe("Chronological turn rendering", () => {
     // its place; the fold only counts the exploratory work.
     // The proposal card is present (id-free header).
     expect((await screen.findAllByText("Proposal")).length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/The agent's work — 1 tool call · 1 reasoning step/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("The agent's work")).toBeInTheDocument();
+    expect(screen.getByText(/1 tool call · 1 reasoning step/)).toBeInTheDocument();
     expect(screen.getByText("Proposed a better title.")).toBeInTheDocument();
   });
 

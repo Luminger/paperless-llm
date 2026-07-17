@@ -63,7 +63,9 @@ Hard rules:
   `user_instructions` — rules the user attached to that entity. These
   are BINDING: always follow them when assigning, removing, or
   otherwise handling the entity.
-- Finish with a short plain-text summary of what you found and proposed.
+- Finish with a short plain-text summary of what you found and
+  proposed. Do NOT start it with a "Summary" heading — the UI already
+  labels it.
 """
 
 _PROMPTS: dict[AgentKind, str] = {

@@ -524,9 +524,12 @@ function ReviseBox({ proposal: p, onSent }: { proposal: Proposal; onSent: () => 
 export function ProposalCard({
   proposal: p,
   archived = false,
+  withHeader = true,
 }: {
   proposal: Proposal;
   archived?: boolean;
+  /** When rendered inside a Panel, the panel owns the header. */
+  withHeader?: boolean;
 }) {
   const qc = useQueryClient();
   const [pending, setPending] = useState<Record<string, unknown> | null>(null);
@@ -573,18 +576,20 @@ export function ProposalCard({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <span className="font-medium">
-          Proposal{" "}
-          <span className="text-muted-foreground/70">{p.kind.replaceAll("_", " ")}</span>
-        </span>
-        <StatusBadge status={p.status} />
-        {p.revision > 1 && (
-          <span className="text-sm text-muted-foreground/70">
-            revision {p.revision}
+      {withHeader && (
+        <div className="flex items-center gap-3">
+          <span className="font-medium">
+            Proposal{" "}
+            <span className="text-muted-foreground/70">{p.kind.replaceAll("_", " ")}</span>
           </span>
-        )}
-      </div>
+          <StatusBadge status={p.status} />
+          {p.revision > 1 && (
+            <span className="text-sm text-muted-foreground/70">
+              revision {p.revision}
+            </span>
+          )}
+        </div>
+      )}
 
       {p.user_payload && !dirty && (
         <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">

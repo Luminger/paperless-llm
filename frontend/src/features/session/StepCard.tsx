@@ -14,7 +14,10 @@ import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard } from "../../components/ProposalCard";
 import { DiffView } from "../../components/DiffView";
-import { SummaryProse, Transcript, UserMessage } from "./Transcript";
+import { ProseBody, Transcript, UserMessage } from "./Transcript";
+import { Panel, PanelTitle, PanelTitleMuted } from "./Panel";
+import { TimingChip } from "./timing";
+import { StatusBadge } from "../../components/StatusBadge";
 import { OcrGateBody } from "./OcrGate";
 import { RedoDialog } from "./RedoDialog";
 
@@ -212,14 +215,20 @@ function WorkFold({ items }: { items: TranscriptItem[] }) {
       .filter(Boolean)
       .join(" · ") || `${items.length} steps`;
   return (
-    <details className="rounded-lg border bg-muted/20">
-      <summary className="cursor-pointer px-4 py-3 text-xs text-muted-foreground select-none">
-        The agent's work — {label}, expand to inspect
-      </summary>
-      <div className="px-4 pb-3">
-        <Transcript items={items} />
-      </div>
-    </details>
+    <Panel
+      collapsible
+      title={
+        <>
+          <PanelTitle>The agent's work</PanelTitle>
+          <PanelTitleMuted>{label}</PanelTitleMuted>
+        </>
+      }
+      meta={
+        <span className="text-xs text-muted-foreground/60">expand to inspect</span>
+      }
+    >
+      <Transcript items={items} />
+    </Panel>
   );
 }
 
@@ -271,9 +280,19 @@ function TurnBody({
         </div>
       </details>
     ) : (
-      <div key={`p-${p.id}`} className="rounded-lg border bg-muted/20 p-4">
-        <ProposalCard proposal={p} archived={archived} />
-      </div>
+      <Panel
+        key={`p-${p.id}`}
+        title={
+          <>
+            <PanelTitle>Proposal</PanelTitle>
+            <PanelTitleMuted>{p.kind.replaceAll("_", " ")}</PanelTitleMuted>
+            <StatusBadge status={p.status} />
+            {p.revision > 1 && <PanelTitleMuted>revision {p.revision}</PanelTitleMuted>}
+          </>
+        }
+      >
+        <ProposalCard proposal={p} archived={archived} withHeader={false} />
+      </Panel>
     );
 
   items.forEach((item, idx) => {
@@ -285,7 +304,15 @@ function TurnBody({
     }
     if (idx === summaryIdx) {
       flush();
-      out.push(<SummaryProse key="summary" item={item} />);
+      out.push(
+        <Panel
+          key="summary"
+          title={<PanelTitle>Summary</PanelTitle>}
+          meta={<TimingChip t={item.timing} />}
+        >
+          <ProseBody content={item.content} />
+        </Panel>,
+      );
       return;
     }
     if (

@@ -198,18 +198,18 @@ export function AgentProse({ item }: { item: TranscriptItem }) {
   );
 }
 
-/** The fixed turn summary: no icon, full-width text, meta top-right. */
-export function SummaryProse({ item }: { item: TranscriptItem }) {
+/** A model prose body (markdown, one type scale). The model often
+ * starts its summary with its own "Summary" heading — the panel header
+ * already says that, so a redundant lead-in is dropped. */
+export function ProseBody({ content }: { content: string }) {
+  const lines = content.split("\n");
+  const first = lines[0]?.trim() ?? "";
+  if (/^(#{1,6}\s*)?[*_]{0,2}(updated\s+)?summary[*_]{0,2}\s*:?\s*$/i.test(first)) {
+    content = lines.slice(1).join("\n").trimStart();
+  }
   return (
-    <div className="grid grid-cols-[1fr_auto] items-start gap-x-2 rounded-lg border bg-muted/20 p-4">
-      <div className={PROSE_CLASSES}>
-        <Markdown remarkPlugins={[remarkGfm]}>{item.content}</Markdown>
-      </div>
-      {item.timing && (
-        <span className="pt-0.5 pl-2 font-mono text-[10px] whitespace-nowrap text-muted-foreground/50">
-          {timingLabel(item.timing)}
-        </span>
-      )}
+    <div className={PROSE_CLASSES}>
+      <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
     </div>
   );
 }
