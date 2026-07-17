@@ -51,6 +51,51 @@ export interface EntityRef {
   id: number;
   name: string;
   document_count?: number | null;
+  match?: string;
+  matching_algorithm?: number;
+  is_inbox_tag?: boolean;
+}
+
+export interface MergeCandidate {
+  entity_type: string;
+  source: { id: number; name: string; document_count: number | null };
+  target: { id: number; name: string; document_count: number | null };
+  string_score: number;
+  semantic_score: number | null;
+}
+
+export interface Job {
+  id: number;
+  kind: string;
+  params: Record<string, unknown>;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  total: number;
+  done: number;
+  failed: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobDetail extends Job {
+  sessions: Session[];
+}
+
+export interface JobCreate {
+  document_ids?: number[];
+  query?: string;
+  inbox?: boolean;
+  untagged_only?: boolean;
+  redo_ocr?: boolean;
+  apply_policy?: "review" | "auto";
+  instructions?: string;
+}
+
+export interface Stats {
+  pending_proposals: number;
+  active_sessions: number;
+  queue_pending: Record<string, number>;
+  active_jobs: number;
 }
 
 export interface TranscriptItem {
@@ -121,6 +166,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(opts),
     }),
+  analyzeEntity: (entityType: string, id: number, instructions?: string) =>
+    request<Session>(`/api/sessions/analyze/${entityType}/${id}`, {
+      method: "POST",
+      body: JSON.stringify({ instructions: instructions || null }),
+    }),
+  mergeCandidates: (entityType: string) =>
+    request<MergeCandidate[]>(`/api/entities/${entityType}/merge-candidates`),
+
+  listJobs: () => request<Job[]>("/api/jobs"),
+  getJob: (id: number) => request<JobDetail>(`/api/jobs/${id}`),
+  createJob: (body: JobCreate) =>
+    request<Job>("/api/jobs", { method: "POST", body: JSON.stringify(body) }),
+  cancelJob: (id: number) =>
+    request<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  getStats: () => request<Stats>("/api/stats"),
   getOcrReview: (sessionId: number) =>
     request<OcrReview>(`/api/sessions/${sessionId}/ocr`),
   resolveOcrGate: (sessionId: number, content: string | null) =>

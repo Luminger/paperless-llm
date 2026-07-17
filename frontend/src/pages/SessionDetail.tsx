@@ -259,6 +259,7 @@ export default function SessionDetail() {
   if (!s) return <p className="text-zinc-500">Loading…</p>;
 
   const redoOcr = s.params.redo_ocr === true;
+  const analysisNoun = s.entity_type === "document" ? "Metadata analysis" : "Review";
   const gateResolution = s.params.ocr_gate as string | undefined;
   const phase = s.phase ?? "done";
   const failed = s.status === "failed";
@@ -362,12 +363,12 @@ export default function SessionDetail() {
         <Step
           label={
             failed && !failedDuringOcr && phase !== "done"
-              ? "Metadata analysis failed"
+              ? `${analysisNoun} failed`
               : analysisState === "active"
-                ? "Metadata analysis running…"
+                ? `${analysisNoun} running…`
                 : analysisState === "done"
-                  ? "Metadata analysis"
-                  : "Metadata analysis (pending)"
+                  ? analysisNoun
+                  : `${analysisNoun} (pending)`
           }
           state={analysisState === "failed" && phase === "done" ? "done" : analysisState}
         >

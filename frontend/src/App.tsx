@@ -3,10 +3,15 @@ import Documents from "./pages/Documents";
 import Sessions from "./pages/Sessions";
 import SessionDetail from "./pages/SessionDetail";
 import ProposalRedirect from "./pages/ProposalRedirect";
+import Taxonomy from "./pages/Taxonomy";
+import Jobs from "./pages/Jobs";
+import JobDetail from "./pages/JobDetail";
 
 const nav = [
   { to: "/", label: "Analyses" },
   { to: "/documents", label: "Documents" },
+  { to: "/taxonomy", label: "Taxonomy" },
+  { to: "/jobs", label: "Campaigns" },
 ];
 
 export default function App() {
@@ -43,6 +48,9 @@ export default function App() {
           {/* Proposals live on their session's timeline; old links redirect. */}
           <Route path="/proposals/:id" element={<ProposalRedirect />} />
           <Route path="/documents" element={<Documents />} />
+          <Route path="/taxonomy" element={<Taxonomy />} />
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/jobs/:id" element={<JobDetail />} />
         </Routes>
       </main>
     </div>
