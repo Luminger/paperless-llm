@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Literal
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PlainSerializer
 
 from app.db.models import (
     AgentKind,
@@ -20,6 +20,18 @@ from app.db.models import (
 )
 from app.services.transcript import CallTiming, TranscriptItem
 
+# All timestamps are stored in UTC; SQLite round-trips lose the offset,
+# so the contract re-stamps it — every timestamp leaving the API is
+# explicit UTC ("+00:00") and the frontend renders it in the user's
+# chosen timezone.
+UtcDateTime = Annotated[
+    datetime,
+    PlainSerializer(
+        lambda v: (v if v.tzinfo else v.replace(tzinfo=UTC)).isoformat(),
+        return_type=str,
+    ),
+]
+
 
 class SessionOut(BaseModel):
     id: int
@@ -31,9 +43,9 @@ class SessionOut(BaseModel):
     phase: SessionPhase | None
     params: dict[str, Any] = {}
     error: str | None
-    archived_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
+    archived_at: UtcDateTime | None = None
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
     proposal_count: int = 0
 
     model_config = {"from_attributes": True}
@@ -91,11 +103,11 @@ class StepOut(BaseModel):
     attempts: list[AttemptRecord] = []
     attempt_count: int
     max_attempts: int
-    scheduled_at: datetime | None
+    scheduled_at: UtcDateTime | None
     supersedes_id: int | None
-    created_at: datetime
-    started_at: datetime | None
-    finished_at: datetime | None
+    created_at: UtcDateTime
+    started_at: UtcDateTime | None
+    finished_at: UtcDateTime | None
     transcript: list[TranscriptItem] = []
 
     model_config = {"from_attributes": True}
@@ -119,8 +131,8 @@ class ProposalOut(BaseModel):
     status: ProposalStatus
     entity_type: EntityType | None
     entity_id: int | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
     applied: bool = False
     reverted: bool = False
 
@@ -162,8 +174,8 @@ class JobOut(BaseModel):
     done: int
     failed: int
     error: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
 
     model_config = {"from_attributes": True}
 
@@ -235,7 +247,7 @@ class DocumentSearchPage(BaseModel):
 
 class ResourceFetch(BaseModel):
     in_flight: int = 0
-    last_fetched_at: datetime | None = None
+    last_fetched_at: UtcDateTime | None = None
     last_error: str | None = None
 
 
@@ -257,7 +269,7 @@ class RevertCheckOut(BaseModel):
 
 class AuditEntryOut(BaseModel):
     id: int
-    ts: datetime
+    ts: UtcDateTime
     kind: str
     action: str
     actor: str = "system"

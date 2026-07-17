@@ -79,12 +79,12 @@ describe("Jobs", () => {
     await userEvent.click(screen.getByLabelText("Documents with tag"));
     expect(screen.getByRole("button", { name: "Start job" })).toBeDisabled();
 
-    const select = screen.getByLabelText("job tag");
     // The inbox tag cannot scope a job (it has its own scope).
+    await userEvent.click(screen.getByRole("combobox", { name: "job tag" }));
     expect(
       screen.queryByRole("option", { name: "Inbox" }),
     ).not.toBeInTheDocument();
-    await userEvent.selectOptions(select, "3");
+    await userEvent.click(await screen.findByRole("option", { name: "Steuern" }));
     expect(screen.getByRole("button", { name: "Start job" })).toBeEnabled();
 
     await userEvent.click(screen.getByRole("button", { name: "Start job" }));

@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import Documents from "./Documents";
-import { makeEntity, renderWithProviders } from "../test/utils";
+import { makeEntity, pickOption, renderWithProviders } from "../test/utils";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
@@ -51,17 +51,13 @@ describe("Documents", () => {
     renderWithProviders(<Documents />);
     await screen.findByText("Invoice 4-8");
 
-    await userEvent.selectOptions(screen.getByLabelText("filter by tag"), "3");
-    await userEvent.selectOptions(
-      screen.getByLabelText("filter by correspondent"), "1",
-    );
+    await pickOption("filter by tag", "Steuern");
+    await pickOption("filter by correspondent", "Kraxi");
     await waitFor(() =>
       expect(mocked.listDocuments).toHaveBeenLastCalledWith(
         expect.objectContaining({ tag_id: 3, correspondent_id: 1 }),
       ),
     );
-    // Options are names, not ids.
-    expect(screen.getByRole("option", { name: "Steuern" })).toBeInTheDocument();
   });
 
   it("multiselect: select-all spans all pages, bulk analyze creates a job", async () => {

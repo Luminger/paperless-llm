@@ -292,6 +292,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prefs */
+        get: operations["get_prefs_api_prefs_get"];
+        /** Put Prefs */
+        put: operations["put_prefs_api_prefs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/proposals": {
         parameters: {
             query?: never;
@@ -344,23 +362,6 @@ export interface paths {
         put?: never;
         /** Apply */
         post: operations["apply_api_proposals__proposal_id__apply_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/proposals/{proposal_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reject Proposal */
-        post: operations["reject_proposal_api_proposals__proposal_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -786,10 +787,7 @@ export interface components {
             id: number;
             /** Kind */
             kind: string;
-            /**
-             * Ts
-             * Format: date-time
-             */
+            /** Ts */
             ts: string;
         };
         /** AuditPage */
@@ -986,10 +984,7 @@ export interface components {
         };
         /** JobDetailOut */
         JobDetailOut: {
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Done */
             done: number;
@@ -1016,18 +1011,12 @@ export interface components {
             status: components["schemas"]["JobStatus"];
             /** Total */
             total: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
+            /** Updated At */
             updated_at: string;
         };
         /** JobOut */
         JobOut: {
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Done */
             done: number;
@@ -1049,10 +1038,7 @@ export interface components {
             status: components["schemas"]["JobStatus"];
             /** Total */
             total: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
+            /** Updated At */
             updated_at: string;
         };
         /** JobPage */
@@ -1142,6 +1128,35 @@ export interface components {
             /** Timeout Seconds */
             timeout_seconds: number;
         };
+        /** PrefsOut */
+        PrefsOut: {
+            /**
+             * Date Format
+             * @default system
+             * @enum {string}
+             */
+            date_format: "system" | "iso" | "eu" | "us";
+            /**
+             * Time Format
+             * @default 24h-seconds
+             * @enum {string}
+             */
+            time_format: "24h" | "24h-seconds" | "12h" | "12h-seconds";
+            /**
+             * Time Zone
+             * @default system
+             */
+            time_zone: string;
+        };
+        /** PrefsUpdate */
+        PrefsUpdate: {
+            /** Date Format */
+            date_format?: ("system" | "iso" | "eu" | "us") | null;
+            /** Time Format */
+            time_format?: ("24h" | "24h-seconds" | "12h" | "12h-seconds") | null;
+            /** Time Zone */
+            time_zone?: string | null;
+        };
         /** ProfileOut */
         ProfileOut: {
             /**
@@ -1185,10 +1200,7 @@ export interface components {
             base_snapshot?: {
                 [key: string]: unknown;
             } | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Entity Id */
             entity_id: number | null;
@@ -1209,10 +1221,7 @@ export interface components {
             status: components["schemas"]["ProposalStatus"];
             /** Supersedes Id */
             supersedes_id: number | null;
-            /**
-             * Updated At
-             * Format: date-time
-             */
+            /** Updated At */
             updated_at: string;
             /** User Payload */
             user_payload: {
@@ -1241,7 +1250,7 @@ export interface components {
          * ProposalStatus
          * @enum {string}
          */
-        ProposalStatus: "draft" | "pending" | "rejected" | "applied" | "superseded" | "no_change";
+        ProposalStatus: "draft" | "pending" | "applied" | "superseded" | "no_change";
         /**
          * QueueLane
          * @description Two lanes so chat turns never wait behind bulk work.
@@ -1302,10 +1311,7 @@ export interface components {
             agent_kind: components["schemas"]["AgentKind"];
             /** Archived At */
             archived_at?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Entity Id */
             entity_id: number | null;
@@ -1340,10 +1346,7 @@ export interface components {
             steps: components["schemas"]["StepOut"][];
             /** Title */
             title: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
+            /** Updated At */
             updated_at: string;
         };
         /** SessionOut */
@@ -1351,10 +1354,7 @@ export interface components {
             agent_kind: components["schemas"]["AgentKind"];
             /** Archived At */
             archived_at?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Entity Id */
             entity_id: number | null;
@@ -1379,10 +1379,7 @@ export interface components {
             status: components["schemas"]["SessionStatus"];
             /** Title */
             title: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
+            /** Updated At */
             updated_at: string;
         };
         /**
@@ -1465,10 +1462,7 @@ export interface components {
              * @default []
              */
             attempts: components["schemas"]["AttemptRecord"][];
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Error */
             error: string | null;
@@ -2066,6 +2060,59 @@ export interface operations {
             };
         };
     };
+    get_prefs_api_prefs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrefsOut"];
+                };
+            };
+        };
+    };
+    put_prefs_api_prefs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrefsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrefsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_proposals_api_proposals_get: {
         parameters: {
             query?: {
@@ -2167,37 +2214,6 @@ export interface operations {
         };
     };
     apply_api_proposals__proposal_id__apply_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                proposal_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProposalOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reject_proposal_api_proposals__proposal_id__reject_post: {
         parameters: {
             query?: never;
             header?: never;

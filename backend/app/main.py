@@ -15,6 +15,7 @@ from app.api.routes import (
     audit,
     entities,
     jobs,
+    prefs,
     proposals,
     sessions,
     webhooks,
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(entities.router)
     app.include_router(settings_routes.router)
+    app.include_router(prefs.router)
     app.include_router(jobs.router)
     app.include_router(webhooks.router)
     app.include_router(audit.router)

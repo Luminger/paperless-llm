@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { NativeSelect } from "@/components/app/NativeSelect";
+import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { PageHeader } from "@/components/app/PageHeader";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Job, type JobCreate } from "../api";
@@ -95,23 +95,16 @@ function NewJob({ onDone }: { onDone: () => void }) {
           ))}
         </RadioGroup>
         {scope === "tag" && (
-          <NativeSelect
-            aria-label="job tag"
+          <SimpleSelect
+            ariaLabel="job tag"
             className="w-full"
-            value={tagId ?? ""}
-            onChange={(e) =>
-              setTagId(e.target.value === "" ? undefined : Number(e.target.value))
-            }
-          >
-            <option value="">pick a tag…</option>
-            {(tags ?? [])
+            placeholder="pick a tag…"
+            value={tagId != null ? String(tagId) : undefined}
+            onValueChange={(v) => setTagId(Number(v))}
+            options={(tags ?? [])
               .filter((t) => !t.is_inbox_tag)
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-          </NativeSelect>
+              .map((t) => ({ value: String(t.id), label: t.name }))}
+          />
         )}
         <div className="flex flex-wrap gap-4 text-sm">
           <Label className="flex items-center gap-1.5 font-normal">

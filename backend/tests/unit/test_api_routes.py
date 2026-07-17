@@ -98,12 +98,13 @@ async def test_patch_replaces_and_validates(client, db):
     assert r.json()["user_payload"] is None
 
 
-async def test_reject_conflicts(client, db):
+async def test_settled_proposals_cannot_be_edited(client, db):
+    """Only pending proposals are editable; settled ones are history."""
+    from app.db.models import ProposalStatus
+
     p = await _seed_proposal(db)
-    assert (await client.post(f"/api/proposals/{p.id}/reject")).json()["status"] == "rejected"
-    # Rejecting again conflicts.
-    assert (await client.post(f"/api/proposals/{p.id}/reject")).status_code == 409
-    # Rejected proposals cannot be edited.
+    p.status = ProposalStatus.superseded
+    await db.commit()
     r = await client.patch(f"/api/proposals/{p.id}", json={"user_payload": {"title": "x"}})
     assert r.status_code == 409
 
@@ -1007,8 +1008,13 @@ async def test_unfinished_includes_sessions_with_pending_proposals(client, db):
     body = (await client.get("/api/sessions?unfinished=true")).json()
     assert any(item["id"] == p.session_id for item in body["results"])
 
-    # Once decided (rejected), the session is truly finished.
-    await client.post(f"/api/proposals/{p.id}/reject")
+    # Once settled (superseded by a revision), the session is finished.
+    from app.db.models import Proposal as Prop
+    from app.db.models import ProposalStatus
+
+    row = await db.get(Prop, p.id)
+    row.status = ProposalStatus.superseded
+    await db.commit()
     body = (await client.get("/api/sessions?unfinished=true")).json()
     assert not any(item["id"] == p.session_id for item in body["results"])
 
@@ -1046,3 +1052,47 @@ async def test_task_scheduling_is_audited(client, db):
     # Data-changes view excludes scheduling noise.
     changes = (await client.get("/api/audit?kind=changes")).json()
     assert all(e["kind"] != "task" for e in changes["results"])
+
+
+async def test_all_api_timestamps_carry_utc_offset(client, db):
+    """Storage is UTC; SQLite drops the offset — the contract re-stamps
+    it so clients can render in any timezone."""
+    r = await client.post("/api/sessions/analyze/document/7", json={"redo_ocr": False})
+    body = r.json()
+    assert body["created_at"].endswith("+00:00")
+    detail = (await client.get(f"/api/sessions/{body['id']}")).json()
+    step = detail["steps"][0]
+    assert step["created_at"].endswith("+00:00")
+    audit = (await client.get("/api/audit?page_size=1")).json()
+    assert audit["results"][0]["ts"].endswith("+00:00")
+    jobs = (await client.get("/api/jobs")).json()
+    assert jobs["results"][0]["created_at"].endswith("+00:00")
+
+
+async def test_prefs_roundtrip_and_partial_update(client):
+    """Prefs persist server-side; partial updates merge; unknown values
+    are rejected."""
+    body = (await client.get("/api/prefs")).json()
+    assert body == {
+        "date_format": "system",
+        "time_format": "24h-seconds",
+        "time_zone": "system",
+    }
+
+    r = await client.put(
+        "/api/prefs", json={"date_format": "eu", "time_zone": "Europe/Berlin"}
+    )
+    assert r.status_code == 200
+    assert r.json()["date_format"] == "eu"
+    assert r.json()["time_zone"] == "Europe/Berlin"
+    assert r.json()["time_format"] == "24h-seconds"  # untouched
+
+    # Partial update keeps earlier values.
+    await client.put("/api/prefs", json={"time_format": "12h"})
+    body = (await client.get("/api/prefs")).json()
+    assert body["date_format"] == "eu" and body["time_format"] == "12h"
+
+    # Typed: garbage is refused.
+    assert (
+        await client.put("/api/prefs", json={"date_format": "stardate"})
+    ).status_code == 422

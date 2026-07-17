@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/app/NativeSelect";
+import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
@@ -14,6 +14,7 @@ import {
   formatDateTime,
   getDateTimePrefs,
   setDateTimePrefs,
+  timeZoneOptions,
   type DatePref,
   type TimePref,
 } from "../lib/format";
@@ -42,9 +43,18 @@ function OnOff({ on, labels = ["enabled", "disabled"] }: { on: boolean; labels?:
  * and times render everywhere in the app. */
 function DateTimePrefs() {
   const [prefs, setPrefs] = useState(getDateTimePrefs);
-  const update = (date: DatePref, time: TimePref) => {
-    setDateTimePrefs(date, time);
-    setPrefs({ date, time });
+  const save = useMutation({
+    mutationFn: (p: { date: DatePref; time: TimePref; timeZone: string }) =>
+      api.putPrefs({
+        date_format: p.date,
+        time_format: p.time,
+        time_zone: p.timeZone,
+      }),
+  });
+  const update = (date: DatePref, time: TimePref, timeZone: string) => {
+    setDateTimePrefs(date, time, timeZone);   // instant, local cache
+    setPrefs({ date, time, timeZone });
+    save.mutate({ date, time, timeZone });    // persisted server-side
   };
   return (
     <Card>
@@ -53,41 +63,41 @@ function DateTimePrefs() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-[11rem_1fr] items-center gap-3">
-          <Label htmlFor="pref-date" className="font-normal text-muted-foreground">
-            Date format
-          </Label>
-          <NativeSelect
-            id="pref-date"
-            aria-label="date format"
+          <Label className="font-normal text-muted-foreground">Date format</Label>
+          <SimpleSelect
+            ariaLabel="date format"
             value={prefs.date}
-            onChange={(e) => update(e.target.value as DatePref, prefs.time)}
-          >
-            {DATE_PREFS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </NativeSelect>
-          <Label htmlFor="pref-time" className="font-normal text-muted-foreground">
-            Time format
-          </Label>
-          <NativeSelect
-            id="pref-time"
-            aria-label="time format"
+            onValueChange={(v) => update(v as DatePref, prefs.time, prefs.timeZone)}
+            options={DATE_PREFS.map((o) => ({ value: o.value, label: o.label }))}
+          />
+          <Label className="font-normal text-muted-foreground">Time format</Label>
+          <SimpleSelect
+            ariaLabel="time format"
             value={prefs.time}
-            onChange={(e) => update(prefs.date, e.target.value as TimePref)}
-          >
-            {TIME_PREFS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </NativeSelect>
+            onValueChange={(v) => update(prefs.date, v as TimePref, prefs.timeZone)}
+            options={TIME_PREFS.map((o) => ({ value: o.value, label: o.label }))}
+          />
+          <Label className="font-normal text-muted-foreground">Timezone</Label>
+          <SimpleSelect
+            ariaLabel="timezone"
+            value={prefs.timeZone}
+            onValueChange={(v) => update(prefs.date, prefs.time, v)}
+            options={[
+              { value: "system", label: "System timezone" },
+              ...timeZoneOptions().map((z) => ({ value: z, label: z })),
+            ]}
+          />
         </div>
         <p className="text-xs text-muted-foreground/70">
-          Preview: {formatDateTime(new Date().toISOString())} — stored in this
-          browser, applies everywhere in the app.
+          Preview: {formatDateTime(new Date().toISOString())} — timestamps are
+          stored in UTC on the server; these preferences are saved to the
+          server too, so every browser shows the same formats.
         </p>
+        {save.error && (
+          <p className="text-xs text-destructive">
+            could not save to the server — the setting applies locally for now
+          </p>
+        )}
       </CardContent>
     </Card>
   );

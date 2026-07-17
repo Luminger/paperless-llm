@@ -71,7 +71,6 @@ class SessionPhase(enum.StrEnum):
 class ProposalStatus(enum.StrEnum):
     draft = "draft"  # emitted mid-run; run not finished yet
     pending = "pending"  # awaiting review
-    rejected = "rejected"
     applied = "applied"
     superseded = "superseded"  # replaced by a newer revision
     # Apply-time verdict: paperless already matches the proposal (state
@@ -377,4 +376,18 @@ class OcrResult(Base):
         Index(
             "ix_ocr_key", "document_id", "checksum", "model", "prompt_version", unique=True
         ),
+    )
+
+
+class UserPref(Base):
+    """User preferences (date/time format, timezone, ...) — persisted
+    server-side so the experience is consistent across browsers. Single
+    user today; a user column makes this per-user when auth lands."""
+
+    __tablename__ = "user_prefs"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

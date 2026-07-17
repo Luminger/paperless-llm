@@ -82,7 +82,9 @@ describe("ProposalCard — metadata editor", () => {
     expect((await screen.findAllByText("Telarko Deutschland GmbH")).length).toBeGreaterThan(0);
     // Current column shows the current tag by name; proposed shows the new set.
     expect(screen.getByText("Tags")).toBeInTheDocument();
-    expect(await screen.findByText("Rechnung", { selector: "span" })).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText("Rechnung")).length,
+    ).toBeGreaterThan(0);
     // No raw ids on display.
     expect(screen.queryByText("#1")).not.toBeInTheDocument();
     // document_id is not an editable row.
@@ -257,5 +259,37 @@ describe("ProposalCard — contextual steering", () => {
         expect.stringMatching(/^About proposal #5 .*use the German title$/),
       ),
     );
+  });
+});
+
+describe("ProposalCard — date field", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupTaxonomy();
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+  });
+
+  it("shows the created date in the user's format and picks via calendar", async () => {
+    localStorage.setItem("pllm.pref.dateFormat", "eu");
+    mocked.patchProposal.mockResolvedValue(metadataProposal());
+    renderCard(metadataProposal());
+
+    // Trigger renders the formatted date, not a native input.
+    const trigger = await screen.findByRole("button", { name: "created date" });
+    expect(trigger).toHaveTextContent("17.04.2024");
+
+    await userEvent.click(trigger);
+    // The framework calendar opens; pick another day of that month.
+    await screen.findByRole("grid");
+    const day = screen
+      .getAllByRole("button")
+      .find((b) => b.textContent?.trim() === "20");
+    expect(day).toBeTruthy();
+    await userEvent.click(day!);
+    await userEvent.click(screen.getByRole("button", { name: "Save edits" }));
+    await waitFor(() => expect(mocked.patchProposal).toHaveBeenCalled());
+    const [, payload] = mocked.patchProposal.mock.calls[0];
+    expect(payload).toMatchObject({ created: "2024-04-20" });
+    localStorage.clear();
   });
 });

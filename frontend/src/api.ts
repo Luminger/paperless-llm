@@ -40,6 +40,8 @@ export type SyncStatus = S["SyncStatusOut"];
 export type ResourceFetchStatus = S["ResourceFetch"];
 export type RevertCheck = S["RevertCheckOut"];
 export type SettingsOverview = S["SettingsOut"];
+export type Prefs = S["PrefsOut"];
+export type PrefsUpdate = S["PrefsUpdate"];
 
 // Shapes that exist outside the HTTP contract (SSE payloads, JSON
 // blobs the backend types as dict[str, Any]):
@@ -92,13 +94,16 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ user_payload }),
     }),
-  proposalAction: (id: number, action: "reject" | "apply" | "revert") =>
+  proposalAction: (id: number, action: "apply" | "revert") =>
     request<Proposal>(`/api/proposals/${id}/${action}`, { method: "POST" }),
   revertCheck: (id: number) =>
     request<RevertCheck>(`/api/proposals/${id}/revert-check`),
 
   getMeta: () => request<Meta>("/api/meta"),
   getSettingsOverview: () => request<SettingsOverview>("/api/settings"),
+  getPrefs: () => request<Prefs>("/api/prefs"),
+  putPrefs: (body: PrefsUpdate) =>
+    request<Prefs>("/api/prefs", { method: "PUT", body: JSON.stringify(body) }),
   getSyncStatus: () => request<SyncStatus>("/api/sync/status"),
   listAudit: (page = 1, pageSize = 20, kind?: string) =>
     request<AuditPage>(

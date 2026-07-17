@@ -64,3 +64,13 @@ export function makeEntity(over: Partial<EntityRef> & { id: number; name: string
 export function jobPage(results: Job[]): JobPage {
   return { count: results.length, page: 1, page_size: 50, results };
 }
+
+import { screen as _screen } from "@testing-library/react";
+import _userEvent from "@testing-library/user-event";
+
+/** Interact with a framework (Radix) select: open by accessible name,
+ * click an option. */
+export async function pickOption(triggerName: string | RegExp, optionName: string | RegExp) {
+  await _userEvent.click(_screen.getByRole("combobox", { name: triggerName }));
+  await _userEvent.click(await _screen.findByRole("option", { name: optionName }));
+}

@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/app/NativeSelect";
+import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { PageHeader } from "@/components/app/PageHeader";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef } from "../api";
@@ -13,6 +13,8 @@ import { formatDate } from "../lib/format";
 import { FetchStatus } from "../components/FetchStatus";
 import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
 import { Pager } from "../components/Pager";
+
+const ANY = "__any__";
 
 function FilterSelect({
   label,
@@ -26,18 +28,15 @@ function FilterSelect({
   onChange: (v: number | undefined) => void;
 }) {
   return (
-    <NativeSelect
-      aria-label={`filter by ${label}`}
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-    >
-      <option value="">any {label}</option>
-      {(options ?? []).map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.name}
-        </option>
-      ))}
-    </NativeSelect>
+    <SimpleSelect
+      ariaLabel={`filter by ${label}`}
+      value={value != null ? String(value) : ANY}
+      onValueChange={(v) => onChange(v === ANY ? undefined : Number(v))}
+      options={[
+        { value: ANY, label: `any ${label}` },
+        ...(options ?? []).map((o) => ({ value: String(o.id), label: o.name })),
+      ]}
+    />
   );
 }
 

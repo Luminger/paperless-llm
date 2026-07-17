@@ -13,7 +13,6 @@ const colors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   no_change: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
   pending: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  rejected: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
   applied: "bg-primary text-primary-foreground",
   superseded: "bg-muted text-muted-foreground line-through",
   // jobs & sessions & steps

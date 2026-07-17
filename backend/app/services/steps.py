@@ -202,7 +202,7 @@ async def redo_step(
     AND every step after it (their results were built on state this redo
     invalidates), then creates a fresh step with (optionally amended)
     input. Open proposals of the superseded steps are superseded too;
-    applied/rejected ones are history and stay untouched."""
+    applied ones are history and stay untouched."""
     if step.state not in (*TERMINAL, StepState.awaiting_user):
         raise StepActionError(f"step is {step.state.value}; wait for it to finish")
     session = await db.get(Session, step.session_id)

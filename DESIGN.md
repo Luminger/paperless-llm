@@ -193,8 +193,10 @@ Proposal          kind, revision, supersedes_id?, step_id,
                   agent_payload  (immutable: exactly what the model emitted)
                   user_payload?  (user's edited version, full edit visibility)
                   base_snapshot  (paperless state of touched fields at emit)
-                  status: draft | pending | rejected | applied |
-                          superseded | no_change (apply-time: already matched)
+                  status: draft | pending | applied | superseded |
+                          no_change (apply-time: already matched) — there
+                          is no reject: unwanted proposals are revised
+                          (superseded), left pending, or archived
 AppliedChange     proposal_id, paperless before/after snapshots — undo journal
 Job               EVERY analysis run is a tracked job — single manual
                   analyses (total=1, interactive lane), taxonomy
@@ -259,7 +261,7 @@ Proposal kinds (v1): `update_document_metadata`, `replace_content`,
 **Redo supersedes downstream**: redoing a step (e.g. re-running OCR with
 different instructions) supersedes that step AND every step after it,
 including their open proposals — later results were built on invalidated
-state. Applied/rejected proposals are left alone. Superseded steps stay
+state. Applied proposals are left alone. Superseded steps stay
 inspectable on the timeline. A redo always asks how (amended
 instructions/DPI/message), never silently reruns.
 
@@ -348,7 +350,7 @@ and the per-endpoint `max_concurrent` semaphore are settings.
                          /{id}/steps/{sid}/resolve|retry|redo,
                          /{id}/archive|unarchive, GET /{id}/events (SSE)
 /api/proposals           list/filter, PATCH /{id} (user edits),
-                         POST /{id}/apply|reject|revert, GET /{id}/revert-check
+                         POST /{id}/apply|revert, GET /{id}/revert-check
 /api/jobs                bulk jobs: create/list/detail/cancel
 /api/settings            read-only config overview (M5)
 /api/entities            proxied browse (+ name-resolved filters), entity

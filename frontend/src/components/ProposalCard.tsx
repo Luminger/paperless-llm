@@ -4,10 +4,13 @@ import { MessageSquareText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/app/DateField";
+import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice } from "@/components/app/states";
 import { api, type EntityRef, type PaperlessDocument, type Proposal } from "../api";
 import { keys as qk } from "../lib/keys";
+import { formatDate } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
 import { errorMessage } from "../lib/errors";
 
@@ -107,31 +110,33 @@ function Row({
   );
 }
 
+const NONE = "__none__";
+
 function EntitySelect({
   value,
   options,
   onChange,
   disabled,
+  label,
 }: {
   value: number | null;
   options: EntityRef[] | undefined;
   onChange: (v: number | null) => void;
   disabled: boolean;
+  label: string;
 }) {
   return (
-    <select
-      className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
-      value={value ?? ""}
+    <SimpleSelect
+      ariaLabel={label}
+      className="w-full"
       disabled={disabled}
-      onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-    >
-      <option value="">— none —</option>
-      {options?.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.name}
-        </option>
-      ))}
-    </select>
+      value={value != null ? String(value) : NONE}
+      onValueChange={(v) => onChange(v === NONE ? null : Number(v))}
+      options={[
+        { value: NONE, label: "— none —" },
+        ...(options ?? []).map((o) => ({ value: String(o.id), label: o.name })),
+      ]}
+    />
   );
 }
 
@@ -148,9 +153,13 @@ function TagsEditor({
 }) {
   const remaining = (options ?? []).filter((t) => !value.includes(t.id));
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1.5">
       {value.map((id) => (
-        <Badge key={id} variant="secondary" className="gap-1 text-primary">
+        <Badge
+          key={id}
+          variant="secondary"
+          className="gap-1 px-2 py-0.5 text-sm font-normal text-primary"
+        >
           {name(options, id)}
           {!disabled && (
             <button
@@ -164,19 +173,13 @@ function TagsEditor({
         </Badge>
       ))}
       {!disabled && remaining.length > 0 && (
-        <select
-          aria-label="add tag"
-          className="rounded-md border border-dashed border-input px-1 py-0.5 text-xs text-muted-foreground dark:bg-input/30"
-          value=""
-          onChange={(e) => e.target.value && onChange([...value, Number(e.target.value)])}
-        >
-          <option value="">+ add tag</option>
-          {remaining.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <SimpleSelect
+          ariaLabel="add tag"
+          placeholder="+ add tag"
+          value={undefined}
+          onValueChange={(v) => onChange([...value, Number(v)])}
+          options={remaining.map((t) => ({ value: String(t.id), label: t.name }))}
+        />
       )}
     </div>
   );
@@ -255,6 +258,7 @@ function MetadataEditor({
         agentProposed={inAgent("correspondent")}
       >
         <EntitySelect
+          label="correspondent"
           value={desired.correspondent}
           options={correspondents}
           disabled={!editable}
@@ -268,6 +272,7 @@ function MetadataEditor({
         agentProposed={inAgent("document_type")}
       >
         <EntitySelect
+          label="document type"
           value={desired.document_type}
           options={docTypes}
           disabled={!editable}
@@ -281,6 +286,7 @@ function MetadataEditor({
         agentProposed={inAgent("storage_path")}
       >
         <EntitySelect
+          label="storage path"
           value={desired.storage_path}
           options={storagePaths}
           disabled={!editable}
@@ -305,16 +311,15 @@ function MetadataEditor({
       </Row>
       <Row
         label="Created"
-        current={currentCreated ?? "—"}
+        current={formatDate(currentCreated)}
         changed={desired.created !== currentCreated}
         agentProposed={inAgent("created")}
       >
-        <Input
-          type="date"
-          className="h-8 w-44"
-          value={desired.created ?? ""}
+        <DateField
+          ariaLabel="created date"
+          value={desired.created}
           disabled={!editable}
-          onChange={(e) => update({ created: e.target.value || null })}
+          onChange={(v) => update({ created: v })}
         />
       </Row>
     </div>
@@ -539,7 +544,7 @@ export function ProposalCard({
   };
 
   const action = useMutation({
-    mutationFn: (a: "reject" | "apply" | "revert") => api.proposalAction(p.id, a),
+    mutationFn: (a: "apply" | "revert") => api.proposalAction(p.id, a),
     onSuccess: invalidate,
   });
   // Would reverting change anything? Greys out the Revert button when
@@ -608,9 +613,6 @@ export function ProposalCard({
           <>
             <Button size="sm" onClick={() => action.mutate("apply")}>
               Apply to paperless
-            </Button>
-            <Button size="sm" variant="destructive" onClick={() => action.mutate("reject")}>
-              Reject
             </Button>
             <ReviseBox proposal={p} onSent={invalidate} />
           </>

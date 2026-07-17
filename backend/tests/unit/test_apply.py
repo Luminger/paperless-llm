@@ -175,11 +175,11 @@ async def test_delete_entity_refused_when_referenced(db, paperless_client):
         await apply_proposal(paperless_client, db, p)
 
 
-async def test_apply_rejected_status(db, paperless_client):
+async def test_apply_settled_status(db, paperless_client):
     p = await _make_proposal(
         db,
         {"kind": "replace_content", "document_id": 1, "content": "x"},
-        status=ProposalStatus.rejected,
+        status=ProposalStatus.superseded,
     )
     with pytest.raises(ApplyError, match="cannot apply"):
         await apply_proposal(paperless_client, db, p)

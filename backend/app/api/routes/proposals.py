@@ -107,18 +107,6 @@ async def patch_proposal(
     return _out(p)
 
 
-@router.post("/{proposal_id}/reject")
-async def reject_proposal(
-    proposal_id: int, db: AsyncSession = Depends(get_session)
-) -> ProposalOut:
-    p = await _load(db, proposal_id)
-    if p.status != ProposalStatus.pending:
-        raise HTTPException(409, f"proposal is {p.status}")
-    p.status = ProposalStatus.rejected
-    await db.commit()
-    return _out(p)
-
-
 @router.post("/{proposal_id}/apply")
 async def apply(
     proposal_id: int,
