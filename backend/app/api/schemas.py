@@ -153,6 +153,21 @@ class StatsOut(BaseModel):
     active_jobs: int
 
 
+class AuditEntryOut(BaseModel):
+    id: int
+    ts: datetime
+    kind: str
+    action: str
+    detail: dict[str, Any] = {}
+
+
+class AuditPage(BaseModel):
+    count: int
+    page: int
+    page_size: int
+    results: list[AuditEntryOut]
+
+
 class MergeCandidateOut(BaseModel):
     entity_type: str
     source: dict[str, Any]

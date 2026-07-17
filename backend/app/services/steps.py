@@ -278,6 +278,10 @@ async def _exec_ocr(
         "pages": len(outcome.pages),
         "duration_s": round(sum(t.get("duration_s", 0) for t in outcome.timings or []), 1),
         "from_cache": outcome.from_cache,
+        # Snapshots so a later superseded rendering can still show what
+        # THIS run produced and the diff it presented at the time.
+        "text": outcome.text,
+        "previous_content": outcome.previous_content,
     }
     return AWAIT_USER  # the gate: user reviews the diff
 

@@ -15,7 +15,8 @@ export function DiffView({
 }: {
   oldText: string;
   newText: string;
-  onNewTextChange: (t: string) => void;
+  // Omit for read-only diffs (e.g. superseded OCR runs).
+  onNewTextChange?: (t: string) => void;
 }) {
   const [mode, setMode] = useState<Mode>(
     () => (localStorage.getItem(MODE_KEY) as Mode) || "side-by-side",
@@ -41,17 +42,19 @@ export function DiffView({
             {m}
           </button>
         ))}
-        <button
-          onClick={() => setEditing(!editing)}
-          className={`ml-auto rounded px-2 py-1 ${
-            editing ? "bg-amber-600 text-white" : "bg-zinc-100 text-zinc-600"
-          }`}
-        >
-          {editing ? "done editing" : "edit new text"}
-        </button>
+        {onNewTextChange && (
+          <button
+            onClick={() => setEditing(!editing)}
+            className={`ml-auto rounded px-2 py-1 ${
+              editing ? "bg-amber-600 text-white" : "bg-zinc-100 text-zinc-600"
+            }`}
+          >
+            {editing ? "done editing" : "edit new text"}
+          </button>
+        )}
       </div>
 
-      {editing ? (
+      {editing && onNewTextChange ? (
         <textarea
           aria-label="new content"
           className="h-96 w-full rounded border border-amber-300 p-2 font-mono text-xs"

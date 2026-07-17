@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type EntityRef, type MergeCandidate } from "../api";
+import { FetchStatus } from "../components/FetchStatus";
 
 const TYPES = [
   { key: "tag", label: "Tags" },
@@ -38,7 +39,7 @@ export default function Taxonomy() {
   const [type, setType] = useState<TypeKey>("tag");
   const navigate = useNavigate();
 
-  const { data: entities } = useQuery({
+  const { data: entities, isFetching, refetch } = useQuery({
     queryKey: ["taxonomy", type],
     queryFn: () =>
       type === "tag"
@@ -47,6 +48,7 @@ export default function Taxonomy() {
           ? api.listCorrespondents()
           : api.listDocumentTypes(),
   });
+  const resource = type === "tag" ? "tags" : type === "correspondent" ? "correspondents" : "document_types";
   const { data: candidates } = useQuery({
     queryKey: ["merge-candidates", type],
     queryFn: () => api.mergeCandidates(type),
@@ -79,6 +81,10 @@ export default function Taxonomy() {
             {t.label}
           </button>
         ))}
+      </div>
+
+      <div className="mb-3">
+        <FetchStatus resource={resource} isFetching={isFetching} onRefresh={() => refetch()} />
       </div>
 
       {candidates && candidates.length > 0 && (

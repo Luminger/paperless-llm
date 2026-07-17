@@ -763,3 +763,50 @@ async def test_generic_entity_detail_route(client):
 async def test_meta_endpoint(client):
     body = (await client.get("/api/meta")).json()
     assert "paperless_url" in body
+
+
+@respx.mock
+async def test_audit_records_apply_and_revert(client, db):
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Agent title"})
+    )
+    p = await _seed_proposal(db)
+    p_id = p.id
+    assert (await client.post(f"/api/proposals/{p_id}/apply")).status_code == 200
+    assert (await client.post(f"/api/proposals/{p_id}/revert")).status_code == 200
+
+    body = (await client.get("/api/audit")).json()
+    assert body["count"] >= 2
+    actions = [(e["kind"], e["action"]) for e in body["results"]]
+    assert ("proposal", "reverted") == actions[0]  # newest first
+    assert ("proposal", "applied") in actions
+    applied = next(e for e in body["results"] if e["action"] == "applied")
+    assert applied["detail"]["proposal_id"] == p_id
+
+
+async def test_audit_records_archive_ops(client, db):
+    (s,) = await _mk_sessions(db, 1)
+    sid = s.id
+    await client.post(f"/api/sessions/{sid}/archive")
+    await client.post(f"/api/sessions/{sid}/unarchive")
+    body = (await client.get("/api/audit")).json()
+    actions = [(e["kind"], e["action"]) for e in body["results"]]
+    assert ("session", "unarchived") == actions[0]
+    assert ("session", "archived") == actions[1]
+
+
+@respx.mock
+async def test_sync_status_tracks_paperless_fetches(client):
+    from app.paperless.client import fetch_status
+
+    fetch_status.clear()
+    respx.get(f"{PAPERLESS_URL}/api/tags/").mock(
+        return_value=Response(200, json={"count": 0, "next": None, "results": []})
+    )
+    await client.get("/api/entities/tags")
+    body = (await client.get("/api/sync/status")).json()
+    tags = body["resources"]["tags"]
+    assert tags["last_fetched_at"] is not None
+    assert tags["in_flight"] == 0
+    assert tags["last_error"] is None

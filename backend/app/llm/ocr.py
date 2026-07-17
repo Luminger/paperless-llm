@@ -48,6 +48,9 @@ class OcrOutcome:
     similarity: float | None  # vs. paperless `content` at run time; None if no content
     from_cache: bool
     timings: list[dict] | None = None  # per-batch LLM call metrics
+    # Paperless `content` at run time — kept so superseded OCR steps can
+    # still show the diff they produced back then.
+    previous_content: str = ""
 
 
 def render_pages(data: bytes, content_type: str, dpi: int, max_pages: int = 0) -> list[bytes]:
@@ -119,6 +122,7 @@ async def run_ocr(
                 similarity=cached.similarity,
                 from_cache=True,
                 timings=list(cached.timings or []),
+                previous_content=doc.content,
             )
 
     images = render_pages(data, content_type, dpi or profile.render_dpi, profile.max_pages)
@@ -187,4 +191,5 @@ async def run_ocr(
         similarity=similarity,
         from_cache=False,
         timings=timings,
+        previous_content=doc.content,
     )

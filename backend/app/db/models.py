@@ -295,6 +295,24 @@ class EntityEmbedding(Base):
     )
 
 
+class AuditLog(Base):
+    """Application audit trail: when what happened — applies, reverts,
+    campaign/webhook ingests, archive operations, app starts. One row
+    per notable event; read-only via the Log view."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Coarse category (proposal, campaign, webhook, session, system).
+    kind: Mapped[str] = mapped_column(String(30))
+    # Short action verb (applied, reverted, created, ingested, ...).
+    action: Mapped[str] = mapped_column(String(50))
+    detail: Mapped[dict[str, Any]] = mapped_column(default=dict)
+
+    __table_args__ = (Index("ix_audit_ts", "ts"),)
+
+
 class OcrResult(Base):
     """Cache of OCR pipeline runs, keyed by content + model + prompt."""
 

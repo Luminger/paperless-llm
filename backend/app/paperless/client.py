@@ -22,6 +22,36 @@ from app.paperless.schemas import (
     Tag,
 )
 
+# ----- fetch transparency -------------------------------------------
+# Module-level registry of the app's GET traffic to paperless, keyed by
+# resource. Covers EVERY consumer in this process (UI proxy routes,
+# agent tools, pipeline stages) — "when did we last fetch X and is a
+# fetch running right now" is answered truthfully, not per-page.
+fetch_status: dict[str, dict] = {}
+
+_RESOURCES = (
+    ("/api/documents", "documents"),
+    ("/api/tags", "tags"),
+    ("/api/correspondents", "correspondents"),
+    ("/api/document_types", "document_types"),
+    ("/api/storage_paths", "storage_paths"),
+)
+
+
+def _classify(path: str) -> str | None:
+    for prefix, name in _RESOURCES:
+        if path.startswith(prefix):
+            return name
+    return None
+
+
+def _track_start(resource: str) -> dict:
+    entry = fetch_status.setdefault(
+        resource, {"in_flight": 0, "last_fetched_at": None, "last_error": None}
+    )
+    entry["in_flight"] += 1
+    return entry
+
 
 class PaperlessError(Exception):
     def __init__(self, message: str, status_code: int | None = None):
@@ -89,15 +119,29 @@ class PaperlessClient:
 
     async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         await self._ensure_auth()
+        resource = _classify(url) if method == "GET" else None
+        entry = _track_start(resource) if resource else None
         try:
             resp = await self._client.request(method, url, **kwargs)
         except httpx.HTTPError as e:
+            if entry is not None:
+                entry["last_error"] = str(e)[:200]
             raise PaperlessError(f"paperless request failed: {e}") from e
+        finally:
+            if entry is not None:
+                entry["in_flight"] -= 1
         if resp.status_code >= 400:
+            if entry is not None:
+                entry["last_error"] = f"HTTP {resp.status_code}"
             raise PaperlessError(
                 f"{method} {url} -> {resp.status_code}: {resp.text[:500]}",
                 status_code=resp.status_code,
             )
+        if entry is not None:
+            from datetime import UTC, datetime
+
+            entry["last_fetched_at"] = datetime.now(UTC).isoformat()
+            entry["last_error"] = None
         return resp
 
     async def _get_json(self, url: str, **params: Any) -> Any:

@@ -22,6 +22,7 @@ from app.proposals.schemas import (
     UpdateEntity,
     validate_payload,
 )
+from app.services.audit import record
 
 
 class ApplyError(Exception):
@@ -68,6 +69,11 @@ async def apply_proposal(
 
     if await _is_noop(paperless, typed):
         proposal.status = ProposalStatus.no_change
+        await record(
+            db, "proposal", "no_change",
+            proposal_id=proposal.id, proposal_kind=proposal.kind,
+            session_id=proposal.session_id,
+        )
         await db.commit()
         return None
 
@@ -89,6 +95,13 @@ async def apply_proposal(
     )
     proposal.status = ProposalStatus.applied
     db.add(change)
+    await record(
+        db, "proposal", "applied",
+        proposal_id=proposal.id, proposal_kind=proposal.kind,
+        session_id=proposal.session_id,
+        entity_type=proposal.entity_type.value if proposal.entity_type else None,
+        entity_id=proposal.entity_id,
+    )
     await db.commit()
     return change
 
@@ -505,4 +518,9 @@ async def revert_change(
             raise ApplyError(f"revert not supported for {typed.kind}")
 
     change.reverted_at = utcnow()
+    await record(
+        db, "proposal", "reverted",
+        proposal_id=proposal.id, proposal_kind=proposal.kind,
+        session_id=proposal.session_id,
+    )
     await db.commit()

@@ -7,12 +7,14 @@ import Taxonomy from "./pages/Taxonomy";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
+import AuditLog from "./pages/AuditLog";
 
 const nav = [
   { to: "/", label: "Analyses" },
   { to: "/documents", label: "Documents" },
   { to: "/taxonomy", label: "Taxonomy" },
   { to: "/jobs", label: "Campaigns" },
+  { to: "/log", label: "Log" },
 ];
 
 export default function App() {
@@ -54,6 +56,7 @@ export default function App() {
           <Route path="/taxonomy/:type/:id" element={<EntityPage />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
+          <Route path="/log" element={<AuditLog />} />
         </Routes>
       </main>
     </div>

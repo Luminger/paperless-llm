@@ -26,6 +26,7 @@ from app.db.models import (
     StepKind,
 )
 from app.paperless import PaperlessClient
+from app.services.audit import record
 from app.services.steps import create_step
 
 log = logging.getLogger(__name__)
@@ -131,5 +132,12 @@ async def create_campaign(
         await create_step(
             db, session, StepKind.ocr if redo_ocr else StepKind.analysis
         )
+    await record(
+        db, "campaign", "created",
+        job_id=job.id, documents=ids, skipped_active=skipped,
+        apply_policy=apply_policy, redo_ocr=redo_ocr,
+        scope={"inbox": inbox, "query": query, "untagged_only": untagged_only,
+               "document_ids": document_ids},
+    )
     await db.commit()
     return job, ids

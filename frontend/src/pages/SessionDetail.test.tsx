@@ -179,11 +179,12 @@ describe("SessionDetail step feed", () => {
     );
   });
 
-  it("superseded steps stay in the feed, collapsed, in order", async () => {
+  it("superseded steps collapse but stay inspectable: params, output, diff", async () => {
     const first = mkStep({
       kind: "ocr",
       state: "superseded",
-      input: {},
+      input: { instructions: "first try" },
+      result: { pages: 1, text: "the old OCR output", previous_content: "paperless text then" },
     });
     const second = mkStep({
       kind: "ocr",
@@ -196,7 +197,15 @@ describe("SessionDetail step feed", () => {
     renderDetail();
 
     expect(await screen.findByText(/OCR — superseded/)).toBeInTheDocument();
-    expect(screen.getByText(/redone below/)).toBeInTheDocument();
+    // Collapsed summary shows the parameters it ran with.
+    expect(screen.getByText(/instructions: “first try”/)).toBeInTheDocument();
+    expect(screen.getByText(/superseded, expand to inspect/)).toBeInTheDocument();
+    // Expanding reveals the diff of THAT run (read-only, no edit button).
+    await userEvent.click(screen.getByText(/superseded, expand to inspect/));
+    await waitFor(() => expect(document.body.textContent).toContain("the old OCR output"));
+    expect(document.body.textContent).toContain("paperless text then");
+    expect(screen.queryByRole("button", { name: "edit new text" })).not.toBeInTheDocument();
+    // The successor shows its own params.
     expect(screen.getByText(/with instructions: “mind the stamp”/)).toBeInTheDocument();
     expect(screen.getByText(/new content accepted/)).toBeInTheDocument();
   });

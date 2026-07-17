@@ -62,6 +62,31 @@ export interface Meta {
   paperless_url: string;
 }
 
+export interface ResourceFetchStatus {
+  in_flight: number;
+  last_fetched_at: string | null;
+  last_error: string | null;
+}
+
+export interface SyncStatus {
+  resources: Record<string, ResourceFetchStatus>;
+}
+
+export interface AuditEntry {
+  id: number;
+  ts: string;
+  kind: string;
+  action: string;
+  detail: Record<string, unknown>;
+}
+
+export interface AuditPage {
+  count: number;
+  page: number;
+  page_size: number;
+  results: AuditEntry[];
+}
+
 export interface OcrReview {
   document_id: number;
   previous_content: string;
@@ -228,6 +253,9 @@ export const api = {
     request<Proposal>(`/api/proposals/${id}/${action}`, { method: "POST" }),
 
   getMeta: () => request<Meta>("/api/meta"),
+  getSyncStatus: () => request<SyncStatus>("/api/sync/status"),
+  listAudit: (page = 1, pageSize = 20) =>
+    request<AuditPage>(`/api/audit?page=${page}&page_size=${pageSize}`),
   listSessions: (filter: SessionFilter = {}) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) {

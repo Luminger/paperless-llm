@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import AgentKind, EntityType, Session, StepKind
 from app.db.session import get_session
+from app.services.audit import record
 from app.services.steps import create_step
 
 log = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ async def paperless_webhook(
             db, s, StepKind.ocr if cfg.redo_ocr else StepKind.analysis
         )
         session_ids.append(s.id)
+    await record(db, "webhook", "ingested", documents=ids, session_ids=session_ids)
     await db.commit()
     log.info("webhook queued sessions %s for documents %s", session_ids, ids)
     return {"queued_documents": ids, "session_ids": session_ids}

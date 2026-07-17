@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { FetchStatus } from "../components/FetchStatus";
 
 export default function Documents() {
   const [query, setQuery] = useState("");
@@ -13,7 +14,7 @@ export default function Documents() {
   const [instructions, setInstructions] = useState("");
   const navigate = useNavigate();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["documents", submitted],
     queryFn: () => api.listDocuments(submitted || undefined),
   });
@@ -62,6 +63,9 @@ export default function Documents() {
       )}
 
       {isLoading && <p className="text-zinc-500">Loading…</p>}
+      <div className="mb-2">
+        <FetchStatus resource="documents" isFetching={isFetching} onRefresh={() => refetch()} />
+      </div>
       <ul className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
         {data?.results.map((d) => (
           <li key={d.id}>

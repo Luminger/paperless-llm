@@ -512,6 +512,44 @@ function stepTitle(step: Step): string {
   }
 }
 
+function paramsSummary(step: Step): string {
+  const parts: string[] = [];
+  if (typeof step.input.instructions === "string")
+    parts.push(`instructions: “${step.input.instructions}”`);
+  if (step.input.dpi != null) parts.push(`dpi: ${step.input.dpi}`);
+  if (typeof step.input.content === "string")
+    parts.push(`message: “${String(step.input.content).slice(0, 60)}”`);
+  if (step.input.gate != null) parts.push(`gate: ${step.input.gate}`);
+  return parts.length ? parts.join(" · ") : "default parameters";
+}
+
+/** Superseded steps stay fully inspectable: parameters, output, and
+ * (for OCR) the diff the run produced at the time — collapsed by
+ * default. */
+function SupersededBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
+  const text = step.result.text as string | undefined;
+  const prev = step.result.previous_content as string | undefined;
+  return (
+    <details className="rounded border border-zinc-200 bg-zinc-50/50 p-2">
+      <summary className="cursor-pointer text-xs text-zinc-400 select-none">
+        {paramsSummary(step)} — superseded, expand to inspect
+      </summary>
+      <div className="mt-3 space-y-3 opacity-80">
+        {step.kind === "ocr" ? (
+          text != null ? (
+            <DiffView oldText={prev ?? ""} newText={text} />
+          ) : (
+            <p className="text-xs text-zinc-400">no OCR output recorded for this run</p>
+          )
+        ) : (
+          <TurnBody step={step} proposals={proposals} archived={true} />
+        )}
+        <AttemptHistory step={step} />
+      </div>
+    </details>
+  );
+}
+
 function StepCard({
   step,
   proposals,
@@ -537,12 +575,7 @@ function StepCard({
         </span>
       </div>
       {collapsed ? (
-        <div className="text-xs text-zinc-400">
-          {typeof step.input.instructions === "string" && (
-            <span>ran with: “{step.input.instructions}” — </span>
-          )}
-          redone below
-        </div>
+        <SupersededBody step={step} proposals={proposals} />
       ) : (
         <div className="space-y-2">
           {step.kind === "ocr" ? (

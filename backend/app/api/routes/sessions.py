@@ -236,6 +236,9 @@ async def archive_session(
 
     if s.archived_at is None:
         s.archived_at = utcnow()
+        from app.services.audit import record
+
+        await record(db, "session", "archived", session_id=s.id, title=s.title)
         await db.commit()
     return SessionOut.model_validate(s)
 
@@ -247,7 +250,11 @@ async def unarchive_session(
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "session not found")
-    s.archived_at = None
+    if s.archived_at is not None:
+        s.archived_at = None
+        from app.services.audit import record
+
+        await record(db, "session", "unarchived", session_id=s.id, title=s.title)
     await db.commit()
     return SessionOut.model_validate(s)
 

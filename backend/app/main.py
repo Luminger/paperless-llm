@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import entities, jobs, proposals, sessions, webhooks
+from app.api.routes import audit, entities, jobs, proposals, sessions, webhooks
 from app.config import get_settings
 from app.db.migrations import run_migrations
 from app.db.session import dispose_engine
@@ -26,6 +26,11 @@ async def lifespan(app: FastAPI):
     stats = await recover()
     if any(stats.values()):
         log.warning("startup recovery: %s", stats)
+    from app.db.session import session_scope
+    from app.services.audit import record as audit_record
+
+    async with session_scope() as db:
+        await audit_record(db, "system", "started", recovery=stats, commit=True)
     await workers.start()
     yield
     await workers.stop()
@@ -40,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(entities.router)
     app.include_router(jobs.router)
     app.include_router(webhooks.router)
+    app.include_router(audit.router)
 
     @app.get("/api/health")
     async def health() -> dict:
