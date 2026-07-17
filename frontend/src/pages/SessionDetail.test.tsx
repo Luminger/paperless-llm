@@ -204,9 +204,9 @@ describe("SessionDetail step feed", () => {
     expect(await screen.findByText("superseded")).toBeInTheDocument();
     // Collapsed summary shows the parameters it ran with.
     expect(screen.getByText(/instructions: “first try”/)).toBeInTheDocument();
-    expect(screen.getByText(/expand to inspect/)).toBeInTheDocument();
+    expect(screen.getByText(/instructions: “mind the stamp”/)).toBeInTheDocument();
     // Expanding reveals the diff of THAT run (read-only, no edit button).
-    await userEvent.click(screen.getByText(/expand to inspect/));
+    await userEvent.click(screen.getByText(/instructions: “mind the stamp”/));
     await waitFor(() => expect(document.body.textContent).toContain("the old OCR output"));
     expect(document.body.textContent).toContain("paperless text then");
     expect(screen.queryByRole("button", { name: "edit new text" })).not.toBeInTheDocument();
@@ -510,5 +510,39 @@ describe("Transcript — first-class model exchange", () => {
     await userEvent.click(screen.getByText("propose_update_document_metadata"));
     expect(screen.getByText("Rejected with")).toBeInTheDocument();
     expect(screen.getByText(/no-op proposal/)).toBeInTheDocument();
+  });
+});
+
+describe("Finished turns fold their work", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.listTags.mockResolvedValue([]);
+    mocked.listCorrespondents.mockResolvedValue([]);
+    mocked.listDocumentTypes.mockResolvedValue([]);
+    mocked.listStoragePaths.mockResolvedValue([]);
+  });
+
+  it("reasoning + tool calls collapse; the summary stays fixed", async () => {
+    const chat = mkStep({
+      kind: "chat",
+      state: "succeeded",
+      result: { proposal_ids: [] },
+      transcript: [
+        mkItem({ role: "user", content: "please check the tags" }),
+        mkItem({ role: "thinking", content: "Let me look at the tags." }),
+        mkItem({ role: "tool", tool_name: "list_tags", tool_args: {} }),
+        mkItem({ role: "agent", content: "All tags are fine." }),
+      ],
+    });
+    mocked.getSession.mockResolvedValue(makeDetail({ steps: [chat] }));
+    renderDetail();
+
+    // The user's message and the final summary are fixed parts.
+    expect(await screen.findByText("please check the tags")).toBeInTheDocument();
+    expect(screen.getByText("All tags are fine.")).toBeInTheDocument();
+    // The work is folded behind one collapsed section with counts.
+    expect(
+      screen.getByText(/The agent's work — 1 tool call · 1 reasoning step/),
+    ).toBeInTheDocument();
   });
 });

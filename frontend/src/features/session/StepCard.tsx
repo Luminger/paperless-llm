@@ -15,7 +15,7 @@ import { formatClock } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard } from "../../components/ProposalCard";
 import { DiffView } from "../../components/DiffView";
-import { Transcript } from "./Transcript";
+import { AgentProse, Transcript, UserMessage } from "./Transcript";
 import { OcrGateBody } from "./OcrGate";
 import { RedoDialog } from "./RedoDialog";
 
@@ -230,6 +230,10 @@ function ProposalList({
   );
 }
 
+/** A finished turn folds its WORK (reasoning + tool calls +
+ * intermediate prose) into one collapsed section — the same pattern as
+ * superseded proposals. The final summary stays fixed and visible,
+ * just like the proposals. */
 function TurnBody({
   step,
   proposals,
@@ -240,9 +244,47 @@ function TurnBody({
   archived: boolean;
 }) {
   const ids = (step.result.proposal_ids as number[] | undefined) ?? [];
+  const items = step.transcript;
+
+  // The summary is the LAST agent prose of the turn.
+  let summaryIdx = -1;
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].role === "agent") {
+      summaryIdx = i;
+      break;
+    }
+  }
+  const userMessages = items.filter(
+    (it) => it.role === "user" && it.origin !== "pipeline",
+  );
+  const trace = items.filter(
+    (it, idx) => idx !== summaryIdx && it.role !== "user",
+  );
+  const toolCount = trace.filter((it) => it.role === "tool").length;
+  const thinkingCount = trace.filter((it) => it.role === "thinking").length;
+  const traceLabel = [
+    toolCount > 0 && `${toolCount} tool call${toolCount !== 1 ? "s" : ""}`,
+    thinkingCount > 0 && `${thinkingCount} reasoning step${thinkingCount !== 1 ? "s" : ""}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <div className="space-y-3">
-      <Transcript items={step.transcript} />
+      {userMessages.map((it, i) => (
+        <UserMessage key={i} item={it} />
+      ))}
+      {trace.length > 0 && (
+        <details className="rounded-md border border-dashed px-3 py-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground select-none">
+            The agent's work — {traceLabel || `${trace.length} steps`}, expand to inspect
+          </summary>
+          <div className="mt-2">
+            <Transcript items={trace} />
+          </div>
+        </details>
+      )}
+      {summaryIdx >= 0 && <AgentProse item={items[summaryIdx]} />}
       <ProposalList ids={ids} proposals={proposals} archived={archived} />
       {step.state === "succeeded" && step.kind === "analysis" && ids.length === 0 && (
         <p className="px-2 text-sm text-muted-foreground">No changes proposed.</p>

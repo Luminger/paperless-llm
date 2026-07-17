@@ -182,7 +182,7 @@ export function ThinkingItem({ item }: { item: TranscriptItem }) {
   );
 }
 
-function AgentProse({ item }: { item: TranscriptItem }) {
+export function AgentProse({ item }: { item: TranscriptItem }) {
   return (
     <ItemRow
       icon={<Sparkles className="size-3.5 text-primary/80" />}
@@ -195,7 +195,7 @@ function AgentProse({ item }: { item: TranscriptItem }) {
   );
 }
 
-function UserMessage({ item }: { item: TranscriptItem }) {
+export function UserMessage({ item }: { item: TranscriptItem }) {
   return (
     <ItemRow
       icon={<MessageSquare className="size-3.5 text-primary" />}
