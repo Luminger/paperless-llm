@@ -56,7 +56,7 @@ def _propose_title_script(title: str):
             parts=[
                 ToolCallPart(
                     tool_name="propose_update_document_metadata",
-                    args={"document_id": 7, "reason": "better title", "title": title},
+                    args={"document_id": 7, "title": title},
                 )
             ]
         ),
@@ -179,7 +179,7 @@ async def test_failure_keeps_drafts_reviewable(db, paperless_client):
                 parts=[
                     ToolCallPart(
                         tool_name="propose_update_document_metadata",
-                        args={"document_id": 7, "reason": "r", "title": "T"},
+                        args={"document_id": 7, "title": "T"},
                     )
                 ]
             )
@@ -283,7 +283,7 @@ async def test_taxonomy_agent_merge_flow(db, paperless_client):
             ToolCallPart(
                 tool_name="propose_merge_entities",
                 args={"entity_type": "correspondent", "source_id": 4,
-                      "target_id": 8, "reason": "duplicate of Kraxi"},
+                      "target_id": 8},
             )
         ]),
         ModelResponse(parts=[TextPart(content="Proposed merging the duplicate.")]),

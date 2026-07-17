@@ -27,10 +27,9 @@ TaxonomyType = Literal["tag", "correspondent", "document_type", "storage_path"]
 
 
 class _ProposalBase(BaseModel):
+    # The agent's explanation lives in its prose summary on the
+    # timeline — proposals carry data only.
     model_config = ConfigDict(extra="forbid")
-
-    # Short human-readable justification; rendered in the review UI.
-    reason: str = ""
 
 
 class UpdateDocumentMetadata(_ProposalBase):

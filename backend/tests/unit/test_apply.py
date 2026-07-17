@@ -50,7 +50,6 @@ async def test_apply_document_metadata_merges_tags(db, paperless_client):
         {
             "kind": "update_document_metadata",
             "document_id": 7,
-            "reason": "better title",
             "title": "Telarko Rechnung April 2024",
             "add_tags": [2],
             "remove_tags": [5],
@@ -81,14 +80,12 @@ async def test_user_payload_wins(db, paperless_client):
         {
             "kind": "update_document_metadata",
             "document_id": 7,
-            "reason": "r",
             "title": "Agent title",
         },
     )
     p.user_payload = {
         "kind": "update_document_metadata",
         "document_id": 7,
-        "reason": "r",
         "title": "User title",
     }
     await db.commit()
@@ -139,7 +136,6 @@ async def test_apply_merge_correspondents(db, paperless_client):
             "entity_type": "correspondent",
             "source_id": 2,
             "target_id": 1,
-            "reason": "duplicate",
         },
     )
     change = await apply_proposal(paperless_client, db, p)
@@ -173,7 +169,7 @@ async def test_delete_entity_refused_when_referenced(db, paperless_client):
     )
     p = await _make_proposal(
         db,
-        {"kind": "delete_entity", "entity_type": "tag", "entity_id": 9, "reason": "junk"},
+        {"kind": "delete_entity", "entity_type": "tag", "entity_id": 9},
     )
     with pytest.raises(ApplyError, match="referenced by 1 documents"):
         await apply_proposal(paperless_client, db, p)
@@ -182,7 +178,7 @@ async def test_delete_entity_refused_when_referenced(db, paperless_client):
 async def test_apply_rejected_status(db, paperless_client):
     p = await _make_proposal(
         db,
-        {"kind": "replace_content", "document_id": 1, "content": "x", "reason": "r"},
+        {"kind": "replace_content", "document_id": 1, "content": "x"},
         status=ProposalStatus.rejected,
     )
     with pytest.raises(ApplyError, match="cannot apply"):
@@ -202,7 +198,6 @@ async def test_apply_detects_state_already_matching(db, paperless_client):
         {
             "kind": "update_document_metadata",
             "document_id": 7,
-            "reason": "r",
             "title": "Agent title",  # already the current title
         },
     )
@@ -242,7 +237,6 @@ async def test_apply_create_entity_reuses_existing_name(db, paperless_client):
             "kind": "create_entity",
             "entity_type": "correspondent",
             "name": "Kraxi",
-            "reason": "r",
             "assign_to_documents": [7],
         },
     )
@@ -267,7 +261,6 @@ async def test_apply_conflicts_when_paperless_moved(db, paperless_client):
         {
             "kind": "update_document_metadata",
             "document_id": 7,
-            "reason": "r",
             "title": "Agent title",
         },
     )
@@ -294,7 +287,6 @@ async def test_apply_no_conflict_when_field_converged(db, paperless_client):
         {
             "kind": "update_document_metadata",
             "document_id": 7,
-            "reason": "r",
             "title": "Agent title",
             "add_tags": [2],
         },
@@ -316,7 +308,7 @@ async def test_delete_conflicts_when_documents_appeared(db, paperless_client):
     )
     p = await _make_proposal(
         db,
-        {"kind": "delete_entity", "entity_type": "tag", "entity_id": 9, "reason": "r"},
+        {"kind": "delete_entity", "entity_type": "tag", "entity_id": 9},
     )
     p.base_snapshot = {"name": "Junk", "document_count": 0}
     await db.commit()
@@ -337,7 +329,6 @@ async def test_revert_noop_detection_and_guard(db, paperless_client):
         {
             "kind": "update_document_metadata",
             "document_id": 7,
-            "reason": "r",
             "title": "Agent title",
         },
         status=ProposalStatus.applied,
@@ -374,7 +365,7 @@ async def test_revert_noop_for_deleted_created_entity(db, paperless_client):
 
     p = await _make_proposal(
         db,
-        {"kind": "create_entity", "entity_type": "tag", "name": "Neu", "reason": "r"},
+        {"kind": "create_entity", "entity_type": "tag", "name": "Neu"},
         status=ProposalStatus.applied,
     )
     change = AppliedChange(

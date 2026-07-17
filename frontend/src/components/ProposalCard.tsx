@@ -55,7 +55,6 @@ function buildPayload(
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     document_id: agent.document_id,
-    reason: agent.reason ?? "",
   };
   if (desired.title !== doc.title) payload.title = desired.title;
   if (desired.correspondent !== (doc.correspondent ?? null))
@@ -334,7 +333,6 @@ function MetadataEditor({
 
 const HIDDEN = new Set([
   "kind",
-  "reason",
   "document_id",
   "entity_type",
   "entity_id",
@@ -443,11 +441,7 @@ function GenericEditor({
                           if (f in proposal.agent_payload)
                             identity[f] = proposal.agent_payload[f];
                         }
-                        onChange({
-                          ...next,
-                          ...identity,
-                          reason: proposal.agent_payload.reason ?? "",
-                        });
+                        onChange({ ...next, ...identity });
                       }}
                     />
                   </td>
@@ -587,12 +581,6 @@ export function ProposalCard({
         )}
       </div>
 
-      {typeof p.agent_payload.reason === "string" && p.agent_payload.reason && (
-        <p className="border-l-2 border-primary/40 pl-3 text-sm leading-6 text-muted-foreground">
-          <span className="font-medium text-foreground">Agent's reasoning: </span>
-          {p.agent_payload.reason}
-        </p>
-      )}
       {p.user_payload && !dirty && (
         <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
           This proposal has saved user edits — they are what gets applied.

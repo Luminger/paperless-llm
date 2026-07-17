@@ -108,7 +108,6 @@ async def test_full_noop_metadata_rejected(db, paperless_client):
             # title identical, tag 1 already present, tag 9 not on doc.
             args={
                 "document_id": 7,
-                "reason": "r",
                 "title": "scan_0001",
                 "add_tags": [1],
                 "remove_tags": [9],
@@ -129,7 +128,6 @@ async def test_partial_noop_stripped(db, paperless_client):
             tool_name="propose_update_document_metadata",
             args={
                 "document_id": 7,
-                "reason": "r",
                 "title": "scan_0001",  # no-op
                 "document_type": 1,  # real change
                 "created": "2024-04-17",  # no-op
@@ -150,7 +148,7 @@ async def test_dangling_correspondent_rejected(db, paperless_client):
         paperless_client,
         ToolCallPart(
             tool_name="propose_update_document_metadata",
-            args={"document_id": 7, "reason": "r", "correspondent": 999},
+            args={"document_id": 7, "correspondent": 999},
         ),
     )
     assert await _proposals(db) == []
@@ -165,7 +163,7 @@ async def test_duplicate_entity_creation_rejected(db, paperless_client):
         paperless_client,
         ToolCallPart(
             tool_name="propose_create_entity",
-            args={"entity_type": "correspondent", "name": "  telarko ", "reason": "r"},
+            args={"entity_type": "correspondent", "name": "  telarko "},
         ),
     )
     assert await _proposals(db) == []
@@ -180,7 +178,7 @@ async def test_merge_with_self_rejected(db, paperless_client):
         paperless_client,
         ToolCallPart(
             tool_name="propose_merge_entities",
-            args={"entity_type": "tag", "source_id": 1, "target_id": 1, "reason": "r"},
+            args={"entity_type": "tag", "source_id": 1, "target_id": 1},
         ),
     )
     assert await _proposals(db) == []
@@ -198,7 +196,6 @@ async def test_update_entity_noop_rejected(db, paperless_client):
             args={
                 "entity_type": "tag",
                 "entity_id": 1,
-                "reason": "r",
                 "name": "Rechnung",  # identical
                 "matching_algorithm": 1,  # identical
             },

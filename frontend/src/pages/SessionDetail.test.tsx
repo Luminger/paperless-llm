@@ -234,7 +234,6 @@ describe("SessionDetail step feed", () => {
               kind: "create_entity",
               entity_type: "correspondent",
               name: "Bei Spiel GmbH",
-              reason: "Sender not in the list",
             },
           }),
         ],

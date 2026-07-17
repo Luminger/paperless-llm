@@ -47,7 +47,6 @@ async def _seed_proposal(db, status=ProposalStatus.pending) -> Proposal:
         agent_payload={
             "kind": "update_document_metadata",
             "document_id": 7,
-            "reason": "r",
             "title": "Agent title",
         },
         status=status,
@@ -78,7 +77,7 @@ async def test_patch_replaces_and_validates(client, db):
     # Full replacement payload: dropping the agent's `title` is possible.
     r = await client.patch(
         f"/api/proposals/{p.id}",
-        json={"user_payload": {"document_id": 7, "reason": "r", "add_tags": [1]}},
+        json={"user_payload": {"document_id": 7, "add_tags": [1]}},
     )
     assert r.status_code == 200
     body = r.json()

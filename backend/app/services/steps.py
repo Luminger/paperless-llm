@@ -418,7 +418,6 @@ async def _resolve_ocr(
             agent_p = ReplaceContent(
                 document_id=session.entity_id,
                 content=ocr_text,
-                reason="OCR gate: user-reviewed re-OCR of the document",
             )
             proposal = Proposal(
                 session_id=session.id,
@@ -430,7 +429,6 @@ async def _resolve_ocr(
                         ReplaceContent(
                             document_id=session.entity_id,
                             content=accepted,
-                            reason="OCR gate: user-fixed re-OCR of the document",
                         )
                     )
                     if accepted != ocr_text

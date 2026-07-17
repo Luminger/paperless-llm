@@ -32,7 +32,6 @@ export function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
     agent_payload: {
       kind: "update_document_metadata",
       document_id: 7,
-      reason: "Better title for the invoice",
       title: "Telarko Rechnung April 2024",
     },
     user_payload: null,

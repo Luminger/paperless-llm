@@ -42,7 +42,6 @@ function metadataProposal(overrides = {}) {
     agent_payload: {
       kind: "update_document_metadata",
       document_id: 7,
-      reason: "Better title for the invoice",
       title: "Rechnung 4711-2024-0417",
       document_type: 1,
       add_tags: [1],
@@ -86,10 +85,9 @@ describe("ProposalCard — metadata editor", () => {
     expect(await screen.findByText("Rechnung", { selector: "span" })).toBeInTheDocument();
     // No raw ids on display.
     expect(screen.queryByText("#1")).not.toBeInTheDocument();
-    // document_id and reason are not editable rows.
+    // document_id is not an editable row.
     expect(screen.queryByText("document_id")).not.toBeInTheDocument();
     // Reason appears once, as context.
-    expect(screen.getByText(/Agent's reasoning/)).toBeInTheDocument();
   });
 
   it("has a single tags field: removing a chip yields a remove_tags diff", async () => {
@@ -123,7 +121,6 @@ describe("ProposalCard — metadata editor", () => {
     expect(payload).toMatchObject({
       title: "Meine Rechnung",
       document_id: 7,
-      reason: "Better title for the invoice",
     });
   });
 
@@ -169,7 +166,6 @@ describe("ProposalCard — generic editor (other kinds)", () => {
         kind: "merge_entities",
         agent_payload: {
           kind: "merge_entities",
-          reason: "Duplicate correspondents",
           entity_type: "correspondent",
           source_id: 4,
           target_id: 2,
@@ -183,7 +179,7 @@ describe("ProposalCard — generic editor (other kinds)", () => {
     expect(await screen.findByText("Kraxi GmbH")).toBeInTheDocument();
     expect(screen.getByText("Kraxi")).toBeInTheDocument();
     expect(screen.getByText(/the target survives/)).toBeInTheDocument();
-    // No identity/reason rows, no editable fields at all for a merge.
+    // No identity rows, no editable fields at all for a merge.
     expect(screen.queryByText("source_id")).not.toBeInTheDocument();
     expect(screen.queryByText("entity_type")).not.toBeInTheDocument();
     expect(screen.queryByText("reason")).not.toBeInTheDocument();
@@ -195,7 +191,6 @@ describe("ProposalCard — generic editor (other kinds)", () => {
         kind: "update_entity",
         agent_payload: {
           kind: "update_entity",
-          reason: "Fix casing",
           entity_type: "correspondent",
           entity_id: 7,
           name: "Internal Revenue Service",

@@ -282,7 +282,6 @@ async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
 async def propose_update_document_metadata(
     ctx: RunContext[AgentDeps],
     document_id: int,
-    reason: str,
     title: str | None = None,
     correspondent: int | None = None,
     document_type: int | None = None,
@@ -297,8 +296,8 @@ async def propose_update_document_metadata(
     the list/search tools first; propose_create_entity for genuinely new
     ones). `created` is the document's creation date (ISO), usually the
     date printed on the document. Tag id lists may be given as JSON
-    arrays or comma-separated strings ("1,2"). Always give a concise
-    `reason`."""
+    arrays or comma-separated strings ("1,2"). Explain your changes in
+    your final summary, not in the proposal."""
     doc = await _require_document(ctx, document_id)
 
     # Referential checks.
@@ -313,7 +312,7 @@ async def propose_update_document_metadata(
 
     # Strip no-op fields.
     dropped: list[str] = []
-    fields: dict[str, Any] = {"document_id": document_id, "reason": reason}
+    fields: dict[str, Any] = {"document_id": document_id}
     scalars = {
         "title": (title, doc.title),
         "correspondent": (correspondent, doc.correspondent),
@@ -340,7 +339,7 @@ async def propose_update_document_metadata(
     if remove:
         fields["remove_tags"] = remove
 
-    if set(fields) == {"document_id", "reason"}:
+    if set(fields) == {"document_id"}:
         raise ModelRetry(
             "Proposal rejected: every proposed value matches the document's "
             "current state. Do not propose no-op changes — if the current "
@@ -363,7 +362,6 @@ async def propose_create_entity(
     ctx: RunContext[AgentDeps],
     entity_type: TaxonomyType,
     name: str,
-    reason: str,
     match: str | None = None,
     matching_algorithm: int | None = None,
     assign_to_documents: IntList = None,
@@ -383,7 +381,6 @@ async def propose_create_entity(
     p = CreateEntity(
         entity_type=entity_type,
         name=name,
-        reason=reason,
         match=match,
         matching_algorithm=matching_algorithm,
         assign_to_documents=_int_list(assign_to_documents),
@@ -395,7 +392,6 @@ async def propose_update_entity(
     ctx: RunContext[AgentDeps],
     entity_type: TaxonomyType,
     entity_id: int,
-    reason: str,
     name: str | None = None,
     match: str | None = None,
     matching_algorithm: int | None = None,
@@ -423,7 +419,6 @@ async def propose_update_entity(
     p = UpdateEntity(
         entity_type=entity_type,
         entity_id=entity_id,
-        reason=reason,
         name=name,
         match=match,
         matching_algorithm=matching_algorithm,
@@ -437,7 +432,6 @@ async def propose_merge_entities(
     entity_type: TaxonomyType,
     source_id: int,
     target_id: int,
-    reason: str,
 ) -> str:
     """Propose merging entity `source_id` INTO `target_id`: all documents
     are reassigned to the target, then the source is deleted. The target
@@ -447,7 +441,7 @@ async def propose_merge_entities(
     source = await _require_entity(ctx, entity_type, source_id)
     target = await _require_entity(ctx, entity_type, target_id)
     p = MergeEntities(
-        entity_type=entity_type, source_id=source_id, target_id=target_id, reason=reason
+        entity_type=entity_type, source_id=source_id, target_id=target_id
     )
     snapshot = {
         "source": {"id": source.id, "name": source.name,
@@ -462,14 +456,13 @@ async def propose_delete_entity(
     ctx: RunContext[AgentDeps],
     entity_type: TaxonomyType,
     entity_id: int,
-    reason: str,
     force: bool = False,
 ) -> str:
     """Propose deleting an entity. Only for genuinely useless entries
     (empty, or nonsense). Use propose_merge_entities when documents
     should keep an equivalent label. force=True detaches documents first."""
     entity = await _require_entity(ctx, entity_type, entity_id)
-    p = DeleteEntity(entity_type=entity_type, entity_id=entity_id, reason=reason, force=force)
+    p = DeleteEntity(entity_type=entity_type, entity_id=entity_id, force=force)
     snapshot = {"name": entity.name, "document_count": entity.document_count}
     return await _persist(ctx, p, EntityType(entity_type), entity_id, snapshot)
 

@@ -13,7 +13,7 @@ from app.proposals.schemas import (
 
 def test_roundtrip_update_document_metadata():
     p = UpdateDocumentMetadata(
-        document_id=42, reason="fix", title="Telarko Rechnung März 2024", add_tags=[1, 2]
+        document_id=42, title="Telarko Rechnung März 2024", add_tags=[1, 2]
     )
     payload = dump_payload(p)
     # exclude_unset: fields never provided are absent...
@@ -27,7 +27,7 @@ def test_roundtrip_update_document_metadata():
 
 def test_explicit_none_clears_field():
     p = UpdateDocumentMetadata.model_validate(
-        {"document_id": 1, "reason": "clear", "correspondent": None}
+        {"document_id": 1, "correspondent": None}
     )
     payload = dump_payload(p)
     # ...but an explicit None survives serialization (proposed clear).
