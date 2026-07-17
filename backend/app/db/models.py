@@ -148,6 +148,11 @@ class Proposal(Base):
     supersedes_id: Mapped[int | None] = mapped_column(ForeignKey("proposals.id"), nullable=True)
     agent_payload: Mapped[dict[str, Any]] = mapped_column()
     user_payload: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    # Paperless state of the touched fields AT PROPOSAL TIME (what the
+    # agent looked at). Drives the review UI's "current vs proposed"
+    # columns and the apply-time staleness check — paperless has no
+    # revision system, so optimistic concurrency is value-by-value.
+    base_snapshot: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
     status: Mapped[ProposalStatus] = mapped_column(
         Enum(ProposalStatus, native_enum=False), default=ProposalStatus.draft
     )

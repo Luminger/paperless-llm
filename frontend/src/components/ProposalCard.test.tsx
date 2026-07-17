@@ -159,7 +159,7 @@ describe("ProposalCard — generic editor (other kinds)", () => {
     setupTaxonomy();
   });
 
-  it("renders non-metadata kinds with agent/your-version columns, hiding reason", async () => {
+  it("shows merge context as resolved names; identity fields are never rows", async () => {
     renderCard(makeProposal({
         kind: "merge_entities",
         agent_payload: {
@@ -169,12 +169,41 @@ describe("ProposalCard — generic editor (other kinds)", () => {
           source_id: 4,
           target_id: 2,
         },
+        base_snapshot: {
+          source: { id: 4, name: "Kraxi GmbH", document_count: 1 },
+          target: { id: 2, name: "Kraxi", document_count: 5 },
+        },
       }),);
 
-    expect(await screen.findByText("Agent proposed")).toBeInTheDocument();
-    expect(screen.getByText("Your version")).toBeInTheDocument();
+    expect(await screen.findByText("Kraxi GmbH")).toBeInTheDocument();
+    expect(screen.getByText("Kraxi")).toBeInTheDocument();
+    expect(screen.getByText(/the target survives/)).toBeInTheDocument();
+    // No identity/reason rows, no editable fields at all for a merge.
+    expect(screen.queryByText("source_id")).not.toBeInTheDocument();
+    expect(screen.queryByText("entity_type")).not.toBeInTheDocument();
+    expect(screen.queryByText("reason")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("update_entity shows paperless-at-proposal-time vs editable proposed value", async () => {
+    renderCard(makeProposal({
+        kind: "update_entity",
+        agent_payload: {
+          kind: "update_entity",
+          reason: "Fix casing",
+          entity_type: "correspondent",
+          entity_id: 7,
+          name: "Internal Revenue Service",
+        },
+        base_snapshot: { name: "internal revenue service" },
+      }),);
+
+    expect(await screen.findByText("In paperless (at proposal time)")).toBeInTheDocument();
+    expect(screen.getByText("Proposed")).toBeInTheDocument();
+    // Left column: the snapshot value; right: editable input with proposal.
+    expect(screen.getByText("internal revenue service")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Internal Revenue Service")).toBeInTheDocument();
     const table = screen.getByRole("table");
-    expect(within(table).queryByText("reason")).not.toBeInTheDocument();
-    expect(within(table).getByText("source_id")).toBeInTheDocument();
+    expect(within(table).queryByText("entity_id")).not.toBeInTheDocument();
   });
 });

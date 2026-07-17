@@ -251,3 +251,75 @@ async def test_apply_create_entity_reuses_existing_name(db, paperless_client):
     assert change is not None and p.status == ProposalStatus.applied
     assert not create_route.called  # reused id=9
     assert bulk.called
+
+
+@respx.mock
+async def test_apply_conflicts_when_paperless_moved(db, paperless_client):
+    """Optimistic concurrency: the snapshot of what the agent looked at
+    no longer matches paperless -> 409-style ApplyError, nothing written."""
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Someone renamed me"})
+    )
+    patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/")
+
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "reason": "r",
+            "title": "Agent title",
+        },
+    )
+    p.base_snapshot = {"title": "scan_0001"}  # what the agent saw
+    await db.commit()
+
+    with pytest.raises(ApplyError, match="changed since this was proposed"):
+        await apply_proposal(paperless_client, db, p)
+    assert not patch_route.called
+    assert p.status == ProposalStatus.pending  # still reviewable
+
+
+@respx.mock
+async def test_apply_no_conflict_when_field_converged(db, paperless_client):
+    """A field that moved TO the proposed value doesn't conflict; other
+    proposed fields still apply."""
+    doc = DOC | {"title": "Agent title"}  # title already converged
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=doc))
+    patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=doc | {"tags": [1, 5, 2]})
+    )
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "reason": "r",
+            "title": "Agent title",
+            "add_tags": [2],
+        },
+    )
+    p.base_snapshot = {"title": "scan_0001", "tags": [1, 5]}
+    await db.commit()
+
+    change = await apply_proposal(paperless_client, db, p)
+    assert change is not None and patch_route.called
+
+
+@respx.mock
+async def test_delete_conflicts_when_documents_appeared(db, paperless_client):
+    respx.get(f"{PAPERLESS_URL}/api/tags/9/").mock(
+        return_value=Response(200, json={
+            "id": 9, "name": "Junk", "document_count": 4,
+            "match": "", "matching_algorithm": 0,
+        })
+    )
+    p = await _make_proposal(
+        db,
+        {"kind": "delete_entity", "entity_type": "tag", "entity_id": 9, "reason": "r"},
+    )
+    p.base_snapshot = {"name": "Junk", "document_count": 0}
+    await db.commit()
+
+    with pytest.raises(ApplyError, match="document count was 0, now 4"):
+        await apply_proposal(paperless_client, db, p)

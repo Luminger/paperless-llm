@@ -36,6 +36,7 @@ export function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
       title: "Telarko Rechnung April 2024",
     },
     user_payload: null,
+    base_snapshot: null,
     status: "pending",
     entity_type: "document",
     entity_id: 7,

@@ -276,9 +276,39 @@ function MetadataEditor({
 
 // ---------------------------------------------------------------------
 // Generic editor for non-document-metadata kinds.
+//
+// Left column: paperless values AT PROPOSAL TIME (base_snapshot — what
+// the agent looked at; the apply-time staleness check guards against
+// paperless having moved since). Right column: the editable proposal.
+// Identity fields (ids, entity_type) are never editable and never
+// shown as rows — merge context renders as prose from the snapshot.
 // ---------------------------------------------------------------------
 
-const HIDDEN = new Set(["kind", "reason", "document_id"]);
+const HIDDEN = new Set([
+  "kind",
+  "reason",
+  "document_id",
+  "entity_type",
+  "entity_id",
+  "source_id",
+  "target_id",
+]);
+
+function MergeContext({ p }: { p: Proposal }) {
+  const snap = p.base_snapshot as
+    | { source?: { name?: string; document_count?: number }; target?: { name?: string; document_count?: number } }
+    | null;
+  if (p.kind !== "merge_entities" || !snap?.source || !snap?.target) return null;
+  return (
+    <p className="mb-2 text-sm text-zinc-700">
+      Merge <strong>{snap.source.name}</strong>
+      <span className="text-zinc-400"> ({snap.source.document_count ?? 0} docs)</span> into{" "}
+      <strong>{snap.target.name}</strong>
+      <span className="text-zinc-400"> ({snap.target.document_count ?? 0} docs)</span> — the
+      target survives, the source is deleted.
+    </p>
+  );
+}
 
 function displayValue(v: unknown): string {
   if (v === undefined) return "";
@@ -309,55 +339,67 @@ function GenericEditor({
   const effective = proposal.user_payload ?? proposal.agent_payload;
   const [working, setWorking] = useState<Record<string, unknown> | null>(null);
   const current = working ?? effective;
+  const snapshot = proposal.base_snapshot ?? {};
   const keys = [
     ...new Set([...Object.keys(proposal.agent_payload), ...Object.keys(current)]),
   ].filter((k) => !HIDDEN.has(k));
 
   return (
     <div className="rounded border border-zinc-200 bg-white p-4">
-      <table className="w-full table-fixed text-sm">
-        <thead>
-          <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-400">
-            <th className="w-40 py-1 pr-2">Field</th>
-            <th className="w-1/3 py-1 pr-2">Agent proposed</th>
-            <th className="py-1">Your version</th>
-          </tr>
-        </thead>
-        <tbody>
-          {keys.map((k) => {
-            const orig = proposal.agent_payload[k];
-            const cur = current[k];
-            const changed = JSON.stringify(orig) !== JSON.stringify(cur);
-            return (
-              <tr key={k} className="border-b border-zinc-100 align-top">
-                <td className="py-2 pr-2 font-mono text-xs text-zinc-500">{k}</td>
-                <td className="py-2 pr-2 break-words whitespace-pre-wrap text-zinc-600">
-                  {displayValue(orig) || "—"}
-                </td>
-                <td className={`py-2 ${changed ? "bg-amber-50" : ""}`}>
-                  <input
-                    className="w-full rounded border border-zinc-200 px-2 py-1 font-mono text-xs disabled:bg-zinc-50 disabled:text-zinc-400"
-                    disabled={!editable}
-                    value={displayValue(cur)}
-                    onChange={(e) => {
-                      const v = parseValue(e.target.value, orig);
-                      const next = { ...current };
-                      if (v === undefined) delete next[k];
-                      else next[k] = v;
-                      setWorking(next);
-                      onChange({
-                        ...next,
-                        document_id: proposal.agent_payload.document_id,
-                        reason: proposal.agent_payload.reason ?? "",
-                      });
-                    }}
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <MergeContext p={proposal} />
+      {keys.length > 0 && (
+        <table className="w-full table-fixed text-sm">
+          <thead>
+            <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-400">
+              <th className="w-40 py-1 pr-2">Field</th>
+              <th className="w-1/3 py-1 pr-2">In paperless (at proposal time)</th>
+              <th className="py-1">Proposed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => {
+              const orig = proposal.agent_payload[k];
+              const was = snapshot[k];
+              const cur = current[k];
+              const editedByUser = JSON.stringify(orig) !== JSON.stringify(cur);
+              return (
+                <tr key={k} className="border-b border-zinc-100 align-top">
+                  <td className="py-2 pr-2 font-mono text-xs text-zinc-500">{k}</td>
+                  <td className="py-2 pr-2 break-words whitespace-pre-wrap text-zinc-600">
+                    {was !== undefined ? displayValue(was) || "—" : "—"}
+                  </td>
+                  <td className={`py-2 ${editedByUser ? "bg-amber-50" : ""}`}>
+                    <input
+                      className="w-full rounded border border-zinc-200 px-2 py-1 font-mono text-xs disabled:bg-zinc-50 disabled:text-zinc-400"
+                      disabled={!editable}
+                      value={displayValue(cur)}
+                      onChange={(e) => {
+                        const v = parseValue(e.target.value, orig);
+                        const next = { ...current };
+                        if (v === undefined) delete next[k];
+                        else next[k] = v;
+                        setWorking(next);
+                        // Identity fields always travel from the agent
+                        // payload — they are never editable.
+                        const identity: Record<string, unknown> = {};
+                        for (const f of ["document_id", "entity_type", "entity_id",
+                                         "source_id", "target_id"]) {
+                          if (f in proposal.agent_payload) identity[f] = proposal.agent_payload[f];
+                        }
+                        onChange({
+                          ...next,
+                          ...identity,
+                          reason: proposal.agent_payload.reason ?? "",
+                        });
+                      }}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

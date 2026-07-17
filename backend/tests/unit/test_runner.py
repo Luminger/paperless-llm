@@ -316,6 +316,9 @@ async def test_taxonomy_agent_merge_flow(db, paperless_client):
     assert p.kind == "merge_entities"
     assert p.agent_payload["source_id"] == 4 and p.agent_payload["target_id"] == 8
     assert p.entity_type.value == "correspondent"
+    # Snapshot of what the agent looked at (drives review UI + staleness check).
+    assert p.base_snapshot["source"]["name"] == "Kraxi GmbH"
+    assert p.base_snapshot["target"]["name"] == "Kraxi"
 
 
 def test_all_agent_kinds_buildable(monkeypatch):

@@ -229,11 +229,13 @@ async def _require_document(ctx: RunContext[AgentDeps], document_id: int):
 
 
 async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
-                   entity_type: EntityType | None, entity_id: int | None) -> str:
+                   entity_type: EntityType | None, entity_id: int | None,
+                   snapshot: dict[str, Any] | None = None) -> str:
     proposal = Proposal(
         session_id=ctx.deps.session_id,
         kind=str(p.kind),
         agent_payload=dump_payload(p),
+        base_snapshot=snapshot,
         status=ProposalStatus.draft,
         entity_type=entity_type,
         entity_id=entity_id,
@@ -318,7 +320,14 @@ async def propose_update_document_metadata(
 
     p = UpdateDocumentMetadata.model_validate(fields)
     note = f" (no-op fields dropped: {', '.join(dropped)})" if dropped else ""
-    return await _persist(ctx, p, EntityType.document, document_id) + note
+    # What the agent looked at, for the review UI and the apply-time
+    # staleness check.
+    snapshot: dict[str, Any] = {
+        k: current for k, (_, current) in scalars.items() if k in fields
+    }
+    if add or remove:
+        snapshot["tags"] = list(doc.tags)
+    return await _persist(ctx, p, EntityType.document, document_id, snapshot) + note
 
 
 async def propose_create_entity(
@@ -390,7 +399,8 @@ async def propose_update_entity(
         match=match,
         matching_algorithm=matching_algorithm,
     )
-    return await _persist(ctx, p, EntityType(entity_type), entity_id)
+    snapshot = {k: getattr(entity, k) for k in changes}
+    return await _persist(ctx, p, EntityType(entity_type), entity_id, snapshot)
 
 
 async def propose_merge_entities(
@@ -405,12 +415,18 @@ async def propose_merge_entities(
     (usually the better-named / larger one) survives."""
     if source_id == target_id:
         raise ModelRetry("Proposal rejected: source and target are the same entity.")
-    await _require_entity(ctx, entity_type, source_id)
-    await _require_entity(ctx, entity_type, target_id)
+    source = await _require_entity(ctx, entity_type, source_id)
+    target = await _require_entity(ctx, entity_type, target_id)
     p = MergeEntities(
         entity_type=entity_type, source_id=source_id, target_id=target_id, reason=reason
     )
-    return await _persist(ctx, p, EntityType(entity_type), source_id)
+    snapshot = {
+        "source": {"id": source.id, "name": source.name,
+                   "document_count": source.document_count},
+        "target": {"id": target.id, "name": target.name,
+                   "document_count": target.document_count},
+    }
+    return await _persist(ctx, p, EntityType(entity_type), source_id, snapshot)
 
 
 async def propose_delete_entity(
@@ -423,9 +439,10 @@ async def propose_delete_entity(
     """Propose deleting an entity. Only for genuinely useless entries
     (empty, or nonsense). Use propose_merge_entities when documents
     should keep an equivalent label. force=True detaches documents first."""
-    await _require_entity(ctx, entity_type, entity_id)
+    entity = await _require_entity(ctx, entity_type, entity_id)
     p = DeleteEntity(entity_type=entity_type, entity_id=entity_id, reason=reason, force=force)
-    return await _persist(ctx, p, EntityType(entity_type), entity_id)
+    snapshot = {"name": entity.name, "document_count": entity.document_count}
+    return await _persist(ctx, p, EntityType(entity_type), entity_id, snapshot)
 
 
 READ_TOOLS = [

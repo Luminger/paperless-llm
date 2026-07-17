@@ -71,6 +71,17 @@ async def apply_proposal(
         await db.commit()
         return None
 
+    # Optimistic concurrency: paperless has no revisions, so we verify
+    # value-by-value that the fields the agent looked at (base_snapshot,
+    # captured at proposal time) are unchanged. A field that already
+    # equals the proposed target doesn't conflict — it converged.
+    conflicts = await _snapshot_conflicts(paperless, typed, proposal.base_snapshot)
+    if conflicts:
+        raise ApplyError(
+            "paperless changed since this was proposed — review before applying: "
+            + "; ".join(conflicts)
+        )
+
     before, after = await _apply(paperless, typed)
 
     change = AppliedChange(
@@ -153,6 +164,73 @@ async def _is_noop(paperless: PaperlessClient, p: AnyProposal) -> bool:  # noqa:
                 raise
             return False
     return False
+
+
+def _fmt(v: Any) -> str:
+    import json
+
+    return json.dumps(v, ensure_ascii=False, default=str)
+
+
+async def _snapshot_conflicts(  # noqa: C901
+    paperless: PaperlessClient, p: AnyProposal, snapshot: dict[str, Any] | None
+) -> list[str]:
+    if not snapshot:
+        return []  # pre-snapshot proposals: no staleness check possible
+    conflicts: list[str] = []
+    match p:
+        case UpdateDocumentMetadata():
+            doc = await paperless.get_document(p.document_id)
+            provided = p.model_dump(exclude_unset=True)
+            for k, was in snapshot.items():
+                if k == "tags":
+                    if sorted(doc.tags) != sorted(was):
+                        conflicts.append(f"tags: were {_fmt(was)}, now {_fmt(doc.tags)}")
+                    continue
+                now = getattr(doc, k, None)
+                if k == "created":
+                    now = (now or "")[:10] or None
+                    was = (was or "")[:10] or None
+                if now != was and now != provided.get(k):
+                    conflicts.append(f"{k}: was {_fmt(was)}, now {_fmt(now)}")
+        case UpdateEntity():
+            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
+            current = await getattr(paperless, get)(p.entity_id)
+            provided = p.model_dump(exclude_unset=True)
+            for k, was in snapshot.items():
+                now = getattr(current, k, None)
+                if now != was and now != provided.get(k):
+                    conflicts.append(f"{k}: was {_fmt(was)}, now {_fmt(now)}")
+        case MergeEntities():
+            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
+            source = await getattr(paperless, get)(p.source_id)
+            try:
+                target = await getattr(paperless, get)(p.target_id)
+            except PaperlessError as e:
+                if e.status_code == 404:
+                    return [f"merge target #{p.target_id} no longer exists"]
+                raise
+            if source.name != snapshot.get("source", {}).get("name"):
+                conflicts.append(
+                    f"source was {_fmt(snapshot['source']['name'])}, now {_fmt(source.name)}"
+                )
+            if target.name != snapshot.get("target", {}).get("name"):
+                conflicts.append(
+                    f"target was {_fmt(snapshot['target']['name'])}, now {_fmt(target.name)}"
+                )
+        case DeleteEntity():
+            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
+            current = await getattr(paperless, get)(p.entity_id)
+            if current.name != snapshot.get("name"):
+                conflicts.append(
+                    f"name was {_fmt(snapshot.get('name'))}, now {_fmt(current.name)}"
+                )
+            was_count = snapshot.get("document_count")
+            if was_count is not None and current.document_count != was_count:
+                conflicts.append(
+                    f"document count was {was_count}, now {current.document_count}"
+                )
+    return conflicts
 
 
 async def _apply(

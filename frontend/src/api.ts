@@ -17,6 +17,7 @@ export interface Proposal {
   supersedes_id: number | null;
   agent_payload: Record<string, unknown>;
   user_payload: Record<string, unknown> | null;
+  base_snapshot: Record<string, unknown> | null;
   status: ProposalStatus;
   entity_type: string | null;
   entity_id: number | null;

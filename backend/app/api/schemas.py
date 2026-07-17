@@ -60,6 +60,8 @@ class ProposalOut(BaseModel):
     supersedes_id: int | None
     agent_payload: dict[str, Any]
     user_payload: dict[str, Any] | None
+    # Paperless values of the touched fields at proposal time.
+    base_snapshot: dict[str, Any] | None = None
     status: ProposalStatus
     entity_type: EntityType | None
     entity_id: int | None
