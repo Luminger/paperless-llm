@@ -4,8 +4,8 @@
 #   cp .env.example .env          # set your LLM endpoint(s)
 #   podman compose up -d --build
 #
-#   paperless-ngx : http://127.0.0.1:8210  (admin / admin)
-#   paperless-llm : http://127.0.0.1:8100
+#   paperless-ngx : http://127.0.0.1:8210 (admin / admin) — also on the LAN
+#   paperless-llm : http://127.0.0.1:8100 — also on the LAN
 #
 # The `seeder` runs once: waits for paperless, creates the messy
 # taxonomy, and uploads the corpus (synthetic + real-world sample PDFs).
@@ -24,14 +24,14 @@ services:
     depends_on:
       - broker
     ports:
-      - "127.0.0.1:8210:8000"
+      - "8210:8000"  # all interfaces (LAN access)
     environment:
       PAPERLESS_REDIS: redis://broker:6379
       PAPERLESS_SECRET_KEY: playground-only-not-a-secret
       PAPERLESS_ADMIN_USER: admin
       PAPERLESS_ADMIN_PASSWORD: admin
-      PAPERLESS_URL: http://127.0.0.1:8210
-      PAPERLESS_ALLOWED_HOSTS: "paperless,127.0.0.1,localhost"
+      PAPERLESS_ALLOWED_HOSTS: "paperless,127.0.0.1,localhost,ares,ares.home.brakhane.net,192.168.128.6"
+      PAPERLESS_CSRF_TRUSTED_ORIGINS: "http://127.0.0.1:8210,http://localhost:8210,http://ares:8210,http://ares.home.brakhane.net:8210,http://192.168.128.6:8210"
       PAPERLESS_OCR_LANGUAGE: deu+eng
       PAPERLESS_TIME_ZONE: Europe/Berlin
       PAPERLESS_TASK_WORKERS: "1"
@@ -52,7 +52,7 @@ services:
       - paperless
     network_mode: host
     command:
-      ["paperless-llm", "serve", "--host", "127.0.0.1", "--port", "8100"]
+      ["paperless-llm", "serve", "--host", "0.0.0.0", "--port", "8100"]
     environment:
       PLLM_PAPERLESS__BASE_URL: http://127.0.0.1:8210
       PLLM_PAPERLESS__USERNAME: admin
@@ -66,6 +66,8 @@ services:
       PLLM_LLM__EMBEDDINGS__MODEL: ${PLLM_EMBEDDINGS_MODEL:-}
       # Webhook ingress shared secret (empty disables the endpoint).
       PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
+      # URL users reach paperless under (deep links); LAN-reachable.
+      PLLM_PAPERLESS__EXTERNAL_URL: ${PLLM_PAPERLESS_EXTERNAL_URL:-}
       PLLM_DATABASE_URL: sqlite+aiosqlite:////data/paperless_llm.sqlite3
       PLLM_DATA_DIR: /data
     volumes:
