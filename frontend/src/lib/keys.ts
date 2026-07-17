@@ -23,6 +23,7 @@ export const keys = {
     filter !== undefined ? (["audit", filter, page] as const) : (["audit"] as const),
   syncStatus: () => ["sync-status"] as const,
   meta: () => ["meta"] as const,
+  settings: () => ["settings"] as const,
 } as const;
 
 import type { QueryClient } from "@tanstack/react-query";

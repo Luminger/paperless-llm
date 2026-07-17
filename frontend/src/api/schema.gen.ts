@@ -652,6 +652,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings Overview */
+        get: operations["get_settings_overview_api_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stats": {
         parameters: {
             query?: never;
@@ -1113,6 +1130,45 @@ export interface components {
              */
             timings: components["schemas"]["OcrBatchTiming"][];
         };
+        /** PaperlessOut */
+        PaperlessOut: {
+            /** Auth */
+            auth: string;
+            /** Base Url */
+            base_url: string;
+            /** External Url */
+            external_url: string;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+        };
+        /** ProfileOut */
+        ProfileOut: {
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Configured
+             * @default true
+             */
+            configured: boolean;
+            /** Max Concurrent */
+            max_concurrent?: number | null;
+            /** Max Input Tokens */
+            max_input_tokens?: number | null;
+            /** Max Tool Iterations */
+            max_tool_iterations?: number | null;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Supports Streaming */
+            supports_streaming?: boolean | null;
+            /** Thinking */
+            thinking?: string | null;
+        };
         /** ProposalOut */
         ProposalOut: {
             /** Agent Payload */
@@ -1191,6 +1247,17 @@ export interface components {
          * @enum {string}
          */
         QueueLane: "interactive" | "batch";
+        /** QueueOut */
+        QueueOut: {
+            /** Batch Concurrency */
+            batch_concurrency: number;
+            /** Interactive Concurrency */
+            interactive_concurrency: number;
+            /** Retry Attempts */
+            retry_attempts: number;
+            /** Retry Delay Seconds */
+            retry_delay_seconds: number;
+        };
         /**
          * RedoRequest
          * @description Amended input for a redo (merged over the original step input) —
@@ -1345,6 +1412,18 @@ export interface components {
          * @enum {string}
          */
         SessionStatus: "idle" | "running" | "failed" | "archived";
+        /** SettingsOut */
+        SettingsOut: {
+            /** Database */
+            database: string;
+            llm_agent: components["schemas"]["ProfileOut"];
+            llm_embeddings: components["schemas"]["ProfileOut"];
+            llm_ocr: components["schemas"]["ProfileOut"];
+            llm_reranker: components["schemas"]["ProfileOut"];
+            paperless: components["schemas"]["PaperlessOut"];
+            queue: components["schemas"]["QueueOut"];
+            webhook: components["schemas"]["WebhookOut"];
+        };
         /** StatsOut */
         StatsOut: {
             /** Active Jobs */
@@ -1490,6 +1569,15 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WebhookOut */
+        WebhookOut: {
+            /** Apply Policy */
+            apply_policy: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Redo Ocr */
+            redo_ocr: boolean;
         };
     };
     responses: never;
@@ -2598,6 +2686,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_overview_api_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsOut"];
                 };
             };
         };

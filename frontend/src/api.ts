@@ -39,6 +39,7 @@ export type Meta = S["MetaOut"];
 export type SyncStatus = S["SyncStatusOut"];
 export type ResourceFetchStatus = S["ResourceFetch"];
 export type RevertCheck = S["RevertCheckOut"];
+export type SettingsOverview = S["SettingsOut"];
 
 // Shapes that exist outside the HTTP contract (SSE payloads, JSON
 // blobs the backend types as dict[str, Any]):
@@ -97,6 +98,7 @@ export const api = {
     request<RevertCheck>(`/api/proposals/${id}/revert-check`),
 
   getMeta: () => request<Meta>("/api/meta"),
+  getSettingsOverview: () => request<SettingsOverview>("/api/settings"),
   getSyncStatus: () => request<SyncStatus>("/api/sync/status"),
   listAudit: (page = 1, pageSize = 20, kind?: string) =>
     request<AuditPage>(

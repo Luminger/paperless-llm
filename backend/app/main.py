@@ -11,7 +11,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import register_error_handlers
-from app.api.routes import audit, entities, jobs, proposals, sessions, webhooks
+from app.api.routes import (
+    audit,
+    entities,
+    jobs,
+    proposals,
+    sessions,
+    webhooks,
+)
+from app.api.routes import (
+    settings as settings_routes,
+)
 from app.api.schemas import HealthOut, MetaOut
 from app.config import get_settings
 from app.db.migrations import run_migrations
@@ -67,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(proposals.router)
     app.include_router(sessions.router)
     app.include_router(entities.router)
+    app.include_router(settings_routes.router)
     app.include_router(jobs.router)
     app.include_router(webhooks.router)
     app.include_router(audit.router)

@@ -25,8 +25,8 @@ for (const scheme of ["light", "dark"]) {
     { name: "prefers-color-scheme", value: scheme },
   ]);
   for (const r of routes) {
-    await page.goto(base + r, { waitUntil: "networkidle0", timeout: 30000 });
-    await new Promise((res) => setTimeout(res, 400));
+    await page.goto(base + r, { waitUntil: "load", timeout: 30000 });
+    await new Promise((res) => setTimeout(res, 1500));
     const name =
       (r === "/" ? "home" : r.replaceAll("/", "_").replace(/^_/, "")) +
       `-${scheme}.png`;

@@ -968,3 +968,16 @@ async def test_jobs_list_envelope(client):
     r = await client.get("/api/jobs")
     body = r.json()
     assert set(body) == {"count", "page", "page_size", "results"}
+
+
+async def test_settings_overview_has_no_secrets(client):
+    r = await client.get("/api/settings")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["llm_agent"]["model"]
+    assert body["database"] in ("sqlite", "postgresql")
+    # Secrets never leave the server — only presence indicators.
+    flat = str(body)
+    assert "api_key" not in flat and "secret" not in flat and "token\":" not in flat
+    assert body["paperless"]["auth"] in ("token", "credentials", "none")
+    assert isinstance(body["webhook"]["enabled"], bool)

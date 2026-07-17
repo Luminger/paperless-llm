@@ -1,9 +1,11 @@
 import { NavLink, Route, Routes } from "react-router-dom";
-import { CircleUser, Monitor, Moon, Sun } from "lucide-react";
+import { CircleUser, Monitor, Moon, Settings2, Sun } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -20,6 +22,7 @@ import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
 import AuditLog from "./pages/AuditLog";
+import Settings from "./pages/Settings";
 
 const nav = [
   { to: "/documents", label: "Documents" },
@@ -50,6 +53,12 @@ function UserMenu() {
           <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/settings" className="flex items-center gap-2">
+            <Settings2 className="size-4" /> Settings
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           Signed in locally
@@ -101,6 +110,7 @@ export default function App() {
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/log" element={<AuditLog />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>
