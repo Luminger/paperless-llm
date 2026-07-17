@@ -981,3 +981,24 @@ async def test_settings_overview_has_no_secrets(client):
     assert "api_key" not in flat and "secret" not in flat and "token\":" not in flat
     assert body["paperless"]["auth"] in ("token", "credentials", "none")
     assert isinstance(body["webhook"]["enabled"], bool)
+
+
+async def test_unfinished_includes_sessions_with_pending_proposals(client, db):
+    """A finished analysis whose proposals await review still needs the
+    user — it must not vanish from the dashboard."""
+    from app.db.models import Session as Sess
+    from app.db.models import SessionPhase, SessionStatus
+
+    p = await _seed_proposal(db)  # pending proposal on session
+    s = await db.get(Sess, p.session_id)
+    s.phase = SessionPhase.done
+    s.status = SessionStatus.idle
+    await db.commit()
+
+    body = (await client.get("/api/sessions?unfinished=true")).json()
+    assert any(item["id"] == p.session_id for item in body["results"])
+
+    # Once decided (rejected), the session is truly finished.
+    await client.post(f"/api/proposals/{p.id}/reject")
+    body = (await client.get("/api/sessions?unfinished=true")).json()
+    assert not any(item["id"] == p.session_id for item in body["results"])

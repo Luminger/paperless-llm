@@ -28,6 +28,7 @@ from app.db.models import (
     EntityType,
     OcrResult,
     Proposal,
+    ProposalStatus,
     Session,
     SessionPhase,
     SessionStatus,
@@ -57,17 +58,33 @@ async def list_sessions(
     """Paginated session list, filterable by bound entity. Active and
     archived sessions are separate lists (archived=true for the
     latter); unfinished=true keeps only sessions that still need
-    something (gates, running/queued work, failures)."""
+    something (gates, running/queued work, failures — or proposals
+    still waiting for review)."""
     page = max(1, page)
     page_size = min(100, max(1, page_size))
     where = [
         Session.archived_at.is_not(None) if archived else Session.archived_at.is_(None)
     ]
     if unfinished:
+        # A finished analysis whose proposals await review still needs
+        # the user — it stays on the dashboard until decided.
+        has_open_proposal = (
+            select(Proposal.id)
+            .where(
+                Proposal.session_id == Session.id,
+                Proposal.status == ProposalStatus.pending,
+                Proposal.kind != "replace_content",
+            )
+            # The outer list query also joins Proposal — correlate only
+            # Session so the subquery keeps its own FROM.
+            .correlate(Session)
+            .exists()
+        )
         where.append(
             (Session.phase.is_(None))
             | (Session.phase != SessionPhase.done)
             | (Session.status != SessionStatus.idle)
+            | has_open_proposal
         )
     if entity_type is not None:
         try:
