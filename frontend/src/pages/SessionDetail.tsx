@@ -79,52 +79,150 @@ function AttemptHistory({ step }: { step: Step }) {
   );
 }
 
+// Which input fields a redo may amend, per step kind.
+const REDO_FIELDS: Record<Step["kind"], { key: string; label: string; long?: boolean }[]> = {
+  ocr: [
+    { key: "instructions", label: "OCR instructions" },
+    { key: "dpi", label: "render DPI" },
+  ],
+  analysis: [{ key: "instructions", label: "instructions for the agent" }],
+  chat: [{ key: "content", label: "message", long: true }],
+};
+
+function RedoDialog({
+  step,
+  onConfirm,
+  onCancel,
+  busy,
+}: {
+  step: Step;
+  onConfirm: (input: Record<string, unknown>) => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  const fields = REDO_FIELDS[step.kind];
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      fields.map((f) => [f.key, step.input[f.key] != null ? String(step.input[f.key]) : ""]),
+    ),
+  );
+  return (
+    <div className="space-y-2 rounded border border-amber-200 bg-amber-50/60 p-3 text-sm">
+      <p className="text-xs text-amber-800">
+        Redoing this step supersedes it <strong>and every step after it</strong> —
+        later results (including open proposals) were based on it. Adjust how the
+        redo should run:
+      </p>
+      {fields.map((f) =>
+        f.long ? (
+          <textarea
+            key={f.key}
+            aria-label={`redo ${f.label}`}
+            className="w-full rounded border border-zinc-300 p-2 text-sm"
+            rows={2}
+            placeholder={f.label}
+            value={values[f.key]}
+            onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+          />
+        ) : (
+          <label key={f.key} className="flex items-center gap-2 text-xs text-zinc-600">
+            <span className="w-40">{f.label}</span>
+            <input
+              aria-label={`redo ${f.label}`}
+              className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm"
+              value={values[f.key]}
+              onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+            />
+          </label>
+        ),
+      )}
+      <div className="flex gap-2">
+        <button
+          className="rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700 disabled:opacity-50"
+          disabled={busy}
+          onClick={() => {
+            const input: Record<string, unknown> = {};
+            for (const f of fields) {
+              const raw = values[f.key].trim();
+              if (raw === "") continue;
+              input[f.key] = f.key === "dpi" ? Number(raw) : raw;
+            }
+            onConfirm(input);
+          }}
+        >
+          Redo step
+        </button>
+        <button
+          className="rounded bg-zinc-200 px-3 py-1 text-xs hover:bg-zinc-300"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }) {
+  const [redoOpen, setRedoOpen] = useState(false);
   const retry = useMutation({
     mutationFn: () => api.retryStep(step.session_id, step.id),
     onSuccess: onChanged,
   });
   const redo = useMutation({
-    mutationFn: () => api.redoStep(step.session_id, step.id),
-    onSuccess: onChanged,
+    mutationFn: (input: Record<string, unknown>) =>
+      api.redoStep(step.session_id, step.id, input),
+    onSuccess: () => {
+      setRedoOpen(false);
+      onChanged();
+    },
   });
   const scheduled = step.state === "pending" && step.scheduled_at;
   const maxRetries = Math.max(0, step.max_attempts - 1);
   const retriesDone = Math.max(0, step.attempt_count - 1);
   return (
-    <div className="flex items-center gap-3 text-xs">
-      {scheduled && (
-        <span className="text-zinc-500">
-          Automatic retry {retriesDone + 1} of {maxRetries} at {clock(step.scheduled_at)}
-        </span>
+    <div className="space-y-2">
+      <div className="flex items-center gap-3 text-xs">
+        {scheduled && (
+          <span className="text-zinc-500">
+            Automatic retry {retriesDone + 1} of {maxRetries} at {clock(step.scheduled_at)}
+          </span>
+        )}
+        {step.state === "failed" && maxRetries > 0 && (
+          <span className="text-zinc-500">
+            all {maxRetries} automatic retr{maxRetries !== 1 ? "ies" : "y"} used
+          </span>
+        )}
+        {/* Manual retries are never limited. */}
+        {(step.state === "failed" || scheduled || step.state === "cancelled") && (
+          <button
+            className="rounded bg-zinc-700 px-2 py-1 text-white hover:bg-zinc-800 disabled:opacity-50"
+            onClick={() => retry.mutate()}
+            disabled={retry.isPending}
+          >
+            Retry now
+          </button>
+        )}
+        {(step.state === "succeeded" || step.state === "failed") && !redoOpen && (
+          <button
+            className="rounded bg-zinc-200 px-2 py-1 text-zinc-700 hover:bg-zinc-300"
+            onClick={() => setRedoOpen(true)}
+            title="Do this step over with adjusted parameters"
+          >
+            Redo…
+          </button>
+        )}
+        {retry.error && <span className="text-red-600">{String(retry.error)}</span>}
+        {redo.error && <span className="text-red-600">{String(redo.error)}</span>}
+      </div>
+      {redoOpen && (
+        <RedoDialog
+          step={step}
+          busy={redo.isPending}
+          onConfirm={(input) => redo.mutate(input)}
+          onCancel={() => setRedoOpen(false)}
+        />
       )}
-      {step.state === "failed" && maxRetries > 0 && (
-        <span className="text-zinc-500">
-          all {maxRetries} automatic retr{maxRetries !== 1 ? "ies" : "y"} used
-        </span>
-      )}
-      {/* Manual retries are never limited. */}
-      {(step.state === "failed" || scheduled || step.state === "cancelled") && (
-        <button
-          className="rounded bg-zinc-700 px-2 py-1 text-white hover:bg-zinc-800 disabled:opacity-50"
-          onClick={() => retry.mutate()}
-          disabled={retry.isPending}
-        >
-          Retry now
-        </button>
-      )}
-      {step.state === "succeeded" && (
-        <button
-          className="rounded bg-zinc-200 px-2 py-1 text-zinc-700 hover:bg-zinc-300 disabled:opacity-50"
-          onClick={() => redo.mutate()}
-          disabled={redo.isPending}
-          title="Do this step over (the current result is kept visible as superseded)"
-        >
-          Redo
-        </button>
-      )}
-      {retry.error && <span className="text-red-600">{String(retry.error)}</span>}
-      {redo.error && <span className="text-red-600">{String(redo.error)}</span>}
     </div>
   );
 }

@@ -333,14 +333,24 @@ describe("SessionDetail step feed", () => {
     expect(screen.getAllByText(/1 tool call/).length).toBeGreaterThan(0);
   });
 
-  it("succeeded steps offer a generic Redo", async () => {
+  it("Redo asks how the redo should run and warns about superseding", async () => {
     const detail = makeDetail({});
     mocked.getSession.mockResolvedValue(detail);
     mocked.redoStep.mockResolvedValue(mkStep({ state: "pending" }));
     renderDetail();
-    await userEvent.click(await screen.findByRole("button", { name: "Redo" }));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Redo…" }));
+    // The dialog warns that downstream steps get superseded.
+    expect(screen.getByText(/every step after it/)).toBeInTheDocument();
+    await userEvent.type(
+      screen.getByLabelText("redo instructions for the agent"),
+      "focus on the dates",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Redo step" }));
     await waitFor(() =>
-      expect(mocked.redoStep).toHaveBeenCalledWith(9, detail.steps[0].id),
+      expect(mocked.redoStep).toHaveBeenCalledWith(9, detail.steps[0].id, {
+        instructions: "focus on the dates",
+      }),
     );
   });
 });

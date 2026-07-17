@@ -1,9 +1,4 @@
-"""Programmatic alembic upgrade at app startup.
-
-Legacy databases (created via ``create_all`` before alembic landed) are
-detected by having app tables but no ``alembic_version`` — they get
-stamped with the baseline revision first, then upgraded normally.
-"""
+"""Programmatic alembic upgrade at app startup."""
 
 from __future__ import annotations
 
@@ -12,7 +7,6 @@ import logging
 from pathlib import Path
 
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
 
 from alembic import command
 from app.config import get_settings
@@ -30,22 +24,9 @@ def _sync_url(url: str) -> str:
 
 
 def _run(database_url: str) -> None:
-    url = _sync_url(database_url)
     cfg = Config(str(_BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(_BACKEND_ROOT / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", url)
-
-    engine = create_engine(url)
-    try:
-        with engine.connect() as conn:
-            insp = inspect(conn)
-            legacy = insp.has_table("sessions") and not insp.has_table("alembic_version")
-    finally:
-        engine.dispose()
-
-    if legacy:
-        log.warning("pre-alembic database detected; stamping baseline %s", BASELINE_REVISION)
-        command.stamp(cfg, BASELINE_REVISION)
+    cfg.set_main_option("sqlalchemy.url", _sync_url(database_url))
     command.upgrade(cfg, "head")
 
 

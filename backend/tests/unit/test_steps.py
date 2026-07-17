@@ -283,3 +283,59 @@ def _job_is(job_id: int, status: JobStatus):
             return (await db.get(Job, job_id)).status == status
 
     return check
+
+
+async def test_redo_supersedes_downstream_steps_and_open_proposals(file_db):
+    """Redoing a step invalidates everything built on top of it: later
+    steps AND their open proposals are superseded; applied ones are
+    history and stay."""
+    from app.db.models import Proposal, ProposalStatus
+
+    sid = await _make_session()
+    async with session_scope() as db:
+        ocr = Step(session_id=sid, kind=StepKind.ocr, state=StepState.succeeded,
+                   result={"resolution": "accepted"})
+        db.add(ocr)
+        await db.flush()
+        analysis = Step(session_id=sid, kind=StepKind.analysis, state=StepState.succeeded)
+        db.add(analysis)
+        await db.flush()
+        chat = Step(session_id=sid, kind=StepKind.chat, state=StepState.succeeded)
+        db.add(chat)
+        await db.flush()
+        p_open = Proposal(session_id=sid, step_id=analysis.id, kind="update_document_metadata",
+                          agent_payload={}, status=ProposalStatus.pending)
+        p_applied = Proposal(session_id=sid, step_id=analysis.id, kind="create_entity",
+                             agent_payload={}, status=ProposalStatus.applied)
+        db.add_all([p_open, p_applied])
+        await db.commit()
+        ocr_id, analysis_id, chat_id = ocr.id, analysis.id, chat.id
+        p_open_id, p_applied_id = p_open.id, p_applied.id
+
+    async with session_scope() as db:
+        step = await db.get(Step, ocr_id)
+        new = await redo_step(db, step, {"instructions": "again, better"})
+        assert new.supersedes_id == ocr_id
+
+    async with session_scope() as db:
+        assert (await db.get(Step, ocr_id)).state == StepState.superseded
+        assert (await db.get(Step, analysis_id)).state == StepState.superseded
+        assert (await db.get(Step, chat_id)).state == StepState.superseded
+        assert (await db.get(Proposal, p_open_id)).status == ProposalStatus.superseded
+        assert (await db.get(Proposal, p_applied_id)).status == ProposalStatus.applied
+
+
+async def test_redo_refused_while_downstream_work_in_flight(file_db):
+    sid = await _make_session()
+    async with session_scope() as db:
+        ocr = Step(session_id=sid, kind=StepKind.ocr, state=StepState.succeeded)
+        db.add(ocr)
+        await db.flush()
+        db.add(Step(session_id=sid, kind=StepKind.analysis, state=StepState.running))
+        await db.commit()
+        ocr_id = ocr.id
+
+    async with session_scope() as db:
+        step = await db.get(Step, ocr_id)
+        with pytest.raises(engine.StepActionError, match="still queued or running"):
+            await redo_step(db, step)

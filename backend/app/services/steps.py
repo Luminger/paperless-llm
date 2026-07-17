@@ -187,14 +187,48 @@ async def redo_step(
     db: DbSession, step: Step, input_override: dict[str, Any] | None = None
 ) -> Step:
     """Do a step over — generic for every kind: supersedes the old step
-    and creates a fresh one with (optionally amended) input. 'Re-run the
-    OCR with instructions' is a redo of the ocr step."""
+    AND every step after it (their results were built on state this redo
+    invalidates), then creates a fresh step with (optionally amended)
+    input. Open proposals of the superseded steps are superseded too;
+    applied/rejected ones are history and stay untouched."""
     if step.state not in (*TERMINAL, StepState.awaiting_user):
         raise StepActionError(f"step is {step.state.value}; wait for it to finish")
     session = await db.get(Session, step.session_id)
     assert session is not None
-    step.state = StepState.superseded
-    _publish(step)
+
+    later = (
+        await db.scalars(
+            select(Step)
+            .where(Step.session_id == session.id, Step.id > step.id)
+            .order_by(Step.id)
+        )
+    ).all()
+    if any(s.state in (StepState.pending, StepState.running) for s in later):
+        raise StepActionError(
+            "steps after this one are still queued or running; wait for them first"
+        )
+
+    to_supersede = [step] + [
+        s
+        for s in later
+        if s.state in (StepState.succeeded, StepState.failed, StepState.awaiting_user)
+    ]
+    for s in to_supersede:
+        s.state = StepState.superseded
+        _publish(s)
+    open_proposals = (
+        await db.scalars(
+            select(Proposal).where(
+                Proposal.step_id.in_([s.id for s in to_supersede]),
+                Proposal.status.in_(
+                    [ProposalStatus.draft, ProposalStatus.pending, ProposalStatus.approved]
+                ),
+            )
+        )
+    ).all()
+    for p in open_proposals:
+        p.status = ProposalStatus.superseded
+
     return await create_step(
         db,
         session,
