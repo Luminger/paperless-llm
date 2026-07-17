@@ -10,7 +10,9 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.errors import register_error_handlers
 from app.api.routes import audit, entities, jobs, proposals, sessions, webhooks
+from app.api.schemas import HealthOut, MetaOut
 from app.config import get_settings
 from app.db.migrations import run_migrations
 from app.db.session import dispose_engine
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="paperless-llm", lifespan=lifespan)
+    register_error_handlers(app)
 
     @app.middleware("http")
     async def _actor_middleware(request, call_next):
@@ -69,13 +72,13 @@ def create_app() -> FastAPI:
     app.include_router(audit.router)
 
     @app.get("/api/health")
-    async def health() -> dict:
-        return {"status": "ok"}
+    async def health() -> HealthOut:
+        return HealthOut(status="ok")
 
     @app.get("/api/meta")
-    async def meta() -> dict:
+    async def meta() -> MetaOut:
         p = get_settings().paperless
-        return {"paperless_url": (p.external_url or p.base_url).rstrip("/")}
+        return MetaOut(paperless_url=(p.external_url or p.base_url).rstrip("/"))
 
     # Serve the built frontend when present (production container),
     # with an SPA fallback so deep links (/sessions/2) survive reloads.

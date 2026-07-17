@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import Jobs from "./Jobs";
-import { renderWithProviders } from "../test/utils";
+import { jobPage, makeEntity, renderWithProviders } from "../test/utils";
 import { api, type Job } from "../api";
 
 vi.mock("../api", () => ({
@@ -34,10 +34,10 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 describe("Jobs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocked.listJobs.mockResolvedValue([makeJob()]);
+    mocked.listJobs.mockResolvedValue(jobPage([makeJob()]));
     mocked.listTags.mockResolvedValue([
-      { id: 1, name: "Inbox", is_inbox_tag: true },
-      { id: 3, name: "Steuern", is_inbox_tag: false },
+      makeEntity({ id: 1, name: "Inbox", is_inbox_tag: true }),
+      makeEntity({ id: 3, name: "Steuern" }),
     ]);
   });
 

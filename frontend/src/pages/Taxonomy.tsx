@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type EntityRef, type MergeCandidate } from "../api";
 import { FetchStatus } from "../components/FetchStatus";
 import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
+import { errorMessage } from "../lib/errors";
 
 const TYPES = [
   { key: "tag", label: "Tags" },
@@ -141,7 +142,7 @@ export default function Taxonomy() {
             onCancel={ms.cancel}
           />
           {bulkAnalyze.error && (
-            <p className="mt-1 text-xs text-red-600">{String(bulkAnalyze.error)}</p>
+            <p className="mt-1 text-xs text-red-600">{errorMessage(bulkAnalyze.error)}</p>
           )}
         </div>
       )}
@@ -207,7 +208,7 @@ export default function Taxonomy() {
         </tbody>
       </table>
       {reviewCandidate.error && (
-        <p className="mt-2 text-sm text-red-600">{String(reviewCandidate.error)}</p>
+        <p className="mt-2 text-sm text-red-600">{errorMessage(reviewCandidate.error)}</p>
       )}
     </div>
   );

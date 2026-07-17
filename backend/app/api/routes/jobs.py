@@ -7,7 +7,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_paperless
-from app.api.schemas import JobCreate, JobDetailOut, JobOut, SessionOut, StatsOut
+from app.api.schemas import (
+    JobCreate,
+    JobDetailOut,
+    JobOut,
+    JobPage,
+    SessionOut,
+    StatsOut,
+)
 from app.db.models import (
     Job,
     JobStatus,
@@ -49,11 +56,28 @@ async def create_job(
 
 
 @router.get("/jobs")
-async def list_jobs(db: AsyncSession = Depends(get_session)) -> list[JobOut]:
+async def list_jobs(
+    page: int = 1,
+    page_size: int = 50,
+    db: AsyncSession = Depends(get_session),
+) -> JobPage:
+    page = max(1, page)
+    page_size = min(200, max(1, page_size))
+    count = (await db.scalar(select(func.count()).select_from(Job))) or 0
     jobs = (
-        await db.scalars(select(Job).order_by(Job.id.desc()).limit(100))
+        await db.scalars(
+            select(Job)
+            .order_by(Job.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
     ).all()
-    return [JobOut.model_validate(j) for j in jobs]
+    return JobPage(
+        count=count,
+        page=page,
+        page_size=page_size,
+        results=[JobOut.model_validate(j) for j in jobs],
+    )
 
 
 @router.get("/jobs/{job_id}")

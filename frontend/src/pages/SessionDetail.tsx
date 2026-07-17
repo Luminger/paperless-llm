@@ -12,6 +12,7 @@ import { DiffView } from "../components/DiffView";
 import { ProposalCard } from "../components/ProposalCard";
 import { useSessionEvents, type LiveActivity } from "../hooks/useSessionEvents";
 import { entityHref } from "./EntityPage";
+import { errorMessage } from "../lib/errors";
 
 // ---------------------------------------------------------------------
 // Generic pieces shared by every step kind: state dot, timing chips,
@@ -20,6 +21,7 @@ import { entityHref } from "./EntityPage";
 // ---------------------------------------------------------------------
 
 function timingLabel(t: CallTiming): string {
+  if (t.duration_s == null) return "";
   const parts = [`${t.duration_s.toFixed(1)}s`];
   if (t.tps != null) parts.push(`${t.tps.toFixed(0)} tok/s`);
   if (t.ttft_s != null) parts.push(`ttft ${t.ttft_s.toFixed(2)}s`);
@@ -212,8 +214,8 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
             Redo…
           </button>
         )}
-        {retry.error && <span className="text-red-600">{String(retry.error)}</span>}
-        {redo.error && <span className="text-red-600">{String(redo.error)}</span>}
+        {retry.error && <span className="text-red-600">{errorMessage(retry.error)}</span>}
+        {redo.error && <span className="text-red-600">{errorMessage(redo.error)}</span>}
       </div>
       {redoOpen && (
         <RedoDialog
@@ -399,8 +401,8 @@ function OcrGateBody({ step }: { step: Step }) {
           </button>
         </div>
       </details>
-      {resolve.error && <p className="text-sm text-red-600">{String(resolve.error)}</p>}
-      {redo.error && <p className="text-sm text-red-600">{String(redo.error)}</p>}
+      {resolve.error && <p className="text-sm text-red-600">{errorMessage(resolve.error)}</p>}
+      {redo.error && <p className="text-sm text-red-600">{errorMessage(redo.error)}</p>}
     </div>
   );
 }
@@ -655,7 +657,7 @@ function Composer({ sessionId, disabled, hint }: { sessionId: number; disabled: 
         </button>
       </form>
       {hint && <p className="mt-1 text-xs text-zinc-400">{hint}</p>}
-      {send.error && <p className="mt-1 text-sm text-red-600">{String(send.error)}</p>}
+      {send.error && <p className="mt-1 text-sm text-red-600">{errorMessage(send.error)}</p>}
     </div>
   );
 }
@@ -670,7 +672,7 @@ export default function SessionDetail() {
     queryFn: () => api.getSession(sessionId),
   });
 
-  if (error) return <p className="text-red-600">{String(error)}</p>;
+  if (error) return <p className="text-red-600">{errorMessage(error)}</p>;
   if (!s) return <p className="text-zinc-500">Loading…</p>;
 
   const onChanged = () => qc.invalidateQueries({ queryKey: ["session", sessionId] });

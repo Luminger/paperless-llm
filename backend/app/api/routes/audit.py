@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import AuditPage
+from app.api.schemas import AuditPage, ResourceFetch, SyncStatusOut
 from app.db.models import AuditLog
 from app.db.session import get_session
 from app.paperless.client import fetch_status
@@ -55,8 +53,10 @@ async def list_audit(
 
 
 @router.get("/sync/status")
-async def sync_status() -> dict[str, Any]:
+async def sync_status() -> SyncStatusOut:
     """When the app last fetched each paperless resource and whether a
     fetch is in flight RIGHT NOW — covers every consumer in the process
     (UI proxying, agent tools, pipeline stages)."""
-    return {"resources": fetch_status}
+    return SyncStatusOut(
+        resources={k: ResourceFetch(**v) for k, v in fetch_status.items()}
+    )

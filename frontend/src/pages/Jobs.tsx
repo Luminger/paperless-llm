@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Job, type JobCreate } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
+import { errorMessage } from "../lib/errors";
 
 function Progress({ job }: { job: Job }) {
   const finished = job.done + job.failed;
@@ -121,7 +122,7 @@ function NewJob({ onDone }: { onDone: () => void }) {
       >
         Start job
       </button>
-      {create.error && <p className="text-sm text-red-600">{String(create.error)}</p>}
+      {create.error && <p className="text-sm text-red-600">{errorMessage(create.error)}</p>}
     </form>
   );
 }
@@ -129,20 +130,23 @@ function NewJob({ onDone }: { onDone: () => void }) {
 export default function Jobs() {
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
-  const { data: jobs, error } = useQuery({
+  const { data, error } = useQuery({
     queryKey: ["jobs"],
-    queryFn: api.listJobs,
+    queryFn: () => api.listJobs(),
     refetchInterval: (q) =>
-      (q.state.data ?? []).some((j) => j.status === "queued" || j.status === "running")
+      (q.state.data?.results ?? []).some(
+        (j) => j.status === "queued" || j.status === "running",
+      )
         ? 2000
         : false,
   });
+  const jobs = data?.results;
   const cancel = useMutation({
     mutationFn: (id: number) => api.cancelJob(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
   });
 
-  if (error) return <p className="text-red-600">{String(error)}</p>;
+  if (error) return <p className="text-red-600">{errorMessage(error)}</p>;
 
   return (
     <div>

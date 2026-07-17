@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
+import { errorMessage } from "../lib/errors";
 
 export default function JobDetail() {
   const { id } = useParams();
@@ -15,7 +16,7 @@ export default function JobDetail() {
     },
   });
 
-  if (error) return <p className="text-red-600">{String(error)}</p>;
+  if (error) return <p className="text-red-600">{errorMessage(error)}</p>;
   if (!job) return <p className="text-zinc-500">Loading…</p>;
 
   return (

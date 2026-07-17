@@ -21,6 +21,20 @@ _PIPELINE_PROMPT_PREFIXES = ("Process document id=", "Review ")
 _RESULT_LIMIT = 500
 
 
+class CallTiming(BaseModel):
+    """Per-LLM-call metrics, stamped by the TimedModel wrapper."""
+
+    model_config = {"extra": "ignore"}
+
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_s: float | None = None
+    ttft_s: float | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    tps: float | None = None
+
+
 class TranscriptItem(BaseModel):
     role: Literal["user", "agent", "tool"]
     content: str = ""
@@ -30,10 +44,10 @@ class TranscriptItem(BaseModel):
     tool_name: str | None = None
     tool_args: dict[str, Any] | None = None
     tool_result: str | None = None
-    # Per-LLM-call metrics (duration_s, ttft_s, tps, tokens, start/end).
-    # Every item derived from the same model response shares that call's
-    # timing — a response with several tool calls is still one LLM call.
-    timing: dict[str, Any] | None = None
+    # Per-LLM-call metrics. Every item derived from the same model
+    # response shares that call's timing — a response with several tool
+    # calls is still one LLM call.
+    timing: CallTiming | None = None
     # Chronological anchor (part timestamp, else message timestamp) so
     # the UI can merge the transcript with session events by time.
     ts: str | None = None
@@ -80,10 +94,15 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
     for message in history:
         if not isinstance(message, dict):
             continue
-        timing = None
+        timing: CallTiming | None = None
         details = message.get("provider_details")
         if isinstance(details, dict):
-            timing = details.get("pllm_timing")
+            raw_timing = details.get("pllm_timing")
+            if isinstance(raw_timing, dict):
+                timing = CallTiming(**{
+                    k: v for k, v in raw_timing.items()
+                    if k in CallTiming.model_fields
+                })
         message_ts = message.get("timestamp")
         for part in message.get("parts") or []:
             if not isinstance(part, dict):

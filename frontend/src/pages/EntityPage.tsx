@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type EntityRef, type PaperlessDocument } from "../api";
 import { SessionList } from "../components/SessionList";
+import { errorMessage } from "../lib/errors";
 
 // ---------------------------------------------------------------------
 // One generic entity overview page for documents AND taxonomy entities:
@@ -85,13 +86,13 @@ function DocumentFacts({ doc }: { doc: PaperlessDocument }) {
       <div className="flex-1">
         <FactRow label="Title">{doc.title || "—"}</FactRow>
         <FactRow label="Correspondent">
-          <EntityLink entityType="correspondent" id={doc.correspondent} list={correspondents} />
+          <EntityLink entityType="correspondent" id={doc.correspondent ?? null} list={correspondents} />
         </FactRow>
         <FactRow label="Document type">
-          <EntityLink entityType="document_type" id={doc.document_type} list={docTypes} />
+          <EntityLink entityType="document_type" id={doc.document_type ?? null} list={docTypes} />
         </FactRow>
         <FactRow label="Storage path">
-          <EntityLink entityType="storage_path" id={doc.storage_path} list={storagePaths} />
+          <EntityLink entityType="storage_path" id={doc.storage_path ?? null} list={storagePaths} />
         </FactRow>
         <FactRow label="Tags">
           {doc.tags.length === 0 ? (
@@ -180,7 +181,7 @@ function InstructionsEditor({
           Save instructions
         </button>
         {save.isSuccess && !dirty && <span className="text-xs text-emerald-700">saved</span>}
-        {save.error && <span className="text-xs text-red-600">{String(save.error)}</span>}
+        {save.error && <span className="text-xs text-red-600">{errorMessage(save.error)}</span>}
       </div>
     </div>
   );
@@ -215,7 +216,7 @@ function AnalyzeButton({ entityType, id }: { entityType: string; id: number }) {
       >
         Analyze
       </button>
-      {analyze.error && <span className="text-xs text-red-600">{String(analyze.error)}</span>}
+      {analyze.error && <span className="text-xs text-red-600">{errorMessage(analyze.error)}</span>}
     </span>
   );
 }
@@ -240,7 +241,7 @@ export default function EntityPage() {
 
   const loading = entityType === "document" ? !docQuery.data : !entityQuery.data;
   const error = docQuery.error ?? entityQuery.error;
-  if (error) return <p className="text-red-600">{String(error)}</p>;
+  if (error) return <p className="text-red-600">{errorMessage(error)}</p>;
   if (loading) return <p className="text-zinc-500">Loading…</p>;
 
   const title =

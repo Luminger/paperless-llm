@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import SessionDetail from "./SessionDetail";
-import { renderWithProviders, makeProposal } from "../test/utils";
+import { makeEntity, makeProposal, renderWithProviders } from "../test/utils";
 import {
   api,
   type SessionDetail as SessionDetailT,
@@ -124,7 +124,7 @@ describe("SessionDetail step feed", () => {
     });
     mocked.listTags.mockResolvedValue([]);
     mocked.listCorrespondents.mockResolvedValue([]);
-    mocked.listDocumentTypes.mockResolvedValue([{ id: 1, name: "Rechnung" }]);
+    mocked.listDocumentTypes.mockResolvedValue([makeEntity({ id: 1, name: "Rechnung" })]);
     mocked.listStoragePaths.mockResolvedValue([]);
   });
 

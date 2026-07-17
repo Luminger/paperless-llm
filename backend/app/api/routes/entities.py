@@ -10,7 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_paperless
-from app.api.schemas import InstructionsUpdate, MergeCandidateOut
+from app.api.schemas import (
+    DocumentOut,
+    DocumentSearchPage,
+    EntityOut,
+    InstructionsOut,
+    InstructionsUpdate,
+    MergeCandidateOut,
+)
 from app.db.session import get_session
 from app.paperless import PaperlessClient
 from app.services.entity_index import merge_candidates
@@ -34,7 +41,7 @@ async def list_documents(
     page: int = 1,
     page_size: int = 25,
     paperless: PaperlessClient = Depends(get_paperless),
-):
+) -> DocumentSearchPage:
     result = await paperless.search_documents(
         query=query,
         tag_ids=[tag_id] if tag_id else None,
@@ -43,12 +50,22 @@ async def list_documents(
         page=page,
         page_size=page_size,
     )
-    return result.model_dump(exclude={"results": {"__all__": {"content"}}})
+    return DocumentSearchPage(
+        count=result.count,
+        all=result.all,
+        results=[
+            DocumentOut(**d.model_dump(exclude={"content"}))
+            for d in result.results
+        ],
+    )
 
 
 @router.get("/documents/{doc_id}")
-async def get_document(doc_id: int, paperless: PaperlessClient = Depends(get_paperless)):
-    return (await paperless.get_document(doc_id)).model_dump()
+async def get_document(
+    doc_id: int, paperless: PaperlessClient = Depends(get_paperless)
+) -> DocumentOut:
+    doc = await paperless.get_document(doc_id)
+    return DocumentOut(**doc.model_dump(include=set(DocumentOut.model_fields)))
 
 
 @router.get("/documents/{doc_id}/thumb")
@@ -59,15 +76,22 @@ async def get_thumbnail(doc_id: int, paperless: PaperlessClient = Depends(get_pa
     )
 
 
-def _with_instructions(entities: list, instr: dict[int, str]) -> list[dict]:
-    return [e.model_dump() | {"instructions": instr.get(e.id, "")} for e in entities]
+def _entity_out(e, instructions: str = "") -> EntityOut:
+    return EntityOut(
+        **e.model_dump(include=set(EntityOut.model_fields) - {"instructions"}),
+        instructions=instructions,
+    )
+
+
+def _with_instructions(entities: list, instr: dict[int, str]) -> list[EntityOut]:
+    return [_entity_out(e, instr.get(e.id, "")) for e in entities]
 
 
 @router.get("/tags")
 async def list_tags(
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
-):
+) -> list[EntityOut]:
     tags = await paperless.list_tags()
     # First sight of an inbox tag seeds its default instruction.
     await ensure_inbox_defaults(db, tags)
@@ -78,7 +102,7 @@ async def list_tags(
 async def list_correspondents(
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
-):
+) -> list[EntityOut]:
     return _with_instructions(
         await paperless.list_correspondents(), await get_map(db, "correspondent")
     )
@@ -88,15 +112,17 @@ async def list_correspondents(
 async def list_document_types(
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
-):
+) -> list[EntityOut]:
     return _with_instructions(
         await paperless.list_document_types(), await get_map(db, "document_type")
     )
 
 
 @router.get("/storage_paths")
-async def list_storage_paths(paperless: PaperlessClient = Depends(get_paperless)):
-    return [s.model_dump() for s in await paperless.list_storage_paths()]
+async def list_storage_paths(
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> list[EntityOut]:
+    return [_entity_out(s) for s in await paperless.list_storage_paths()]
 
 
 @router.get("/{entity_type}/merge-candidates")
@@ -120,7 +146,7 @@ async def get_entity(
     entity_id: int,
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
-):
+) -> EntityOut:
     """Generic taxonomy entity detail (documents have their own route)."""
     if entity_type not in TAXONOMY_TYPES and entity_type != "storage_path":
         raise HTTPException(422, f"unknown entity type {entity_type!r}")
@@ -135,7 +161,7 @@ async def get_entity(
     if entity_type == "tag":
         await ensure_inbox_defaults(db, [entity])
     instr = await get_map(db, entity_type)
-    return entity.model_dump() | {"instructions": instr.get(entity_id, "")}
+    return _entity_out(entity, instr.get(entity_id, ""))
 
 
 @router.put("/{entity_type}/{entity_id}/instructions")
@@ -144,11 +170,13 @@ async def put_instructions(
     entity_id: int,
     body: InstructionsUpdate,
     db: AsyncSession = Depends(get_session),
-) -> dict:
+) -> InstructionsOut:
     """Set the app-local agent instructions for a taxonomy entity.
     Clearing stores an empty row — seeded defaults never come back."""
     if entity_type not in TAXONOMY_TYPES:
         raise HTTPException(422, f"no instructions for {entity_type!r}")
     await set_instructions(db, entity_type, entity_id, body.instructions)
-    return {"entity_type": entity_type, "entity_id": entity_id,
-            "instructions": body.instructions}
+    return InstructionsOut(
+        entity_type=entity_type, entity_id=entity_id,
+        instructions=body.instructions,
+    )

@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import { ProposalCard } from "../components/ProposalCard";
-import { renderWithProviders, makeProposal } from "../test/utils";
+import { makeEntity, makeProposal, renderWithProviders } from "../test/utils";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
@@ -54,14 +54,14 @@ function metadataProposal(overrides = {}) {
 function setupTaxonomy() {
   mocked.getDocument.mockResolvedValue(DOC);
   mocked.listTags.mockResolvedValue([
-    { id: 1, name: "Rechnung" },
-    { id: 6, name: "scan" },
-    { id: 3, name: "wichtig" },
+    makeEntity({ id: 1, name: "Rechnung" }),
+    makeEntity({ id: 6, name: "scan" }),
+    makeEntity({ id: 3, name: "wichtig" }),
   ]);
   mocked.listCorrespondents.mockResolvedValue([
-    { id: 2, name: "Telarko Deutschland GmbH" },
+    makeEntity({ id: 2, name: "Telarko Deutschland GmbH" }),
   ]);
-  mocked.listDocumentTypes.mockResolvedValue([{ id: 1, name: "Rechnung" }]);
+  mocked.listDocumentTypes.mockResolvedValue([makeEntity({ id: 1, name: "Rechnung" })]);
   mocked.listStoragePaths.mockResolvedValue([]);
 }
 

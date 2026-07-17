@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import EntityPage from "./EntityPage";
-import { renderWithProviders } from "../test/utils";
+import { makeEntity, renderWithProviders } from "../test/utils";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
@@ -29,9 +29,9 @@ describe("EntityPage (generic entity overview)", () => {
     vi.clearAllMocks();
     mocked.getMeta.mockResolvedValue({ paperless_url: "http://paperless.example" });
     mocked.listSessions.mockResolvedValue({ count: 0, page: 1, page_size: 5, results: [] });
-    mocked.listTags.mockResolvedValue([{ id: 3, name: "Steuern" }]);
-    mocked.listCorrespondents.mockResolvedValue([{ id: 8, name: "Kraxi" }]);
-    mocked.listDocumentTypes.mockResolvedValue([{ id: 2, name: "Rechnung" }]);
+    mocked.listTags.mockResolvedValue([makeEntity({ id: 3, name: "Steuern" })]);
+    mocked.listCorrespondents.mockResolvedValue([makeEntity({ id: 8, name: "Kraxi" })]);
+    mocked.listDocumentTypes.mockResolvedValue([makeEntity({ id: 2, name: "Rechnung" })]);
     mocked.listStoragePaths.mockResolvedValue([]);
   });
 
@@ -71,14 +71,13 @@ describe("EntityPage (generic entity overview)", () => {
   });
 
   it("taxonomy entities use the same generic page", async () => {
-    mocked.getEntity.mockResolvedValue({
+    mocked.getEntity.mockResolvedValue(makeEntity({
       id: 8,
       name: "Kraxi",
       document_count: 5,
       match: "kraxi",
       matching_algorithm: 1,
-      instructions: "",
-    });
+    }));
     renderWithProviders(<EntityPage />, {
       route: "/taxonomy/correspondent/8",
       path: "/taxonomy/:type/:id",
@@ -104,10 +103,10 @@ describe("EntityPage — instructions & inbox", () => {
   });
 
   it("saves agent instructions", async () => {
-    mocked.getEntity.mockResolvedValue({
-      id: 3, name: "Steuern", document_count: 4, match: "", instructions: "old rule",
-    });
-    mocked.setInstructions.mockResolvedValue({ instructions: "Nur Steuerpost." });
+    mocked.getEntity.mockResolvedValue(makeEntity({
+      id: 3, name: "Steuern", document_count: 4, instructions: "old rule",
+    }));
+    mocked.setInstructions.mockResolvedValue({ entity_type: "tag", entity_id: 3, instructions: "Nur Steuerpost." });
     renderWithProviders(<EntityPage />, {
       route: "/taxonomy/tag/3",
       path: "/taxonomy/:type/:id",
@@ -124,10 +123,10 @@ describe("EntityPage — instructions & inbox", () => {
   });
 
   it("inbox tag is not analyzable", async () => {
-    mocked.getEntity.mockResolvedValue({
-      id: 1, name: "Inbox", document_count: 2, match: "", is_inbox_tag: true,
+    mocked.getEntity.mockResolvedValue(makeEntity({
+      id: 1, name: "Inbox", document_count: 2, is_inbox_tag: true,
       instructions: "This is the inbox tag…",
-    });
+    }));
     renderWithProviders(<EntityPage />, {
       route: "/taxonomy/tag/1",
       path: "/taxonomy/:type/:id",

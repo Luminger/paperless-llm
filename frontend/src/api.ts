@@ -1,53 +1,47 @@
 // Typed API client for the paperless-llm backend.
+//
+// All request/response types are GENERATED from the backend's OpenAPI
+// schema (npm run gen:api → src/api/schema.gen.ts). This file only
+// aliases them and provides the thin fetch wrapper — never hand-write
+// a type the backend already defines.
 
-export type ProposalStatus =
-  | "draft"
-  | "pending"
-  | "rejected"
-  | "applied"
-  | "superseded"
-  | "no_change";
+import type { components } from "./api/schema.gen";
+import { ApiError } from "./lib/errors";
 
-export interface Proposal {
-  id: number;
-  session_id: number;
-  kind: string;
-  revision: number;
-  supersedes_id: number | null;
-  agent_payload: Record<string, unknown>;
-  user_payload: Record<string, unknown> | null;
-  base_snapshot: Record<string, unknown> | null;
-  status: ProposalStatus;
-  entity_type: string | null;
-  entity_id: number | null;
-  created_at: string;
-  updated_at: string;
-  applied: boolean;
-  reverted: boolean;
-}
+type S = components["schemas"];
 
-export interface Session {
-  id: number;
-  agent_kind: string;
-  entity_type: string | null;
-  entity_id: number | null;
-  title: string;
-  status: string;
-  phase: string | null;
-  params: Record<string, unknown>;
-  error: string | null;
-  archived_at: string | null;
-  created_at: string;
-  updated_at: string;
-  proposal_count: number;
-}
+export type Proposal = S["ProposalOut"];
+export type ProposalStatus = Proposal["status"];
+export type Session = S["SessionOut"];
+export type SessionDetail = S["SessionDetailOut"];
+export type SessionPage = S["SessionPage"];
+export type Step = S["StepOut"];
+export type StepKind = Step["kind"];
+export type StepState = Step["state"];
+export type TranscriptItem = S["TranscriptItem"];
+export type CallTiming = S["CallTiming"];
+export type AttemptRecord = S["AttemptRecord"];
+export type Job = S["JobOut"];
+export type JobDetail = S["JobDetailOut"];
+// Request body: every field has a server-side default.
+export type JobCreate = Partial<S["JobCreate"]>;
+export type JobPage = S["JobPage"];
+export type ProposalPage = S["ProposalPage"];
+export type Stats = S["StatsOut"];
+export type EntityRef = S["EntityOut"];
+export type PaperlessDocument = S["DocumentOut"];
+export type DocumentSearchPage = S["DocumentSearchPage"];
+export type MergeCandidate = S["MergeCandidateOut"];
+export type OcrReview = S["OcrReviewOut"];
+export type AuditEntry = S["AuditEntryOut"];
+export type AuditPage = S["AuditPage"];
+export type Meta = S["MetaOut"];
+export type SyncStatus = S["SyncStatusOut"];
+export type ResourceFetchStatus = S["ResourceFetch"];
+export type RevertCheck = S["RevertCheckOut"];
 
-export interface SessionPage {
-  count: number;
-  page: number;
-  page_size: number;
-  results: Session[];
-}
+// Shapes that exist outside the HTTP contract (SSE payloads, JSON
+// blobs the backend types as dict[str, Any]):
 
 export interface SessionFilter {
   entity_type?: string;
@@ -58,178 +52,10 @@ export interface SessionFilter {
   page_size?: number;
 }
 
-export interface Meta {
-  paperless_url: string;
-}
-
-export interface ResourceFetchStatus {
-  in_flight: number;
-  last_fetched_at: string | null;
-  last_error: string | null;
-}
-
-export interface SyncStatus {
-  resources: Record<string, ResourceFetchStatus>;
-}
-
-export interface AuditEntry {
-  id: number;
-  ts: string;
-  kind: string;
-  action: string;
-  actor: string;
-  detail: Record<string, unknown>;
-}
-
-export interface AuditPage {
-  count: number;
-  page: number;
-  page_size: number;
-  results: AuditEntry[];
-}
-
-export interface OcrReview {
-  document_id: number;
-  previous_content: string;
-  ocr_text: string;
-  pages: number;
-  timings: (CallTiming & { pages?: string })[];
-}
-
-export interface EntityRef {
-  id: number;
-  name: string;
-  document_count?: number | null;
-  match?: string;
-  matching_algorithm?: number;
-  is_inbox_tag?: boolean;
-  // App-local agent instructions (binding for the agent).
-  instructions?: string;
-}
-
-export interface MergeCandidate {
-  entity_type: string;
-  source: { id: number; name: string; document_count: number | null };
-  target: { id: number; name: string; document_count: number | null };
-  string_score: number;
-  semantic_score: number | null;
-}
-
-export interface Job {
-  id: number;
-  kind: string;
-  params: Record<string, unknown>;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
-  total: number;
-  done: number;
-  failed: number;
-  error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface JobDetail extends Job {
-  sessions: Session[];
-}
-
-export interface JobCreate {
-  document_ids?: number[];
-  tag_id?: number;
-  inbox?: boolean;
-  untagged_only?: boolean;
-  redo_ocr?: boolean;
-  apply_policy?: "review" | "auto";
-  instructions?: string;
-}
-
-export interface Stats {
-  pending_proposals: number;
-  active_sessions: number;
-  queue_pending: Record<string, number>;
-  active_jobs: number;
-  lifetime: Record<string, number>;
-}
-
-export interface CallTiming {
-  started_at: string;
-  finished_at: string;
-  duration_s: number;
-  ttft_s: number | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  tps: number | null;
-}
-
-export interface TranscriptItem {
-  role: "user" | "agent" | "tool";
-  content: string;
-  origin: "chat" | "pipeline";
-  tool_name: string | null;
-  tool_args: Record<string, unknown> | null;
-  tool_result: string | null;
-  timing: CallTiming | null;
-  ts: string | null;
-}
-
-export interface AttemptRecord {
-  attempt?: number;
-  started_at?: string | null;
-  finished_at?: string | null;
-  error?: string | null;
-  manual_retry_at?: string;
-}
-
-export type StepKind = "ocr" | "analysis" | "chat";
-export type StepState =
-  | "pending"
-  | "running"
-  | "awaiting_user"
-  | "succeeded"
-  | "failed"
-  | "superseded"
-  | "cancelled";
-
-export interface Step {
-  id: number;
-  session_id: number;
-  kind: StepKind;
-  state: StepState;
-  lane: string;
-  input: Record<string, unknown>;
-  result: Record<string, unknown>;
-  error: string | null;
-  attempts: AttemptRecord[];
-  attempt_count: number;
-  max_attempts: number;
-  scheduled_at: string | null;
-  supersedes_id: number | null;
-  created_at: string;
-  started_at: string | null;
-  finished_at: string | null;
-  transcript: TranscriptItem[];
-}
-
-export interface SessionDetail extends Session {
-  steps: Step[];
-  proposals: Proposal[];
-}
-
 export interface SessionEvent {
   type: string;
   session_id: number;
   [key: string]: unknown;
-}
-
-export interface PaperlessDocument {
-  id: number;
-  title: string;
-  correspondent: number | null;
-  document_type: number | null;
-  storage_path: number | null;
-  tags: number[];
-  created: string | null;
-  added: string | null;
-  archive_serial_number: number | null;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -238,15 +64,27 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`${resp.status}: ${body.slice(0, 300)}`);
+    let code = "error";
+    let message = `request failed (${resp.status})`;
+    try {
+      const detail = (await resp.json())?.detail;
+      if (detail && typeof detail === "object") {
+        code = detail.code ?? code;
+        message = detail.message || message;
+      } else if (typeof detail === "string") {
+        message = detail;
+      }
+    } catch {
+      // non-JSON body — keep the generic message
+    }
+    throw new ApiError(resp.status, code, message);
   }
   return resp.json() as Promise<T>;
 }
 
 export const api = {
   listProposals: (status?: ProposalStatus) =>
-    request<Proposal[]>(`/api/proposals${status ? `?status=${status}` : ""}`),
+    request<ProposalPage>(`/api/proposals${status ? `?status=${status}` : ""}`),
   getProposal: (id: number) => request<Proposal>(`/api/proposals/${id}`),
   patchProposal: (id: number, user_payload: Record<string, unknown> | null) =>
     request<Proposal>(`/api/proposals/${id}`, {
@@ -256,7 +94,7 @@ export const api = {
   proposalAction: (id: number, action: "reject" | "apply" | "revert") =>
     request<Proposal>(`/api/proposals/${id}/${action}`, { method: "POST" }),
   revertCheck: (id: number) =>
-    request<{ revert_noop: boolean }>(`/api/proposals/${id}/revert-check`),
+    request<RevertCheck>(`/api/proposals/${id}/revert-check`),
 
   getMeta: () => request<Meta>("/api/meta"),
   getSyncStatus: () => request<SyncStatus>("/api/sync/status"),
@@ -279,10 +117,10 @@ export const api = {
   getEntity: (entityType: string, id: number) =>
     request<EntityRef>(`/api/entities/${entityType}/${id}`),
   setInstructions: (entityType: string, id: number, instructions: string) =>
-    request<{ instructions: string }>(`/api/entities/${entityType}/${id}/instructions`, {
-      method: "PUT",
-      body: JSON.stringify({ instructions }),
-    }),
+    request<S["InstructionsOut"]>(
+      `/api/entities/${entityType}/${id}/instructions`,
+      { method: "PUT", body: JSON.stringify({ instructions }) },
+    ),
   getSession: (id: number) => request<SessionDetail>(`/api/sessions/${id}`),
   sendMessage: (id: number, content: string) =>
     request<Step>(`/api/sessions/${id}/messages`, {
@@ -302,7 +140,7 @@ export const api = {
   mergeCandidates: (entityType: string) =>
     request<MergeCandidate[]>(`/api/entities/${entityType}/merge-candidates`),
 
-  listJobs: () => request<Job[]>("/api/jobs"),
+  listJobs: () => request<JobPage>("/api/jobs"),
   getJob: (id: number) => request<JobDetail>(`/api/jobs/${id}`),
   createJob: (body: JobCreate) =>
     request<Job>("/api/jobs", { method: "POST", body: JSON.stringify(body) }),
@@ -340,9 +178,7 @@ export const api = {
     if (opts.tag_id) params.set("tag_id", String(opts.tag_id));
     if (opts.correspondent_id) params.set("correspondent_id", String(opts.correspondent_id));
     if (opts.document_type_id) params.set("document_type_id", String(opts.document_type_id));
-    return request<{ count: number; all?: number[]; results: PaperlessDocument[] }>(
-      `/api/entities/documents?${params}`,
-    );
+    return request<DocumentSearchPage>(`/api/entities/documents?${params}`);
   },
   getDocument: (id: number) =>
     request<PaperlessDocument>(`/api/entities/documents/${id}`),

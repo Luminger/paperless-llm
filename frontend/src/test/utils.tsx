@@ -47,3 +47,21 @@ export function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
     ...overrides,
   };
 }
+
+import type { EntityRef, Job, JobPage } from "../api";
+
+/** Full EntityOut with defaults — tests override what they care about. */
+export function makeEntity(over: Partial<EntityRef> & { id: number; name: string }): EntityRef {
+  return {
+    match: "",
+    matching_algorithm: 0,
+    document_count: 0,
+    is_inbox_tag: false,
+    instructions: "",
+    ...over,
+  };
+}
+
+export function jobPage(results: Job[]): JobPage {
+  return { count: results.length, page: 1, page_size: 50, results };
+}

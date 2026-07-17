@@ -18,7 +18,7 @@ from app.db.models import (
     StepKind,
     StepState,
 )
-from app.services.transcript import TranscriptItem
+from app.services.transcript import CallTiming, TranscriptItem
 
 
 class SessionOut(BaseModel):
@@ -40,12 +40,38 @@ class SessionOut(BaseModel):
 
 
 class SessionPage(BaseModel):
-    """Generic pagination envelope for session lists."""
+    """Pagination envelope (uniform across all app-owned lists)."""
 
     count: int
     page: int
     page_size: int
     results: list[SessionOut]
+
+
+class ProposalPage(BaseModel):
+    count: int
+    page: int
+    page_size: int
+    results: list[ProposalOut]
+
+
+class JobPage(BaseModel):
+    count: int
+    page: int
+    page_size: int
+    results: list[JobOut]
+
+
+class AttemptRecord(BaseModel):
+    """One entry of a step's attempt log (never shadowed by retries)."""
+
+    model_config = {"extra": "ignore"}
+
+    attempt: int | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    error: str | None = None
+    manual_retry_at: str | None = None
 
 
 class StepOut(BaseModel):
@@ -62,7 +88,7 @@ class StepOut(BaseModel):
     input: dict[str, Any] = {}
     result: dict[str, Any] = {}
     error: str | None
-    attempts: list[dict[str, Any]] = []
+    attempts: list[AttemptRecord] = []
     attempt_count: int
     max_attempts: int
     scheduled_at: datetime | None
@@ -160,6 +186,75 @@ class InstructionsUpdate(BaseModel):
     instructions: str = ""
 
 
+class InstructionsOut(BaseModel):
+    entity_type: str
+    entity_id: int
+    instructions: str
+
+
+class EntityOut(BaseModel):
+    """Taxonomy entity as the UI sees it: paperless fields + the
+    app-local agent instructions."""
+
+    id: int
+    name: str
+    match: str = ""
+    matching_algorithm: int = 0
+    document_count: int | None = None
+    is_inbox_tag: bool = False
+    color: str | None = None
+    path: str | None = None
+    instructions: str = ""
+
+
+class DocumentOut(BaseModel):
+    """Document list/detail item (content only on detail)."""
+
+    id: int
+    title: str = ""
+    content: str | None = None
+    tags: list[int] = []
+    correspondent: int | None = None
+    document_type: int | None = None
+    storage_path: int | None = None
+    created: str | None = None
+    added: str | None = None
+    modified: str | None = None
+    archive_serial_number: int | None = None
+    original_file_name: str | None = None
+
+
+class DocumentSearchPage(BaseModel):
+    """Proxied paperless search: ``all`` carries every matching id
+    across pages (drives cross-page select-all)."""
+
+    count: int
+    all: list[int] | None = None
+    results: list[DocumentOut]
+
+
+class ResourceFetch(BaseModel):
+    in_flight: int = 0
+    last_fetched_at: datetime | None = None
+    last_error: str | None = None
+
+
+class SyncStatusOut(BaseModel):
+    resources: dict[str, ResourceFetch]
+
+
+class MetaOut(BaseModel):
+    paperless_url: str
+
+
+class HealthOut(BaseModel):
+    status: str
+
+
+class RevertCheckOut(BaseModel):
+    revert_noop: bool
+
+
 class AuditEntryOut(BaseModel):
     id: int
     ts: datetime
@@ -176,10 +271,16 @@ class AuditPage(BaseModel):
     results: list[AuditEntryOut]
 
 
+class EntityRefOut(BaseModel):
+    id: int
+    name: str
+    document_count: int | None = None
+
+
 class MergeCandidateOut(BaseModel):
     entity_type: str
-    source: dict[str, Any]
-    target: dict[str, Any]
+    source: EntityRefOut
+    target: EntityRefOut
     string_score: float
     semantic_score: float | None
 
@@ -192,8 +293,12 @@ class OcrReviewOut(BaseModel):
     previous_content: str
     ocr_text: str
     pages: int
-    # Per-batch LLM call metrics of the OCR run.
-    timings: list[dict[str, Any]] = []
+    # Per-batch LLM call metrics of the OCR run (+ page range label).
+    timings: list[OcrBatchTiming] = []
+
+
+class OcrBatchTiming(CallTiming):
+    pages: str | None = None
 
 
 class ResolveRequest(BaseModel):

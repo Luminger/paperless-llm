@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type EntityRef, type PaperlessDocument, type Proposal } from "../api";
 import { StatusBadge } from "./StatusBadge";
+import { errorMessage } from "../lib/errors";
 
 
 // ---------------------------------------------------------------------
@@ -29,11 +30,11 @@ function deriveDesired(doc: PaperlessDocument, payload: Record<string, unknown>)
   const tags = [...doc.tags.filter((t) => !removed.has(t)), ...added.filter((t) => !doc.tags.includes(t))];
   return {
     title: scalar("title", doc.title),
-    correspondent: scalar("correspondent", doc.correspondent),
-    document_type: scalar("document_type", doc.document_type),
-    storage_path: scalar("storage_path", doc.storage_path),
+    correspondent: scalar("correspondent", doc.correspondent ?? null),
+    document_type: scalar("document_type", doc.document_type ?? null),
+    storage_path: scalar("storage_path", doc.storage_path ?? null),
     created: scalar("created", doc.created?.slice(0, 10) ?? null),
-    archive_serial_number: scalar("archive_serial_number", doc.archive_serial_number),
+    archive_serial_number: scalar("archive_serial_number", doc.archive_serial_number ?? null),
     tags,
   };
 }
@@ -542,8 +543,8 @@ export function ProposalCard({
           </button>
         )}
       </div>
-      {action.error && <p className="text-sm text-red-600">{String(action.error)}</p>}
-      {save.error && <p className="text-sm text-red-600">{String(save.error)}</p>}
+      {action.error && <p className="text-sm text-red-600">{errorMessage(action.error)}</p>}
+      {save.error && <p className="text-sm text-red-600">{errorMessage(save.error)}</p>}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { api, type EntityRef } from "../api";
 import { FetchStatus } from "../components/FetchStatus";
 import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
 import { Pager } from "../components/Pager";
+import { errorMessage } from "../lib/errors";
 
 function FilterSelect({
   label,
@@ -142,7 +143,7 @@ export default function Documents() {
             onCancel={ms.cancel}
           />
           {bulkAnalyze.error && (
-            <p className="mt-1 text-xs text-red-600">{String(bulkAnalyze.error)}</p>
+            <p className="mt-1 text-xs text-red-600">{errorMessage(bulkAnalyze.error)}</p>
           )}
         </div>
       )}

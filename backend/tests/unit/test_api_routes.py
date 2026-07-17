@@ -65,7 +65,9 @@ async def test_health(client):
 async def test_proposal_list_and_detail(client, db):
     p = await _seed_proposal(db)
     r = await client.get("/api/proposals")
-    assert r.status_code == 200 and len(r.json()) == 1
+    assert r.status_code == 200
+    envelope = r.json()
+    assert envelope["count"] == 1 and len(envelope["results"]) == 1
     r = await client.get(f"/api/proposals/{p.id}")
     assert r.json()["agent_payload"]["title"] == "Agent title"
     assert (await client.get("/api/proposals/999")).status_code == 404
@@ -933,7 +935,7 @@ async def test_inbox_tag_cannot_be_analyzed(client, db):
     )
     r = await client.post("/api/sessions/analyze/tag/1", json={})
     assert r.status_code == 422
-    assert "inbox" in r.json()["detail"].lower()
+    assert "inbox" in r.json()["detail"]["message"].lower()
 
 
 @respx.mock
@@ -946,3 +948,23 @@ async def test_documents_list_filters_by_taxonomy(client):
     assert params["tags__id__all"] == "3"
     assert params["correspondent__id"] == "8"
     assert params["document_type__id"] == "2"
+
+
+async def test_error_shape_is_uniform(client):
+    """Every error body is {"detail": {"code", "message", ...}}."""
+    r = await client.get("/api/proposals/99999")
+    assert r.status_code == 404
+    d = r.json()["detail"]
+    assert d["code"] == "not_found" and "proposal" in d["message"]
+
+    # Pydantic validation errors share the shape.
+    r = await client.post("/api/jobs", json={"tag_id": "not-a-number"})
+    assert r.status_code == 422
+    d = r.json()["detail"]
+    assert d["code"] == "validation" and d["message"]
+
+
+async def test_jobs_list_envelope(client):
+    r = await client.get("/api/jobs")
+    body = r.json()
+    assert set(body) == {"count", "page", "page_size", "results"}

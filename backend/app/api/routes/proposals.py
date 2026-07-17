@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_paperless
-from app.api.schemas import ProposalOut, ProposalPatch
+from app.api.schemas import (
+    ProposalOut,
+    ProposalPage,
+    ProposalPatch,
+    RevertCheckOut,
+)
 from app.db.models import AppliedChange, Proposal, ProposalStatus
 from app.db.session import get_session
 from app.paperless import PaperlessClient
@@ -39,19 +44,36 @@ async def _load(db: AsyncSession, proposal_id: int) -> Proposal:
 async def list_proposals(
     status: ProposalStatus | None = None,
     session_id: int | None = None,
+    page: int = 1,
+    page_size: int = 50,
     db: AsyncSession = Depends(get_session),
-) -> list[ProposalOut]:
+) -> ProposalPage:
+    page = max(1, page)
+    page_size = min(200, max(1, page_size))
+    where = []
+    if status:
+        where.append(Proposal.status == status)
+    if session_id:
+        where.append(Proposal.session_id == session_id)
+    from sqlalchemy import func
+
+    count = (
+        await db.scalar(select(func.count()).select_from(Proposal).where(*where))
+    ) or 0
     q = (
         select(Proposal)
+        .where(*where)
         .options(selectinload(Proposal.applied_change))
         .order_by(Proposal.created_at.desc())
-        .limit(500)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
-    if status:
-        q = q.where(Proposal.status == status)
-    if session_id:
-        q = q.where(Proposal.session_id == session_id)
-    return [_out(p) for p in (await db.scalars(q)).all()]
+    return ProposalPage(
+        count=count,
+        page=page,
+        page_size=page_size,
+        results=[_out(p) for p in (await db.scalars(q)).all()],
+    )
 
 
 @router.get("/{proposal_id}")
@@ -129,7 +151,7 @@ async def revert_check(
     proposal_id: int,
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
-) -> dict:
+) -> RevertCheckOut:
     """Would reverting this applied proposal change anything? Drives the
     greyed-out Revert button (noop reverts are refused server-side too)."""
     p = await _load(db, proposal_id)
@@ -142,7 +164,7 @@ async def revert_check(
         raise HTTPException(409, "proposal has no revertible change")
     from app.proposals.apply import revert_is_noop
 
-    return {"revert_noop": await revert_is_noop(paperless, p, change)}
+    return RevertCheckOut(revert_noop=await revert_is_noop(paperless, p, change))
 
 
 @router.post("/{proposal_id}/revert")

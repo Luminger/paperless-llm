@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Session } from "../api";
 import { Pager } from "./Pager";
+import { errorMessage } from "../lib/errors";
 
 const statusColors: Record<string, string> = {
   idle: "bg-emerald-100 text-emerald-800",
@@ -111,7 +112,7 @@ function PagedList({
     refetchInterval: archived ? false : 5000,
   });
   if (isLoading) return <p className="text-sm text-zinc-500">Loading…</p>;
-  if (error) return <p className="text-sm text-red-600">{String(error)}</p>;
+  if (error) return <p className="text-sm text-red-600">{errorMessage(error)}</p>;
   if (!data || data.count === 0)
     return <p className="text-sm text-zinc-400">{emptyText}</p>;
   return (

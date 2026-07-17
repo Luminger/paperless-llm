@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AuditEntry } from "../api";
 import { Pager } from "../components/Pager";
+import { errorMessage } from "../lib/errors";
 
 const KIND_COLORS: Record<string, string> = {
   proposal: "bg-emerald-100 text-emerald-800",
@@ -144,7 +145,7 @@ export default function AuditLog() {
     refetchInterval: 10000,
   });
 
-  if (error) return <p className="text-red-600">{String(error)}</p>;
+  if (error) return <p className="text-red-600">{errorMessage(error)}</p>;
 
   return (
     <div>

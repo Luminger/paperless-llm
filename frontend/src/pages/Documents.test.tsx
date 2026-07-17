@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import Documents from "./Documents";
-import { renderWithProviders } from "../test/utils";
+import { makeEntity, renderWithProviders } from "../test/utils";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
@@ -35,9 +35,9 @@ describe("Documents", () => {
     vi.clearAllMocks();
     mocked.getSyncStatus.mockResolvedValue({ resources: {} });
     mocked.listDocuments.mockResolvedValue(DOCS);
-    mocked.listTags.mockResolvedValue([{ id: 3, name: "Steuern" }]);
-    mocked.listCorrespondents.mockResolvedValue([{ id: 1, name: "Kraxi" }]);
-    mocked.listDocumentTypes.mockResolvedValue([{ id: 2, name: "Rechnung" }]);
+    mocked.listTags.mockResolvedValue([makeEntity({ id: 3, name: "Steuern" })]);
+    mocked.listCorrespondents.mockResolvedValue([makeEntity({ id: 1, name: "Kraxi" })]);
+    mocked.listDocumentTypes.mockResolvedValue([makeEntity({ id: 2, name: "Rechnung" })]);
   });
 
   it("rows link to the document page; no Analyze button", async () => {

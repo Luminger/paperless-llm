@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import Taxonomy from "./Taxonomy";
-import { renderWithProviders } from "../test/utils";
+import { makeEntity, renderWithProviders } from "../test/utils";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
@@ -22,11 +22,11 @@ describe("Taxonomy", () => {
     vi.clearAllMocks();
     mocked.getSyncStatus.mockResolvedValue({ resources: {} });
     mocked.listTags.mockResolvedValue([
-      { id: 1, name: "Steuern", document_count: 4, match: "", is_inbox_tag: false,
-        instructions: "Nur Steuerpost." },
-      { id: 2, name: "Inbox", document_count: 2, match: "", is_inbox_tag: true,
-        instructions: "This is the inbox tag…" },
-      { id: 3, name: "Versicherung", document_count: 1, match: "", is_inbox_tag: false },
+      makeEntity({ id: 1, name: "Steuern", document_count: 4,
+        instructions: "Nur Steuerpost." }),
+      makeEntity({ id: 2, name: "Inbox", document_count: 2, is_inbox_tag: true,
+        instructions: "This is the inbox tag…" }),
+      makeEntity({ id: 3, name: "Versicherung", document_count: 1 }),
     ]);
     mocked.mergeCandidates.mockResolvedValue([]);
   });

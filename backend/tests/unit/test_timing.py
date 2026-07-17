@@ -56,7 +56,7 @@ def test_transcript_attaches_timing_to_every_item_of_its_response():
     t = derive_transcript(history)
     tools = [i for i in t if i.role == "tool"]
     # Both tool widgets came from the same LLM call — both carry it.
-    assert tools[0].timing == timing
-    assert tools[1].timing == timing
+    assert tools[0].timing.model_dump(exclude_none=True) == timing
+    assert tools[1].timing.model_dump(exclude_none=True) == timing
     agent_item = next(i for i in t if i.role == "agent")
-    assert agent_item.timing["duration_s"] == 1.0
+    assert agent_item.timing.duration_s == 1.0
