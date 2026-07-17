@@ -1,29 +1,38 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/app/PageHeader";
+import { EmptyState, ErrorNotice } from "@/components/app/states";
 import { api, type AuditEntry } from "../api";
+import { keys } from "../lib/keys";
+import { formatDateTime } from "../lib/format";
 import { Pager } from "../components/Pager";
-import { errorMessage } from "../lib/errors";
 
 const KIND_COLORS: Record<string, string> = {
-  proposal: "bg-emerald-100 text-emerald-800",
-  job: "bg-purple-100 text-purple-800",
-  webhook: "bg-blue-100 text-blue-800",
-  session: "bg-zinc-100 text-zinc-600",
-  paperless: "bg-sky-100 text-sky-700",
+  proposal:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  job: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+  webhook: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+  session: "bg-muted text-muted-foreground",
+  paperless: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
 };
 
 function ActorBadge({ actor }: { actor: string }) {
   const isUser = actor.startsWith("user");
   return (
-    <span
-      className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
-        isUser ? "bg-amber-100 text-amber-800" : "bg-zinc-100 text-zinc-500"
-      }`}
+    <Badge
+      variant="secondary"
+      className={
+        isUser
+          ? "shrink-0 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+          : "shrink-0 text-muted-foreground"
+      }
       title={isUser ? "Triggered by a user action" : "Triggered by the application"}
     >
       {actor}
-    </span>
+    </Badge>
   );
 }
 
@@ -40,7 +49,7 @@ function summary(e: AuditEntry): React.ReactNode {
           {d.session_id != null && (
             <>
               {" — "}
-              <Link className="text-emerald-700 hover:underline" to={`/sessions/${d.session_id}`}>
+              <Link className="text-primary hover:underline" to={`/sessions/${d.session_id}`}>
                 session #{String(d.session_id)}
               </Link>
             </>
@@ -60,7 +69,7 @@ function summary(e: AuditEntry): React.ReactNode {
     case "session/unarchived":
       return (
         <>
-          <Link className="text-emerald-700 hover:underline" to={`/sessions/${d.session_id}`}>
+          <Link className="text-primary hover:underline" to={`/sessions/${d.session_id}`}>
             session #{String(d.session_id)}
           </Link>{" "}
           {e.action}
@@ -69,9 +78,11 @@ function summary(e: AuditEntry): React.ReactNode {
     case "paperless/fetch":
     case "paperless/write":
       return (
-        <span className={e.action === "write" ? "font-medium" : "text-zinc-500"}>
+        <span className={e.action === "write" ? "font-medium" : "text-muted-foreground"}>
           {String(d.method)} {String(d.path)}
-          {d.status != null && <span className="text-zinc-400"> → {String(d.status)}</span>}
+          {d.status != null && (
+            <span className="text-muted-foreground/60"> → {String(d.status)}</span>
+          )}
         </span>
       );
     default:
@@ -84,25 +95,25 @@ function summary(e: AuditEntry): React.ReactNode {
 }
 
 function DiffTable({ diff }: { diff: Record<string, { from: unknown; to: unknown }> }) {
-  const keys = Object.keys(diff);
-  if (keys.length === 0) return null;
+  const fields = Object.keys(diff);
+  if (fields.length === 0) return null;
   return (
     <table className="w-full table-fixed text-xs">
       <thead>
-        <tr className="border-b border-zinc-200 text-left text-zinc-400">
+        <tr className="border-b text-left text-muted-foreground/60">
           <th className="w-40 py-1 pr-2 font-medium">Field</th>
           <th className="w-1/2 py-1 pr-2 font-medium">From</th>
           <th className="py-1 font-medium">To</th>
         </tr>
       </thead>
       <tbody>
-        {keys.map((k) => (
-          <tr key={k} className="border-b border-zinc-100 align-top">
-            <td className="py-1 pr-2 font-mono text-zinc-500">{k}</td>
-            <td className="py-1 pr-2 break-words whitespace-pre-wrap text-red-700/80">
+        {fields.map((k) => (
+          <tr key={k} className="border-b border-border/50 align-top">
+            <td className="py-1 pr-2 font-mono text-muted-foreground">{k}</td>
+            <td className="py-1 pr-2 break-words whitespace-pre-wrap text-red-700/80 dark:text-red-400/80">
               {JSON.stringify(diff[k].from) ?? "—"}
             </td>
-            <td className="py-1 break-words whitespace-pre-wrap text-emerald-700/90">
+            <td className="py-1 break-words whitespace-pre-wrap text-emerald-700/90 dark:text-emerald-400/90">
               {JSON.stringify(diff[k].to) ?? "—"}
             </td>
           </tr>
@@ -118,10 +129,10 @@ function EntryDetails({ e }: { e: AuditEntry }) {
     Object.entries(e.detail).filter(([k]) => k !== "diff"),
   );
   return (
-    <div className="space-y-2 border-t border-zinc-100 bg-zinc-50/60 p-3">
+    <div className="space-y-2 border-t bg-muted/40 p-3">
       {diff && Object.keys(diff).length > 0 && <DiffTable diff={diff} />}
       {Object.keys(rest).length > 0 && (
-        <pre className="font-mono text-[11px] break-words whitespace-pre-wrap text-zinc-500">
+        <pre className="font-mono text-[11px] break-words whitespace-pre-wrap text-muted-foreground">
           {JSON.stringify(rest, null, 1)}
         </pre>
       )}
@@ -140,60 +151,60 @@ export default function AuditLog() {
   const [filter, setFilter] = useState<string>("");
   const pageSize = 20;
   const { data, error } = useQuery({
-    queryKey: ["audit", filter, page],
+    queryKey: keys.audit(filter, page),
     queryFn: () => api.listAudit(page, pageSize, filter || undefined),
     refetchInterval: 10000,
   });
 
-  if (error) return <p className="text-red-600">{errorMessage(error)}</p>;
-
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold">Log</h1>
-      <p className="mb-3 text-sm text-zinc-500">
-        Audit trail: every read and write against paperless, every change the
-        application made (with its from → to diff), attributed to who caused it.
-      </p>
-      <div className="mb-3 flex gap-2">
-        {FILTERS.map((f) => (
-          <button
+      <PageHeader
+        title="Log"
+        filters={FILTERS.map((f) => (
+          <Button
             key={f.key}
+            size="sm"
+            variant={filter === f.key ? "default" : "secondary"}
             onClick={() => {
               setFilter(f.key);
               setPage(1);
             }}
-            className={`rounded px-2.5 py-1 text-xs ${
-              filter === f.key ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600"
-            }`}
           >
             {f.label}
-          </button>
+          </Button>
         ))}
-      </div>
-      <ul className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
-        {(data?.results ?? []).map((e) => (
-          <li key={e.id}>
-            <details>
-              <summary className="flex cursor-pointer items-center gap-3 p-2.5 text-sm select-none hover:bg-zinc-50">
-                <span className="w-40 shrink-0 font-mono text-xs text-zinc-400">
-                  {new Date(e.ts).toLocaleString()}
-                </span>
-                <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${KIND_COLORS[e.kind] ?? "bg-zinc-100"}`}
-                >
-                  {e.kind}
-                </span>
-                <ActorBadge actor={e.actor} />
-                <span className="min-w-0 flex-1 truncate text-zinc-700">{summary(e)}</span>
-              </summary>
-              <EntryDetails e={e} />
-            </details>
-          </li>
-        ))}
-        {data && data.count === 0 && (
-          <li className="p-4 text-sm text-zinc-400">Nothing logged yet.</li>
-        )}
-      </ul>
+      />
+      <p className="-mt-2 mb-3 text-sm text-muted-foreground">
+        Audit trail: every read and write against paperless, every change the
+        application made (with its from → to diff), attributed to who caused it.
+      </p>
+      <ErrorNotice error={error} />
+      {data && data.count === 0 ? (
+        <EmptyState title="Nothing logged yet." />
+      ) : (
+        <ul className="divide-y rounded-lg border bg-card">
+          {(data?.results ?? []).map((e) => (
+            <li key={e.id}>
+              <details>
+                <summary className="flex cursor-pointer items-center gap-3 p-2.5 text-sm select-none hover:bg-muted/50">
+                  <span className="w-44 shrink-0 font-mono text-xs text-muted-foreground/70">
+                    {formatDateTime(e.ts)}
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    className={`shrink-0 ${KIND_COLORS[e.kind] ?? "bg-muted"}`}
+                  >
+                    {e.kind}
+                  </Badge>
+                  <ActorBadge actor={e.actor} />
+                  <span className="min-w-0 flex-1 truncate">{summary(e)}</span>
+                </summary>
+                <EntryDetails e={e} />
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="mt-2">
         <Pager page={page} pageSize={pageSize} count={data?.count ?? 0} onPage={setPage} />
       </div>

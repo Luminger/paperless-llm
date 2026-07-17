@@ -1,14 +1,17 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/app/PageHeader";
+import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
+import { keys } from "../lib/keys";
 import { StatusBadge } from "../components/StatusBadge";
-import { errorMessage } from "../lib/errors";
 
 export default function JobDetail() {
   const { id } = useParams();
   const jobId = Number(id);
   const { data: job, error } = useQuery({
-    queryKey: ["job", jobId],
+    queryKey: keys.job(jobId),
     queryFn: () => api.getJob(jobId),
     refetchInterval: (q) => {
       const s = q.state.data?.status;
@@ -16,30 +19,30 @@ export default function JobDetail() {
     },
   });
 
-  if (error) return <p className="text-red-600">{errorMessage(error)}</p>;
-  if (!job) return <p className="text-zinc-500">Loading…</p>;
+  if (error) return <ErrorNotice error={error} />;
+  if (!job) return <LoadingState lines={4} />;
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold">Job #{job.id}</h1>
-      <p className="mb-4 text-sm text-zinc-400">
-        {job.done} ok, {job.failed} failed of {job.total} · <StatusBadge status={job.status} />
+      <PageHeader
+        title={`Job #${job.id}`}
+        actions={<StatusBadge status={job.status} />}
+      />
+      <p className="-mt-2 mb-4 text-sm text-muted-foreground">
+        {job.done} ok, {job.failed} failed of {job.total}
       </p>
-      <ul className="space-y-1">
+      <ul className="divide-y rounded-lg border bg-card">
         {job.sessions.map((s) => (
-          <li
-            key={s.id}
-            className="flex items-center gap-3 rounded border border-zinc-100 bg-white p-2 text-sm"
-          >
+          <li key={s.id} className="flex items-center gap-3 p-2.5 text-sm">
             <span className="flex-1">{s.title || `Session #${s.id}`}</span>
-            <span className="text-xs text-zinc-400">{s.phase}</span>
+            <span className="text-xs text-muted-foreground">{s.phase}</span>
             <StatusBadge status={s.status} />
             {s.phase === "ocr_review" && (
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">
+              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                 OCR review needed
-              </span>
+              </Badge>
             )}
-            <Link className="text-xs text-emerald-700 hover:underline" to={`/sessions/${s.id}`}>
+            <Link className="text-xs text-primary hover:underline" to={`/sessions/${s.id}`}>
               open
             </Link>
           </li>

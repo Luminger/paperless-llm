@@ -1,5 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/app/PageHeader";
 import { api } from "../api";
+import { keys } from "../lib/keys";
 import { SessionList } from "../components/SessionList";
 
 function fmt(n: number | undefined): string {
@@ -12,16 +15,18 @@ function fmt(n: number | undefined): string {
 
 function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded border border-zinc-200 bg-white px-4 py-2">
-      <p className="text-lg font-semibold">{value}</p>
-      <p className="text-xs text-zinc-500">{label}</p>
-    </div>
+    <Card className="py-3">
+      <CardContent className="px-4">
+        <p className="text-lg font-semibold">{value}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
+      </CardContent>
+    </Card>
   );
 }
 
 export default function Dashboard() {
   const { data: stats } = useQuery({
-    queryKey: ["stats"],
+    queryKey: keys.stats(),
     queryFn: api.getStats,
     refetchInterval: 5000,
   });
@@ -29,14 +34,14 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold">Dashboard</h1>
-      <p className="mb-4 text-sm text-zinc-500">
+      <PageHeader title="Dashboard" />
+      <p className="-mt-2 mb-4 text-sm text-muted-foreground">
         Sessions that still need something — your input at a gate, running work, or a
         look at a failure. Finished sessions live on their document's or entity's page.
       </p>
 
       {stats && (
-        <div className="mb-6 flex flex-wrap gap-3">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard label="proposals to review" value={stats.pending_proposals} />
           <StatCard label="analyses in flight" value={stats.active_sessions} />
           <StatCard
@@ -52,7 +57,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <h2 className="mb-2 text-sm font-medium text-zinc-600">Needs attention</h2>
+      <h2 className="mb-2 text-sm font-medium text-muted-foreground">Needs attention</h2>
       <SessionList unfinished pageSize={5} showEntity showArchived={false} />
     </div>
   );

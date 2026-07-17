@@ -1,11 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/app/NativeSelect";
+import { PageHeader } from "@/components/app/PageHeader";
+import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef } from "../api";
+import { keys } from "../lib/keys";
+import { formatDate } from "../lib/format";
 import { FetchStatus } from "../components/FetchStatus";
 import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
 import { Pager } from "../components/Pager";
-import { errorMessage } from "../lib/errors";
 
 function FilterSelect({
   label,
@@ -19,9 +26,8 @@ function FilterSelect({
   onChange: (v: number | undefined) => void;
 }) {
   return (
-    <select
+    <NativeSelect
       aria-label={`filter by ${label}`}
-      className="rounded border border-zinc-200 px-2 py-1 text-sm text-zinc-600"
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
     >
@@ -31,7 +37,7 @@ function FilterSelect({
           {o.name}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -45,13 +51,16 @@ export default function Documents() {
   const navigate = useNavigate();
   const ms = useMultiSelect();
 
-  const { data: tags } = useQuery({ queryKey: ["tags"], queryFn: api.listTags });
+  const { data: tags } = useQuery({
+    queryKey: keys.entities("tag"),
+    queryFn: api.listTags,
+  });
   const { data: correspondents } = useQuery({
-    queryKey: ["correspondents"],
+    queryKey: keys.entities("correspondent"),
     queryFn: api.listCorrespondents,
   });
   const { data: docTypes } = useQuery({
-    queryKey: ["document_types"],
+    queryKey: keys.entities("document_type"),
     queryFn: api.listDocumentTypes,
   });
 
@@ -61,8 +70,8 @@ export default function Documents() {
     correspondent_id: correspondentId,
     document_type_id: docTypeId,
   };
-  const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ["documents", filters, page],
+  const { data, isLoading, isFetching, refetch, error } = useQuery({
+    queryKey: keys.documents(filters, page),
     queryFn: () => api.listDocuments({ ...filters, page }),
   });
 
@@ -79,59 +88,72 @@ export default function Documents() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-3">
-        <h1 className="text-xl font-semibold">Documents</h1>
-        <span className="flex-1" />
-        {!ms.active && (
-          <button
-            className="rounded bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-200"
-            onClick={() => ms.setActive(true)}
-          >
-            Select…
-          </button>
-        )}
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setSubmitted(query);
-            setPage(1);
-          }}
-        >
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Full-text search…"
-            className="w-56 rounded border border-zinc-300 px-2 py-1 text-sm"
-          />
-          <button className="rounded bg-zinc-900 px-3 py-1 text-sm text-white">
-            Search
-          </button>
-        </form>
-        <FilterSelect label="tag" value={tagId} options={tags} onChange={(v) => { setTagId(v); setPage(1); }} />
-        <FilterSelect
-          label="correspondent"
-          value={correspondentId}
-          options={correspondents}
-          onChange={(v) => { setCorrespondentId(v); setPage(1); }}
-        />
-        <FilterSelect
-          label="document type"
-          value={docTypeId}
-          options={docTypes}
-          onChange={(v) => { setDocTypeId(v); setPage(1); }}
-        />
-      </div>
+      <PageHeader
+        title="Documents"
+        actions={
+          !ms.active && (
+            <Button variant="secondary" size="sm" onClick={() => ms.setActive(true)}>
+              Select…
+            </Button>
+          )
+        }
+        filters={
+          <>
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setSubmitted(query);
+                setPage(1);
+              }}
+            >
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Full-text search…"
+                className="h-8 w-56"
+              />
+              <Button type="submit" size="sm" variant="secondary">
+                Search
+              </Button>
+            </form>
+            <FilterSelect
+              label="tag"
+              value={tagId}
+              options={tags}
+              onChange={(v) => {
+                setTagId(v);
+                setPage(1);
+              }}
+            />
+            <FilterSelect
+              label="correspondent"
+              value={correspondentId}
+              options={correspondents}
+              onChange={(v) => {
+                setCorrespondentId(v);
+                setPage(1);
+              }}
+            />
+            <FilterSelect
+              label="document type"
+              value={docTypeId}
+              options={docTypes}
+              onChange={(v) => {
+                setDocTypeId(v);
+                setPage(1);
+              }}
+            />
+          </>
+        }
+      />
 
       <div className="mb-2">
         <FetchStatus resource="documents" isFetching={isFetching} onRefresh={() => refetch()} />
       </div>
 
       {ms.active && (
-        <div className="mb-3">
+        <div className="mb-3 space-y-1">
           <MultiSelectBar
             count={ms.selected.size}
             allIds={allIds}
@@ -142,38 +164,46 @@ export default function Documents() {
             onUnselectAll={ms.unselectAll}
             onCancel={ms.cancel}
           />
-          {bulkAnalyze.error && (
-            <p className="mt-1 text-xs text-red-600">{errorMessage(bulkAnalyze.error)}</p>
-          )}
+          <ErrorNotice error={bulkAnalyze.error} />
         </div>
       )}
 
-      {isLoading && <p className="text-zinc-500">Loading…</p>}
-      <ul className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
-        {data?.results.map((d) => (
-          <li key={d.id} className="flex items-center gap-3 p-3">
-            {ms.active && (
-              <input
-                type="checkbox"
-                aria-label={`select document ${d.id}`}
-                checked={ms.selected.has(d.id)}
-                onChange={() => ms.toggle(d.id)}
-              />
-            )}
-            <span className="font-mono text-xs text-zinc-400">#{d.id}</span>
-            <Link
-              className="font-medium hover:text-emerald-700 hover:underline"
-              to={`/documents/${d.id}`}
-            >
-              {d.title || "(untitled)"}
-            </Link>
-            <span className="text-xs text-zinc-400">{d.created ?? ""}</span>
-          </li>
-        ))}
-      </ul>
+      {error && <ErrorNotice error={error} />}
+      {isLoading ? (
+        <LoadingState lines={5} />
+      ) : data && data.results.length === 0 ? (
+        <EmptyState
+          title="No documents match."
+          hint="Adjust the search or filters above."
+        />
+      ) : (
+        <ul className="divide-y rounded-lg border bg-card">
+          {data?.results.map((d) => (
+            <li key={d.id} className="flex items-center gap-3 p-3">
+              {ms.active && (
+                <Checkbox
+                  aria-label={`select document ${d.id}`}
+                  checked={ms.selected.has(d.id)}
+                  onCheckedChange={() => ms.toggle(d.id)}
+                />
+              )}
+              <span className="font-mono text-xs text-muted-foreground/60">#{d.id}</span>
+              <Link
+                className="font-medium hover:text-primary hover:underline"
+                to={`/documents/${d.id}`}
+              >
+                {d.title || "(untitled)"}
+              </Link>
+              <span className="text-xs text-muted-foreground">{formatDate(d.created)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="mt-2 flex items-center justify-between">
         <Pager page={page} pageSize={25} count={data?.count ?? 0} onPage={setPage} />
-        {data && <p className="text-xs text-zinc-400">{data.count} documents</p>}
+        {data && (
+          <p className="text-xs text-muted-foreground">{data.count} documents</p>
+        )}
       </div>
     </div>
   );

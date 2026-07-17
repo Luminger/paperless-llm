@@ -1,10 +1,24 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { PageHeader } from "@/components/app/PageHeader";
+import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef, type MergeCandidate } from "../api";
+import { keys } from "../lib/keys";
 import { FetchStatus } from "../components/FetchStatus";
 import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
-import { errorMessage } from "../lib/errors";
 
 const TYPES = [
   { key: "tag", label: "Tags" },
@@ -16,23 +30,24 @@ type TypeKey = (typeof TYPES)[number]["key"];
 
 function CandidateRow({ c, onReview }: { c: MergeCandidate; onReview: () => void }) {
   return (
-    <li className="flex items-center gap-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm">
+    <li className="flex items-center gap-3 rounded-lg border border-amber-300/60 bg-amber-50 p-2 text-sm dark:border-amber-800 dark:bg-amber-950/40">
       <span className="flex-1">
         <strong>{c.source.name}</strong>{" "}
-        <span className="text-zinc-500">({c.source.document_count ?? 0} docs)</span>
+        <span className="text-muted-foreground">
+          ({c.source.document_count ?? 0} docs)
+        </span>
         {" → "}
         <strong>{c.target.name}</strong>{" "}
-        <span className="text-zinc-500">({c.target.document_count ?? 0} docs)</span>
+        <span className="text-muted-foreground">
+          ({c.target.document_count ?? 0} docs)
+        </span>
       </span>
-      <span className="text-xs text-zinc-500">
+      <span className="text-xs text-muted-foreground">
         {Math.round(Math.max(c.string_score, c.semantic_score ?? 0) * 100)}% similar
       </span>
-      <button
-        className="rounded bg-amber-600 px-2 py-1 text-xs text-white hover:bg-amber-700"
-        onClick={onReview}
-      >
+      <Button size="sm" variant="secondary" onClick={onReview}>
         Review with agent
-      </button>
+      </Button>
     </li>
   );
 }
@@ -43,8 +58,8 @@ export default function Taxonomy() {
   const navigate = useNavigate();
   const ms = useMultiSelect();
 
-  const { data: entities, isFetching, refetch } = useQuery({
-    queryKey: ["taxonomy", type],
+  const { data: entities, isLoading, isFetching, refetch, error } = useQuery({
+    queryKey: keys.entities(type),
     queryFn: () =>
       type === "tag"
         ? api.listTags()
@@ -55,7 +70,7 @@ export default function Taxonomy() {
   const resource =
     type === "tag" ? "tags" : type === "correspondent" ? "correspondents" : "document_types";
   const { data: candidates } = useQuery({
-    queryKey: ["merge-candidates", type],
+    queryKey: keys.mergeCandidates(type),
     queryFn: () => api.mergeCandidates(type),
   });
 
@@ -94,43 +109,44 @@ export default function Taxonomy() {
 
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold">Taxonomy</h1>
-      <div className="mb-3 flex items-center gap-2">
-        {TYPES.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => switchType(t.key)}
-            className={`rounded px-3 py-1.5 text-sm ${
-              type === t.key ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-        <input
-          aria-label="filter entities"
-          className="ml-2 rounded border border-zinc-200 px-2 py-1 text-sm"
-          placeholder="filter by name…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
-        <span className="flex-1" />
-        {!ms.active && (
-          <button
-            className="rounded bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-200"
-            onClick={() => ms.setActive(true)}
-          >
-            Select…
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Taxonomy"
+        actions={
+          !ms.active && (
+            <Button variant="secondary" size="sm" onClick={() => ms.setActive(true)}>
+              Select…
+            </Button>
+          )
+        }
+        filters={
+          <>
+            {TYPES.map((t) => (
+              <Button
+                key={t.key}
+                size="sm"
+                variant={type === t.key ? "default" : "secondary"}
+                onClick={() => switchType(t.key)}
+              >
+                {t.label}
+              </Button>
+            ))}
+            <Input
+              aria-label="filter entities"
+              className="h-8 w-48"
+              placeholder="filter by name…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </>
+        }
+      />
 
       <div className="mb-3">
         <FetchStatus resource={resource} isFetching={isFetching} onRefresh={() => refetch()} />
       </div>
 
       {ms.active && (
-        <div className="mb-3">
+        <div className="mb-3 space-y-1">
           <MultiSelectBar
             count={ms.selected.size}
             allIds={selectable}
@@ -141,15 +157,13 @@ export default function Taxonomy() {
             onUnselectAll={ms.unselectAll}
             onCancel={ms.cancel}
           />
-          {bulkAnalyze.error && (
-            <p className="mt-1 text-xs text-red-600">{errorMessage(bulkAnalyze.error)}</p>
-          )}
+          <ErrorNotice error={bulkAnalyze.error} />
         </div>
       )}
 
       {candidates && candidates.length > 0 && (
         <div className="mb-6">
-          <h2 className="mb-2 text-sm font-medium text-amber-700">
+          <h2 className="mb-2 text-sm font-medium text-amber-700 dark:text-amber-400">
             Possible duplicates ({candidates.length})
           </h2>
           <ul className="space-y-2">
@@ -160,56 +174,66 @@ export default function Taxonomy() {
         </div>
       )}
 
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-zinc-300 text-left text-zinc-500">
-            {ms.active && <th className="w-8 py-2" />}
-            <th className="py-2 pr-4 font-medium">Name</th>
-            <th className="py-2 pr-4 font-medium">Documents</th>
-            <th className="py-2 pr-4 font-medium">Matching rule</th>
-            <th className="py-2 pr-4 font-medium">Instructions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((e: EntityRef) => (
-            <tr key={e.id} className="border-b border-zinc-100 hover:bg-zinc-50">
-              {ms.active && (
-                <td className="py-2">
-                  <input
-                    type="checkbox"
-                    aria-label={`select ${e.name}`}
-                    checked={ms.selected.has(e.id)}
-                    disabled={e.is_inbox_tag}
-                    title={e.is_inbox_tag ? "The inbox tag cannot be analyzed" : undefined}
-                    onChange={() => ms.toggle(e.id)}
-                  />
-                </td>
-              )}
-              <td className="py-2 pr-4">
-                <Link
-                  className="hover:text-emerald-700 hover:underline"
-                  to={`/taxonomy/${type}/${e.id}`}
-                >
-                  {e.name}
-                </Link>
-                {e.is_inbox_tag && (
-                  <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
-                    inbox
-                  </span>
+      {error && <ErrorNotice error={error} />}
+      {isLoading ? (
+        <LoadingState lines={5} />
+      ) : visible.length === 0 ? (
+        <EmptyState title={`No ${type.replaceAll("_", " ")}s match.`} />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {ms.active && <TableHead className="w-8" />}
+              <TableHead>Name</TableHead>
+              <TableHead>Documents</TableHead>
+              <TableHead>Matching rule</TableHead>
+              <TableHead>Instructions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visible.map((e: EntityRef) => (
+              <TableRow key={e.id}>
+                {ms.active && (
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`select ${e.name}`}
+                      checked={ms.selected.has(e.id)}
+                      disabled={e.is_inbox_tag}
+                      title={e.is_inbox_tag ? "The inbox tag cannot be analyzed" : undefined}
+                      onCheckedChange={() => ms.toggle(e.id)}
+                    />
+                  </TableCell>
                 )}
-              </td>
-              <td className="py-2 pr-4 text-zinc-500">{e.document_count ?? 0}</td>
-              <td className="py-2 pr-4 text-zinc-400">{e.match ? `${e.match}` : "—"}</td>
-              <td className="max-w-64 truncate py-2 pr-4 text-xs text-zinc-400">
-                {e.instructions || "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {reviewCandidate.error && (
-        <p className="mt-2 text-sm text-red-600">{errorMessage(reviewCandidate.error)}</p>
+                <TableCell>
+                  <Link
+                    className="font-medium hover:text-primary hover:underline"
+                    to={`/taxonomy/${type}/${e.id}`}
+                  >
+                    {e.name}
+                  </Link>
+                  {e.is_inbox_tag && (
+                    <Badge variant="secondary" className="ml-2 text-blue-700 dark:text-blue-300">
+                      inbox
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {e.document_count ?? 0}
+                </TableCell>
+                <TableCell className="text-muted-foreground/70">
+                  {e.match ? `${e.match}` : "—"}
+                </TableCell>
+                <TableCell className="max-w-64 truncate text-xs text-muted-foreground/70">
+                  {e.instructions || "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
+      <div className="mt-2">
+        <ErrorNotice error={reviewCandidate.error} />
+      </div>
     </div>
   );
 }

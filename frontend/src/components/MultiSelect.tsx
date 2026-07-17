@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 
 /** Generic cross-page multiselect state for entity lists. */
 export function useMultiSelect() {
@@ -43,34 +44,21 @@ export function MultiSelectBar({
   onCancel: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50/60 p-2 text-sm">
-      <span className="font-medium text-emerald-900">{count} selected</span>
-      <button
-        className="rounded bg-emerald-600 px-3 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50"
-        disabled={count === 0 || busy}
-        onClick={onAction}
-      >
+    <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-2 text-sm">
+      <span className="font-medium">{count} selected</span>
+      <Button size="sm" disabled={count === 0 || busy} onClick={onAction}>
         {actionLabel}
-      </button>
+      </Button>
       <span className="flex-1" />
-      <button
-        className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200"
-        onClick={() => onSelectAll(allIds)}
-      >
+      <Button variant="ghost" size="sm" onClick={() => onSelectAll(allIds)}>
         Select all
-      </button>
-      <button
-        className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200"
-        onClick={onUnselectAll}
-      >
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onUnselectAll}>
         Unselect all
-      </button>
-      <button
-        className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-200"
-        onClick={onCancel}
-      >
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onCancel}>
         Cancel
-      </button>
+      </Button>
     </div>
   );
 }
