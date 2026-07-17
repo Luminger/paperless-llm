@@ -20,13 +20,13 @@ from app.db.models import (
     AgentKind,
     EntityType,
     Job,
-    QueueLane,
     Session,
     SessionPhase,
     SessionStatus,
+    StepKind,
 )
 from app.paperless import PaperlessClient
-from app.services.queue import enqueue
+from app.services.steps import create_step
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +118,6 @@ async def create_campaign(
             agent_kind=AgentKind.document,
             entity_type=EntityType.document,
             entity_id=doc_id,
-            phase=SessionPhase.queued,
             job_id=job.id,
             params={
                 "redo_ocr": redo_ocr,
@@ -129,14 +128,8 @@ async def create_campaign(
         )
         db.add(session)
         await db.flush()
-        await enqueue(
-            db,
-            "start",
-            {"session_id": session.id},
-            lane=QueueLane.batch,
-            session_id=session.id,
-            job_id=job.id,
-            commit=False,
+        await create_step(
+            db, session, StepKind.ocr if redo_ocr else StepKind.analysis
         )
     await db.commit()
     return job, ids

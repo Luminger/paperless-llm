@@ -166,7 +166,7 @@ async def test_user_edit_injected_into_steering(db, paperless_client):
 
 
 @respx.mock
-async def test_failure_marks_session_failed_keeps_drafts(db, paperless_client):
+async def test_failure_keeps_drafts_reviewable(db, paperless_client):
     _mock_doc7()
     session = await _make_session(db)
 
@@ -191,9 +191,8 @@ async def test_failure_marks_session_failed_keeps_drafts(db, paperless_client):
 
     with pytest.raises(RuntimeError):
         await run_agent_turn(paperless_client, db, session, "go", agent=agent)
-
-    assert session.status == SessionStatus.failed
-    assert "endpoint exploded" in (session.error or "")
+    # Failure bookkeeping (status/error/retries) is the step engine's
+    # job now; the runner only guarantees drafts stay reviewable.
 
     from sqlalchemy import select
 
@@ -219,7 +218,7 @@ async def test_read_tool_roundtrip(db, paperless_client):
 
 
 @respx.mock
-async def test_instrumented_tools_publish_sse_events(db, paperless_client):
+async def test_instrumented_tools_publish_step_progress(db, paperless_client):
     """The registry wraps tools to publish tool_called events; the wrap
     must survive pydantic-ai's signature-based schema generation, and a
     full turn must emit run_started/tool_called/proposal_created/
@@ -252,14 +251,8 @@ async def test_instrumented_tools_publish_sse_events(db, paperless_client):
         events = []
         while not q.empty():
             events.append(q.get_nowait())
-        types = [e["type"] for e in events]
-        assert types[0] == "run_started"
-        assert "tool_called" in types
-        assert next(e for e in events if e["type"] == "tool_called")["tool"] == (
-            "propose_update_document_metadata"
-        )
-        assert "proposal_created" in types
-        assert types[-1] == "run_finished"
+        tools = [e for e in events if e["type"] == "step_progress" and e.get("tool")]
+        assert tools and tools[0]["tool"] == "propose_update_document_metadata"
     finally:
         bus.unsubscribe(session.id, q)
 

@@ -13,11 +13,11 @@ from app.db.models import (
     JobStatus,
     Proposal,
     ProposalStatus,
-    QueueItem,
-    QueueState,
     Session,
     SessionPhase,
     SessionStatus,
+    Step,
+    StepState,
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
@@ -94,16 +94,20 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
         raise HTTPException(409, f"job is already {job.status}")
     pending = (
         await db.scalars(
-            select(QueueItem).where(
-                QueueItem.job_id == job_id, QueueItem.state == QueueState.pending
-            )
+            select(Step)
+            .join(Session, Session.id == Step.session_id)
+            .where(Session.job_id == job_id, Step.state == StepState.pending)
         )
     ).all()
-    for item in pending:
-        item.state = QueueState.cancelled
-        if item.session_id:
-            session = await db.get(Session, item.session_id)
-            if session is not None and session.phase != SessionPhase.done:
+    from app.services.steps import sync_session
+
+    for step in pending:
+        step.state = StepState.cancelled
+        step.error = "cancelled with its campaign"
+        session = await db.get(Session, step.session_id)
+        if session is not None and session.phase != SessionPhase.done:
+            await sync_session(db, session)
+            if session.status != SessionStatus.failed:
                 session.status = SessionStatus.failed
                 session.error = "cancelled with its campaign"
     job.status = JobStatus.cancelled
@@ -132,9 +136,9 @@ async def stats(db: AsyncSession = Depends(get_session)) -> StatsOut:
     lanes = dict(
         (
             await db.execute(
-                select(QueueItem.lane, func.count())
-                .where(QueueItem.state == QueueState.pending)
-                .group_by(QueueItem.lane)
+                select(Step.lane, func.count())
+                .where(Step.state == StepState.pending)
+                .group_by(Step.lane)
             )
         ).all()
     )

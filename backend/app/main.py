@@ -14,7 +14,7 @@ from app.api.routes import entities, jobs, proposals, sessions, webhooks
 from app.config import get_settings
 from app.db.migrations import run_migrations
 from app.db.session import dispose_engine
-from app.services.queue import recover, workers
+from app.services.steps import recover, workers
 
 log = logging.getLogger(__name__)
 

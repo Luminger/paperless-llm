@@ -163,7 +163,9 @@ async def test_sessions_list_and_detail(client, db):
     assert (await client.get("/api/sessions/999")).status_code == 404
 
 
-async def test_session_detail_exposes_transcript_not_raw_history(client, db):
+async def test_session_detail_exposes_steps_with_transcript_slices(client, db):
+    from app.db.models import Step, StepKind, StepState
+
     s = Session(
         agent_kind=AgentKind.document,
         message_history=[
@@ -178,27 +180,36 @@ async def test_session_detail_exposes_transcript_not_raw_history(client, db):
         ],
     )
     db.add(s)
+    await db.flush()
+    db.add(
+        Step(
+            session_id=s.id, kind=StepKind.analysis, state=StepState.succeeded,
+            result={"message_range": [0, 2]},
+        )
+    )
     await db.commit()
     body = (await client.get(f"/api/sessions/{s.id}")).json()
     assert "message_history" not in body
-    assert [t["role"] for t in body["transcript"]] == ["user", "agent"]
-    assert body["transcript"][0]["origin"] == "pipeline"
-    assert "SECRET" not in str(body["transcript"])
+    (step,) = body["steps"]
+    assert step["kind"] == "analysis"
+    assert [t["role"] for t in step["transcript"]] == ["user", "agent"]
+    assert step["transcript"][0]["origin"] == "pipeline"
+    assert "SECRET" not in str(step["transcript"])
 
 
-async def _queue_items(db, stage=None):
+async def _steps(db, kind=None):
     from sqlalchemy import select
 
-    from app.db.models import QueueItem
+    from app.db.models import Step
 
-    q = select(QueueItem).order_by(QueueItem.id)
-    if stage:
-        q = q.where(QueueItem.stage == stage)
+    q = select(Step).order_by(Step.id)
+    if kind:
+        q = q.where(Step.kind == kind)
     return (await db.scalars(q)).all()
 
 
-async def test_steering_message_schedules_turn(client, db):
-    from app.db.models import SessionPhase, SessionStatus
+async def test_steering_message_creates_chat_step(client, db):
+    from app.db.models import SessionPhase
 
     s = Session(agent_kind=AgentKind.document, phase=SessionPhase.done)
     db.add(s)
@@ -206,60 +217,75 @@ async def test_steering_message_schedules_turn(client, db):
 
     r = await client.post(f"/api/sessions/{s.id}/messages", json={"content": "use German"})
     assert r.status_code == 202
-    assert r.json()["status"] == "running"  # busy immediately
-    items = await _queue_items(db, "steering")
-    assert len(items) == 1
-    assert items[0].args == {"session_id": s.id, "content": "use German"}
-    assert items[0].lane.value == "interactive"
-    assert items[0].state.value == "pending"
+    body = r.json()
+    assert body["kind"] == "chat" and body["state"] == "pending"
+    assert body["input"] == {"content": "use German"}
+    steps = await _steps(db, "chat")
+    assert len(steps) == 1 and steps[0].lane.value == "interactive"
 
-    # Concurrent sends 409 while the turn runs.
+    # A pending/running step blocks further messages (409).
     r = await client.post(f"/api/sessions/{s.id}/messages", json={"content": "more"})
     assert r.status_code == 409
 
     # Empty messages rejected.
-    s.status = SessionStatus.idle
+    from sqlalchemy import delete as _delete
+
+    from app.db.models import Step as _Step
+
+    await db.execute(_delete(_Step))
     await db.commit()
     r = await client.post(f"/api/sessions/{s.id}/messages", json={"content": "  "})
     assert r.status_code == 422
 
 
-async def test_steering_blocked_during_gate_phases(client, db):
-    from app.db.models import SessionPhase
+async def test_steering_blocked_during_gate(client, db):
+    from app.db.models import SessionPhase, Step, StepKind, StepState
 
     s = Session(agent_kind=AgentKind.document, phase=SessionPhase.ocr_review)
     db.add(s)
+    await db.flush()
+    db.add(Step(session_id=s.id, kind=StepKind.ocr, state=StepState.awaiting_user))
     await db.commit()
     r = await client.post(f"/api/sessions/{s.id}/messages", json={"content": "hi"})
     assert r.status_code == 409
 
 
-async def test_ocr_rerun_from_gate(client, db):
-    from app.db.models import SessionPhase
+async def test_ocr_redo_from_gate(client, db):
+    """'Argue with the OCR' is the generic redo action with amended input."""
+    from app.db.models import EntityType, SessionPhase, Step, StepKind, StepState
 
     s = Session(
         agent_kind=AgentKind.document,
+        entity_type=EntityType.document,
         entity_id=7,
         phase=SessionPhase.ocr_review,
         params={"redo_ocr": True},
     )
     db.add(s)
+    await db.flush()
+    gate = Step(session_id=s.id, kind=StepKind.ocr, state=StepState.awaiting_user)
+    db.add(gate)
     await db.commit()
 
     r = await client.post(
-        f"/api/sessions/{s.id}/ocr/rerun", json={"instructions": "higher DPI, mind the stamp"}
+        f"/api/sessions/{s.id}/steps/{gate.id}/redo",
+        json={"input": {"instructions": "higher DPI, mind the stamp"}},
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["phase"] == "ocr_running"
-    assert body["params"]["ocr_instructions"] == "higher DPI, mind the stamp"
-    items = await _queue_items(db, "reocr")
-    assert len(items) == 1
-    assert items[0].args["instructions"] == "higher DPI, mind the stamp"
+    assert body["kind"] == "ocr" and body["state"] == "pending"
+    assert body["input"]["instructions"] == "higher DPI, mind the stamp"
+    assert body["supersedes_id"] == gate.id
+    await db.refresh(gate)
+    assert gate.state.value == "superseded"
 
-    # Only available at the gate.
-    r = await client.post(f"/api/sessions/{s.id}/ocr/rerun", json={})
-    assert r.status_code == 409
+    # Running steps cannot be redone.
+    running = Step(session_id=s.id, kind=StepKind.ocr, state=StepState.running)
+    db.add(running)
+    await db.commit()
+    assert (
+        await client.post(f"/api/sessions/{s.id}/steps/{running.id}/redo", json={})
+    ).status_code == 409
 
 
 async def test_sse_stream_delivers_published_events(client, db):
@@ -300,8 +326,8 @@ async def test_analyze_creates_queued_session(client, db):
     body = r.json()
     assert body["phase"] == "queued"
     assert body["params"] == {"redo_ocr": True, "instructions": "hi"}
-    items = await _queue_items(db, "start")
-    assert len(items) == 1 and items[0].session_id == body["id"]
+    steps = await _steps(db, "ocr")
+    assert len(steps) == 1 and steps[0].session_id == body["id"]
 
 
 async def test_analyze_taxonomy_entity(client, db):
@@ -313,7 +339,7 @@ async def test_analyze_taxonomy_entity(client, db):
     assert body["agent_kind"] == "correspondent"
     assert body["entity_type"] == "correspondent"
     assert body["phase"] == "queued"
-    assert (await _queue_items(db, "start"))[0].session_id == body["id"]
+    assert (await _steps(db, "analysis"))[0].session_id == body["id"]
     # Unknown taxonomy types are rejected.
     assert (await client.post("/api/sessions/analyze/banana/1", json={})).status_code == 422
 
@@ -326,6 +352,9 @@ async def test_ocr_gate_flow(client, db):
         EntityType,
         OcrResult,
         SessionPhase,
+        Step,
+        StepKind,
+        StepState,
     )
 
     respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
@@ -356,13 +385,19 @@ async def test_ocr_gate_flow(client, db):
     assert body["ocr_text"] == "ocr text"
     assert "similarity" not in str(body)
 
-    r = await client.post(f"/api/sessions/{s.id}/ocr/gate", json={"content": "fixed text"})
+    gate = Step(session_id=s.id, kind=StepKind.ocr, state=StepState.awaiting_user)
+    db.add(gate)
+    await db.commit()
+    r = await client.post(
+        f"/api/sessions/{s.id}/steps/{gate.id}/resolve", json={"content": "fixed text"}
+    )
     assert r.status_code == 200
-    assert r.json()["params"]["ocr_gate"] == "accepted"
+    assert r.json()["result"]["resolution"] == "accepted"
     import json as _json
 
     assert _json.loads(patch_route.calls.last.request.content)["content"] == "fixed text"
-    assert len(await _queue_items(db, "analysis")) == 1
+    analysis = await _steps(db, "analysis")
+    assert len(analysis) == 1 and analysis[0].input == {"gate": "accepted"}
     # The internal proposal is journaled and applied, with the user fix
     # preserved separately from the raw OCR text.
     from sqlalchemy import select
@@ -375,7 +410,9 @@ async def test_ocr_gate_flow(client, db):
     assert prop.user_payload["content"] == "fixed text"
     # Gate cannot be resolved twice.
     assert (
-        await client.post(f"/api/sessions/{s.id}/ocr/gate", json={"content": None})
+        await client.post(
+            f"/api/sessions/{s.id}/steps/{gate.id}/resolve", json={"content": None}
+        )
     ).status_code == 409
 
 
@@ -385,6 +422,9 @@ async def test_ocr_gate_keep_existing(client, db):
         EntityType,
         OcrResult,
         SessionPhase,
+        Step,
+        StepKind,
+        StepState,
     )
 
     s = Session(
@@ -400,9 +440,14 @@ async def test_ocr_gate_keep_existing(client, db):
     )
     await db.commit()
 
-    r = await client.post(f"/api/sessions/{s.id}/ocr/gate", json={"content": None})
+    gate = Step(session_id=s.id, kind=StepKind.ocr, state=StepState.awaiting_user)
+    db.add(gate)
+    await db.commit()
+    r = await client.post(
+        f"/api/sessions/{s.id}/steps/{gate.id}/resolve", json={"content": None}
+    )
     assert r.status_code == 200
-    assert r.json()["params"]["ocr_gate"] == "kept_existing"
+    assert r.json()["result"]["resolution"] == "kept_existing"
     from sqlalchemy import select
 
     from app.db.models import Proposal
@@ -449,22 +494,22 @@ async def test_job_campaign_lifecycle(client, db):
 
     from sqlalchemy import select
 
-    from app.db.models import QueueItem
     from app.db.models import Session as DbSession
+    from app.db.models import Step
 
     sessions = (await db.scalars(select(DbSession))).all()
     assert [s.entity_id for s in sessions] == [11, 12]
     assert all(s.params["apply_policy"] == "auto" for s in sessions)
-    items = (await db.scalars(select(QueueItem))).all()
-    assert len(items) == 2 and all(i.lane.value == "batch" for i in items)
+    steps = (await db.scalars(select(Step))).all()
+    assert len(steps) == 2 and all(st.lane.value == "batch" for st in steps)
 
     detail = (await client.get(f"/api/jobs/{job['id']}")).json()
     assert len(detail["sessions"]) == 2
 
     r = await client.post(f"/api/jobs/{job['id']}/cancel")
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
-    items = (await db.scalars(select(QueueItem))).all()
-    assert all(i.state.value == "cancelled" for i in items)
+    steps = (await db.scalars(select(Step))).all()
+    assert all(st.state.value == "cancelled" for st in steps)
     # Cancelling again conflicts.
     assert (await client.post(f"/api/jobs/{job['id']}/cancel")).status_code == 409
 
@@ -524,10 +569,10 @@ async def test_webhook_requires_secret_and_extracts_ids(client, db, monkeypatch)
 
     from sqlalchemy import select
 
-    from app.db.models import QueueItem
+    from app.db.models import Step
 
-    items = (await db.scalars(select(QueueItem))).all()
-    assert len(items) == 2
+    steps = (await db.scalars(select(Step))).all()
+    assert len(steps) == 2
 
 
 async def test_stats_endpoint(client, db):
@@ -539,13 +584,13 @@ async def test_stats_endpoint(client, db):
     assert body["active_sessions"] == 0
 
 
-async def test_retry_now_revives_failed_stage(client, db):
+async def test_retry_step_revives_failed(client, db):
     from app.db.models import (
-        QueueItem,
-        QueueLane,
-        QueueState,
         SessionPhase,
         SessionStatus,
+        Step,
+        StepKind,
+        StepState,
     )
 
     s = Session(
@@ -556,50 +601,51 @@ async def test_retry_now_revives_failed_stage(client, db):
     )
     db.add(s)
     await db.flush()
-    item = QueueItem(
-        stage="analysis", args={"session_id": s.id}, state=QueueState.failed,
-        attempts=3, max_attempts=3, lane=QueueLane.interactive,
-        session_id=s.id, error="ConnectError: LLM down",
+    step = Step(
+        session_id=s.id, kind=StepKind.analysis, state=StepState.failed,
+        attempt_count=3, max_attempts=3, error="ConnectError: LLM down",
+        attempts=[{"attempt": 1}, {"attempt": 2}, {"attempt": 3}],
     )
-    db.add(item)
+    db.add(step)
     await db.commit()
 
-    r = await client.post(f"/api/sessions/{s.id}/retry")
+    r = await client.post(f"/api/sessions/{s.id}/steps/{step.id}/retry")
     assert r.status_code == 200
-    await db.refresh(item)
-    assert item.state == QueueState.pending
-    assert item.attempts == 0  # fresh budget
-    assert item.scheduled_at is None and item.error is None
+    await db.refresh(step)
+    assert step.state == StepState.pending
+    assert step.attempt_count == 0  # fresh budget
+    assert step.attempts[-1].get("manual_retry_at")  # history kept
 
 
-async def test_retry_now_skips_backoff_of_scheduled_retry(client, db):
+async def test_retry_step_skips_backoff(client, db):
     from datetime import timedelta
 
-    from app.db.models import QueueItem, QueueState, SessionPhase, utcnow
+    from app.db.models import SessionPhase, Step, StepKind, StepState, utcnow
 
     s = Session(agent_kind=AgentKind.document, phase=SessionPhase.analyzing)
     db.add(s)
     await db.flush()
-    item = QueueItem(
-        stage="analysis", args={"session_id": s.id}, state=QueueState.pending,
-        attempts=1, max_attempts=3, session_id=s.id,
+    step = Step(
+        session_id=s.id, kind=StepKind.analysis, state=StepState.pending,
+        attempt_count=1, max_attempts=3,
         scheduled_at=utcnow() + timedelta(minutes=5),
     )
-    db.add(item)
+    db.add(step)
     await db.commit()
 
-    # Retry info is exposed on the detail for the UI.
+    # Scheduling is visible on the step for the UI.
     detail = (await client.get(f"/api/sessions/{s.id}")).json()
-    assert detail["retry"]["state"] == "pending"
-    assert detail["retry"]["next_attempt_at"] is not None
+    assert detail["steps"][0]["scheduled_at"] is not None
 
-    r = await client.post(f"/api/sessions/{s.id}/retry")
+    r = await client.post(f"/api/sessions/{s.id}/steps/{step.id}/retry")
     assert r.status_code == 200
-    await db.refresh(item)
-    assert item.scheduled_at is None
+    await db.refresh(step)
+    assert step.scheduled_at is None
 
-    # Nothing to retry -> 409.
-    s2 = Session(agent_kind=AgentKind.document, phase=SessionPhase.done)
-    db.add(s2)
+    # Succeeded steps have nothing to retry -> 409.
+    done = Step(session_id=s.id, kind=StepKind.analysis, state=StepState.succeeded)
+    db.add(done)
     await db.commit()
-    assert (await client.post(f"/api/sessions/{s2.id}/retry")).status_code == 409
+    assert (
+        await client.post(f"/api/sessions/{s.id}/steps/{done.id}/retry")
+    ).status_code == 409

@@ -2,6 +2,9 @@
 executes with the endpoint semaphore and iteration cap, persists new
 history, and finalizes emitted proposals (draft -> pending, superseding
 older open revisions for the same target).
+
+Lifecycle (state, retries, events) is the step engine's job — this
+module only executes the turn and raises on failure.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.deps import AgentDeps
 from app.agents.registry import build_agent
 from app.config import get_settings
-from app.db.models import Proposal, ProposalStatus, Session, SessionStatus
+from app.db.models import Proposal, ProposalStatus, Session, Step
 from app.llm.factory import llm_semaphore
 from app.paperless import PaperlessClient
 from app.services.events import bus
@@ -29,6 +32,8 @@ class RunOutcome:
     session_id: int
     output: str
     proposal_ids: list[int] = field(default_factory=list)
+    # Slice of session.message_history this turn appended.
+    message_range: tuple[int, int] = (0, 0)
 
 
 def _load_history(session: Session) -> list[ModelMessage]:
@@ -41,14 +46,13 @@ def _dump_history(messages: list[ModelMessage]) -> list:
     return ModelMessagesTypeAdapter.dump_python(messages, mode="json")
 
 
-def _progress_handler(session_id: int):
-    """Event-stream consumer for streaming runs: publishes a throttled
-    'generating' SSE signal so the UI can show live progress instead of
-    an opaque spinner. Streamed chunks arrive roughly one token each,
-    so the delta-event count is an honest token proxy; visible (non-
-    thinking) text is forwarded as a tail preview. Passing a handler is
-    also what switches pydantic-ai to streamed model requests — only
-    used when the profile declares supports_streaming."""
+def _progress_handler(session_id: int, step_id: int | None):
+    """Streaming-run consumer: throttled step_progress SSE (streamed
+    chunks arrive roughly one token each, so the delta-event count is an
+    honest token proxy; visible text is forwarded as a tail preview).
+    Passing a handler is also what switches pydantic-ai to streamed
+    model requests — only used when the profile declares
+    supports_streaming."""
     from pydantic_ai.messages import TextPartDelta
 
     async def handler(ctx, events) -> None:
@@ -64,10 +68,8 @@ def _progress_handler(session_id: int):
             now = time.monotonic()
             if tokens and now - last_publish >= 1.0:
                 bus.publish(
-                    session_id,
-                    "generating",
-                    tokens=tokens,
-                    text_tail=text[-400:],
+                    session_id, "step_progress",
+                    step_id=step_id, tokens=tokens, text_tail=text[-400:],
                 )
                 last_publish = now
 
@@ -97,15 +99,22 @@ async def run_agent_turn(
     session: Session,
     user_message: str,
     agent: Agent[AgentDeps, str] | None = None,
+    step: Step | None = None,
 ) -> RunOutcome:
     """Execute one turn. ``agent`` is injectable for tests (TestModel /
-    FunctionModel); defaults to the configured kind."""
+    FunctionModel); defaults to the configured kind. Raises on failure —
+    the step engine records it (proposals drafted before the failure are
+    kept reviewable)."""
     settings = get_settings()
     profile = settings.llm.agent
     agent = agent or build_agent(session.agent_kind)
 
     deps = AgentDeps(
-        paperless=paperless, db=db, settings=settings, session_id=session.id
+        paperless=paperless,
+        db=db,
+        settings=settings,
+        session_id=session.id,
+        step_id=step.id if step is not None else None,
     )
 
     open_proposals = list(
@@ -117,11 +126,7 @@ async def run_agent_turn(
     # instructions, NOT prompt prefix — keeps the stored user message
     # (and thus the derived transcript) clean.
     preamble = _steering_preamble(session, open_proposals)
-
-    session.status = SessionStatus.running
-    session.error = None
-    await db.commit()
-    bus.publish(session.id, "run_started")
+    history_start = len(session.message_history or [])
 
     try:
         async with llm_semaphore(profile.base_url, profile.max_concurrent):
@@ -132,12 +137,12 @@ async def run_agent_turn(
                 message_history=_load_history(session),
                 usage_limits=UsageLimits(request_limit=profile.max_tool_iterations),
                 event_stream_handler=(
-                    _progress_handler(session.id) if profile.supports_streaming else None
+                    _progress_handler(session.id, deps.step_id)
+                    if profile.supports_streaming
+                    else None
                 ),
             )
-    except Exception as e:
-        session.status = SessionStatus.failed
-        session.error = f"{type(e).__name__}: {e}"
+    except Exception:
         # Keep any proposals drafted before the failure reviewable.
         for p in deps.emitted:
             p.status = ProposalStatus.pending
@@ -145,7 +150,6 @@ async def run_agent_turn(
         raise
 
     session.message_history = _dump_history(result.all_messages())
-    session.status = SessionStatus.idle
     if not session.title:
         session.title = user_message[:200]
 
@@ -166,11 +170,9 @@ async def run_agent_turn(
                 p.revision = old.revision + 1
 
     await db.commit()
-    for p in deps.emitted:
-        bus.publish(session.id, "proposal_created", proposal_id=p.id, kind=p.kind)
-    bus.publish(session.id, "run_finished")
     return RunOutcome(
         session_id=session.id,
         output=result.output,
         proposal_ids=[p.id for p in deps.emitted],
+        message_range=(history_start, len(session.message_history or [])),
     )

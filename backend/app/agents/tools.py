@@ -233,6 +233,7 @@ async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
                    snapshot: dict[str, Any] | None = None) -> str:
     proposal = Proposal(
         session_id=ctx.deps.session_id,
+        step_id=ctx.deps.step_id,
         kind=str(p.kind),
         agent_payload=dump_payload(p),
         base_snapshot=snapshot,

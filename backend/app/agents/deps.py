@@ -18,6 +18,8 @@ class AgentDeps:
     db: AsyncSession
     settings: Settings
     session_id: int
+    # The step whose run this is — stamps proposals and progress events.
+    step_id: int | None = None
     # Proposals emitted during the current run (via propose_* tools).
     emitted: list[Proposal] = field(default_factory=list)
     # Per-run cache of taxonomy listings (validation lookups).

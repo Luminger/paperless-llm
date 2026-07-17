@@ -12,9 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import AgentKind, EntityType, QueueLane, Session, SessionPhase
+from app.db.models import AgentKind, EntityType, Session, StepKind
 from app.db.session import get_session
-from app.services.queue import enqueue
+from app.services.steps import create_step
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +65,6 @@ async def paperless_webhook(
             agent_kind=AgentKind.document,
             entity_type=EntityType.document,
             entity_id=doc_id,
-            phase=SessionPhase.queued,
             params={
                 "redo_ocr": cfg.redo_ocr,
                 "apply_policy": cfg.apply_policy,
@@ -75,13 +74,8 @@ async def paperless_webhook(
         )
         db.add(s)
         await db.flush()
-        await enqueue(
-            db,
-            "start",
-            {"session_id": s.id},
-            lane=QueueLane.batch,
-            session_id=s.id,
-            commit=False,
+        await create_step(
+            db, s, StepKind.ocr if cfg.redo_ocr else StepKind.analysis
         )
         session_ids.append(s.id)
     await db.commit()

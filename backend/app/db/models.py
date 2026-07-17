@@ -87,11 +87,19 @@ class QueueLane(enum.StrEnum):
     batch = "batch"
 
 
-class QueueState(enum.StrEnum):
-    pending = "pending"
+class StepKind(enum.StrEnum):
+    ocr = "ocr"
+    analysis = "analysis"
+    chat = "chat"
+
+
+class StepState(enum.StrEnum):
+    pending = "pending"  # queued for a worker (scheduled_at may delay it)
     running = "running"
-    done = "done"
+    awaiting_user = "awaiting_user"  # paused for user input (e.g. OCR gate)
+    succeeded = "succeeded"
     failed = "failed"
+    superseded = "superseded"  # redone by a newer step
     cancelled = "cancelled"
 
 
@@ -144,6 +152,8 @@ class Proposal(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"))
     kind: Mapped[str] = mapped_column(String(50))  # ProposalKind discriminator
+    # The step whose run emitted this proposal (timeline placement).
+    step_id: Mapped[int | None] = mapped_column(ForeignKey("steps.id"), nullable=True)
     revision: Mapped[int] = mapped_column(default=1)
     supersedes_id: Mapped[int | None] = mapped_column(ForeignKey("proposals.id"), nullable=True)
     agent_payload: Mapped[dict[str, Any]] = mapped_column()
@@ -213,40 +223,52 @@ class Job(Base):
     )
 
 
-class QueueItem(Base):
-    """Persistent work queue: one row per pipeline-stage invocation.
-    In-process async workers claim rows; queued work survives restarts
-    (running items are retried on startup). Single-node by design — see
-    DESIGN.md "Queueing"."""
+class Step(Base):
+    """THE unit of session work — one executable, retryable, redoable
+    element of the timeline. A session is its ordered list of steps.
 
-    __tablename__ = "queue_items"
+    The step is also the queue item: workers claim pending steps by
+    lane, the retry policy and attempt history live here, and the
+    session's phase/status are derived from its steps by the engine
+    (single writer). Generic actions (retry / redo / resolve) apply to
+    every kind — nothing is reimplemented per feature."""
+
+    __tablename__ = "steps"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"))
+    kind: Mapped[StepKind] = mapped_column(Enum(StepKind, native_enum=False))
+    # What parametrized this step (instructions, chat content, dpi, ...).
+    input: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    state: Mapped[StepState] = mapped_column(
+        Enum(StepState, native_enum=False), default=StepState.pending
+    )
     lane: Mapped[QueueLane] = mapped_column(
-        Enum(QueueLane, native_enum=False), default=QueueLane.batch
+        Enum(QueueLane, native_enum=False), default=QueueLane.interactive
     )
-    # Stage name resolved via the queue dispatch table.
-    stage: Mapped[str] = mapped_column(String(50))
-    args: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    state: Mapped[QueueState] = mapped_column(
-        Enum(QueueState, native_enum=False), default=QueueState.pending
-    )
-    attempts: Mapped[int] = mapped_column(default=0)
-    max_attempts: Mapped[int] = mapped_column(default=3)
-    # One entry per finished attempt ({attempt, started_at, finished_at,
-    # error}) — retries never shadow earlier attempts; the timeline shows
-    # what happened when.
-    attempt_log: Mapped[list[Any]] = mapped_column(default=list)
-    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), nullable=True)
-    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
+    # Kind-specific outcome (ocr: pages/duration/resolution; agent turns:
+    # message_range into the session history, proposal ids).
+    result: Mapped[dict[str, Any]] = mapped_column(default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Retry backoff: pending items are not claimed before this instant.
+    # Full chronological attempt history ({attempt, started_at,
+    # finished_at, error, manual?}); auto-retry budget = attempt_count
+    # vs max_attempts, reset by manual retries.
+    attempts: Mapped[list[Any]] = mapped_column(default=list)
+    attempt_count: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=3)
+    # Retry backoff: pending steps are not claimed before this instant.
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    supersedes_id: Mapped[int | None] = mapped_column(ForeignKey("steps.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (Index("ix_queue_claim", "state", "lane", "id"),)
+    session: Mapped[Session] = relationship()
+
+    __table_args__ = (
+        Index("ix_steps_claim", "state", "lane", "id"),
+        Index("ix_steps_session", "session_id", "id"),
+    )
 
 
 class EntityEmbedding(Base):

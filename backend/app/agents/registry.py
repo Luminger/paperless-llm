@@ -36,7 +36,8 @@ def _instrumented(fn: Callable) -> Callable:
         except TypeError:
             args_preview = ""
         bus.publish(
-            ctx.deps.session_id, "tool_called", tool=fn.__name__, args=args_preview
+            ctx.deps.session_id, "step_progress",
+            step_id=ctx.deps.step_id, tool=fn.__name__, args=args_preview,
         )
         async with ctx.deps.tool_lock:
             return await fn(ctx, *args, **kwargs)

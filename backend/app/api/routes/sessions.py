@@ -15,30 +15,28 @@ from app.api.schemas import (
     AnalyzeEntityRequest,
     AnalyzeRequest,
     MessageRequest,
-    OcrGateRequest,
-    OcrRerunRequest,
     OcrReviewOut,
-    RetryInfo,
+    RedoRequest,
+    ResolveRequest,
     SessionDetailOut,
     SessionOut,
+    StepOut,
 )
 from app.db.models import (
     AgentKind,
     EntityType,
     OcrResult,
     Proposal,
-    QueueItem,
-    QueueLane,
-    QueueState,
     Session,
     SessionPhase,
-    SessionStatus,
+    Step,
+    StepKind,
+    StepState,
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
-from app.services import pipeline
+from app.services import steps as engine
 from app.services.events import bus
-from app.services.queue import enqueue
 from app.services.transcript import derive_transcript
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -61,6 +59,14 @@ async def list_sessions(db: AsyncSession = Depends(get_session)) -> list[Session
     return out
 
 
+def _step_out(step: Step, history: list) -> StepOut:
+    out = StepOut.model_validate(step)
+    rng = step.result.get("message_range")
+    if rng and isinstance(rng, list) and len(rng) == 2:
+        out.transcript = derive_transcript(history[rng[0] : rng[1]])
+    return out
+
+
 @router.get("/{session_id}")
 async def get_session_detail(
     session_id: int, db: AsyncSession = Depends(get_session)
@@ -68,12 +74,16 @@ async def get_session_detail(
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "session not found")
-    # Build from the base schema: SessionDetailOut.proposals would
-    # otherwise collide with the (lazy) ORM relationship of the same name.
-    out = SessionDetailOut(
-        **SessionOut.model_validate(s).model_dump(),
-        transcript=derive_transcript(s.message_history),
-    )
+    # Build from the base schema: SessionDetailOut fields would otherwise
+    # collide with same-named (lazy) ORM relationships.
+    out = SessionDetailOut(**SessionOut.model_validate(s).model_dump())
+    history = s.message_history or []
+    step_rows = (
+        await db.scalars(
+            select(Step).where(Step.session_id == s.id).order_by(Step.id)
+        )
+    ).all()
+    out.steps = [_step_out(step, history) for step in step_rows]
     proposals = (
         await db.scalars(
             select(Proposal)
@@ -83,20 +93,6 @@ async def get_session_detail(
         )
     ).all()
     out.proposals = [proposal_out(p) for p in proposals]
-    item = await db.scalar(
-        select(QueueItem)
-        .where(QueueItem.session_id == s.id)
-        .order_by(QueueItem.id.desc())
-        .limit(1)
-    )
-    if item is not None:
-        out.retry = RetryInfo(
-            state=item.state.value,
-            attempts=item.attempts,
-            max_attempts=item.max_attempts,
-            next_attempt_at=item.scheduled_at,
-            history=list(item.attempt_log or []),
-        )
     return out
 
 
@@ -106,14 +102,13 @@ async def analyze_document(
     body: AnalyzeRequest | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> SessionOut:
-    """Start a document analysis pipeline. Returns immediately; the
-    session page shows the timeline (OCR gate first when redo_ocr)."""
+    """Start a document analysis: a session whose first step is either
+    the OCR (gated) or the analysis itself."""
     body = body or AnalyzeRequest()
     s = Session(
         agent_kind=AgentKind.document,
         entity_type=EntityType.document,
         entity_id=document_id,
-        phase=SessionPhase.queued,
         params={
             "redo_ocr": body.redo_ocr,
             **({"instructions": body.instructions} if body.instructions else {}),
@@ -122,12 +117,8 @@ async def analyze_document(
     )
     db.add(s)
     await db.flush()
-    await enqueue(
-        db,
-        "start",
-        {"session_id": s.id},
-        lane=QueueLane.interactive,
-        session_id=s.id,
+    await engine.create_step(
+        db, s, StepKind.ocr if body.redo_ocr else StepKind.analysis
     )
     return SessionOut.model_validate(s)
 
@@ -139,8 +130,7 @@ async def analyze_entity(
     body: AnalyzeEntityRequest | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> SessionOut:
-    """Start a taxonomy review session (tag/correspondent/document_type).
-    No OCR phase — straight to the agent."""
+    """Start a taxonomy review session (tag/correspondent/document_type)."""
     if entity_type not in ("tag", "correspondent", "document_type"):
         raise HTTPException(422, f"cannot analyze entity type {entity_type!r}")
     body = body or AnalyzeEntityRequest()
@@ -148,17 +138,12 @@ async def analyze_entity(
         agent_kind=AgentKind(entity_type),
         entity_type=EntityType(entity_type),
         entity_id=entity_id,
-        phase=SessionPhase.queued,
-        params=(
-            {"instructions": body.instructions} if body.instructions else {}
-        ),
+        params={"instructions": body.instructions} if body.instructions else {},
         title=f"{entity_type.replace('_', ' ')} #{entity_id} review",
     )
     db.add(s)
     await db.flush()
-    await enqueue(
-        db, "start", {"session_id": s.id}, lane=QueueLane.interactive, session_id=s.id
-    )
+    await engine.create_step(db, s, StepKind.analysis)
     return SessionOut.model_validate(s)
 
 
@@ -192,67 +177,60 @@ async def get_ocr_review(
     )
 
 
-@router.post("/{session_id}/ocr/gate")
-async def resolve_ocr_gate(
+async def _load_step(db: AsyncSession, session_id: int, step_id: int) -> Step:
+    step = await db.get(Step, step_id)
+    if step is None or step.session_id != session_id:
+        raise HTTPException(404, "step not found")
+    return step
+
+
+@router.post("/{session_id}/steps/{step_id}/resolve")
+async def resolve_step(
     session_id: int,
-    body: OcrGateRequest,
+    step_id: int,
+    body: ResolveRequest,
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
-) -> SessionOut:
-    """Resolve the OCR gate: accept (possibly hand-fixed) content or keep
-    the existing one; then the metadata analysis stage is scheduled."""
-    s = await db.get(Session, session_id)
-    if s is None:
-        raise HTTPException(404, "session not found")
-    if s.phase != SessionPhase.ocr_review:
-        raise HTTPException(409, f"session is in phase {s.phase}, not ocr_review")
-    latest = await db.scalar(
-        select(OcrResult)
-        .where(OcrResult.document_id == s.entity_id)
-        .order_by(OcrResult.created_at.desc())
-        .limit(1)
-    )
-    if latest is None:
-        raise HTTPException(409, "no OCR result to accept")
-    await pipeline.apply_ocr_gate(db, paperless, s, latest.text, body.content)
-    await enqueue(
-        db,
-        "analysis",
-        {"session_id": s.id},
-        lane=QueueLane.interactive if s.job_id is None else QueueLane.batch,
-        session_id=s.id,
-        job_id=s.job_id,
-    )
-    return SessionOut.model_validate(s)
+) -> StepOut:
+    """Resolve an awaiting_user step (the OCR gate: content=None keeps
+    the existing text, a string is the accepted/hand-fixed version)."""
+    step = await _load_step(db, session_id, step_id)
+    try:
+        await engine.resolve_step(db, paperless, step, body.model_dump())
+    except engine.StepActionError as e:
+        raise HTTPException(409, str(e)) from e
+    return StepOut.model_validate(step)
 
 
-@router.post("/{session_id}/ocr/rerun")
-async def rerun_ocr(
+@router.post("/{session_id}/steps/{step_id}/retry")
+async def retry_step(
+    session_id: int, step_id: int, db: AsyncSession = Depends(get_session)
+) -> StepOut:
+    """Generic retry-now: skip a scheduled backoff or revive a failed
+    step with a fresh auto-retry budget. Never limited."""
+    step = await _load_step(db, session_id, step_id)
+    try:
+        await engine.retry_step(db, step)
+    except engine.StepActionError as e:
+        raise HTTPException(409, str(e)) from e
+    return StepOut.model_validate(step)
+
+
+@router.post("/{session_id}/steps/{step_id}/redo")
+async def redo_step(
     session_id: int,
-    body: OcrRerunRequest,
+    step_id: int,
+    body: RedoRequest | None = None,
     db: AsyncSession = Depends(get_session),
-) -> SessionOut:
-    """Gate action: the user argues with the OCR. Re-runs it with their
-    instructions in the OCR prompt and returns to the gate."""
-    s = await db.get(Session, session_id)
-    if s is None:
-        raise HTTPException(404, "session not found")
-    if s.phase != SessionPhase.ocr_review:
-        raise HTTPException(409, f"session is in phase {s.phase}, not ocr_review")
-    s.phase = SessionPhase.ocr_running
-    if body.instructions:
-        s.params = {**s.params, "ocr_instructions": body.instructions}
-    await db.flush()
-    await enqueue(
-        db,
-        "reocr",
-        {"session_id": s.id, "instructions": body.instructions, "dpi": body.dpi},
-        lane=QueueLane.interactive,
-        session_id=s.id,
-        job_id=s.job_id,
-    )
-    bus.publish(s.id, "phase_changed", phase=SessionPhase.ocr_running.value)
-    return SessionOut.model_validate(s)
+) -> StepOut:
+    """Generic redo: supersede the step and run a fresh one, optionally
+    with amended input (e.g. OCR re-run with instructions)."""
+    step = await _load_step(db, session_id, step_id)
+    try:
+        new = await engine.redo_step(db, step, (body.input if body else None) or None)
+    except engine.StepActionError as e:
+        raise HTTPException(409, str(e)) from e
+    return StepOut.model_validate(new)
 
 
 @router.post("/{session_id}/messages", status_code=202)
@@ -260,91 +238,42 @@ async def send_message(
     session_id: int,
     body: MessageRequest,
     db: AsyncSession = Depends(get_session),
-) -> SessionOut:
-    """Steer a session: append a user message and schedule one agent
-    turn. Non-blocking — progress arrives via the SSE event stream."""
+) -> StepOut:
+    """Steer a session: append a chat step. Non-blocking — progress
+    arrives via the SSE stream."""
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "session not found")
-    if s.status == SessionStatus.running:
-        raise HTTPException(409, "a turn is already running for this session")
-    if s.phase in (SessionPhase.queued, SessionPhase.ocr_running, SessionPhase.ocr_review):
-        raise HTTPException(
-            409, f"session is in phase {s.phase}; steering starts after analysis"
-        )
     if not body.content.strip():
         raise HTTPException(422, "empty message")
-    # Flip to running in-request so the busy state is immediate and
-    # concurrent sends 409 deterministically.
-    s.status = SessionStatus.running
-    s.error = None
-    await db.flush()
-    await enqueue(
-        db,
-        "steering",
-        {"session_id": s.id, "content": body.content},
-        lane=QueueLane.interactive,
-        session_id=s.id,
-    )
-    bus.publish(s.id, "message_appended")
-    return SessionOut.model_validate(s)
-
-
-@router.post("/{session_id}/retry")
-async def retry_session(
-    session_id: int, db: AsyncSession = Depends(get_session)
-) -> SessionOut:
-    """Retry now: run a scheduled retry immediately, or revive an
-    exhausted (failed) stage with a fresh attempt budget."""
-    s = await db.get(Session, session_id)
-    if s is None:
-        raise HTTPException(404, "session not found")
-    item = await db.scalar(
-        select(QueueItem)
-        .where(QueueItem.session_id == session_id)
-        .order_by(QueueItem.id.desc())
-        .limit(1)
-    )
-    if item is not None and item.state == QueueState.running:
-        raise HTTPException(409, "stage is currently running")
-    if item is not None and item.state == QueueState.pending:
-        item.scheduled_at = None  # skip the backoff
-        await db.commit()
-    elif item is not None and item.state in (QueueState.failed, QueueState.cancelled):
-        item.state = QueueState.pending
-        item.attempts = 0  # fresh budget for a manual retry
-        item.scheduled_at = None
-        item.error = None
-        item.finished_at = None
-        await db.commit()
-        if item.job_id is not None:
-            from app.services.queue import _update_job
-
-            await _update_job(db, item.job_id)
-    elif s.status == SessionStatus.failed and s.phase in (
-        SessionPhase.queued, SessionPhase.ocr_running, SessionPhase.analyzing
-    ):
-        # Orphan (no queue item, e.g. pre-queue session): re-enqueue by phase.
-        stage = "analysis" if s.phase == SessionPhase.analyzing else "start"
-        await enqueue(
-            db, stage, {"session_id": s.id},
-            lane=QueueLane.interactive, session_id=s.id, job_id=s.job_id,
+    blocked = await db.scalar(
+        select(Step).where(
+            Step.session_id == session_id,
+            Step.state.in_(
+                [StepState.pending, StepState.running, StepState.awaiting_user]
+            ),
         )
-    else:
-        raise HTTPException(409, "nothing to retry for this session")
-    from app.services.queue import workers
-
-    workers.wake(item.lane if item is not None else QueueLane.interactive)
-    bus.publish(session_id, "retry_scheduled", attempts=0, max_attempts=0)
-    return SessionOut.model_validate(s)
+    )
+    if blocked is not None:
+        raise HTTPException(
+            409,
+            f"a {blocked.kind.value} step is {blocked.state.value}; "
+            "wait for it (or resolve it) before steering",
+        )
+    if s.phase in (SessionPhase.queued, SessionPhase.ocr_running, SessionPhase.ocr_review):
+        raise HTTPException(409, f"session is in phase {s.phase}; steering starts after analysis")
+    step = await engine.create_step(
+        db, s, StepKind.chat, {"content": body.content}
+    )
+    return StepOut.model_validate(step)
 
 
 @router.get("/{session_id}/events")
 async def session_events(
     session_id: int, db: AsyncSession = Depends(get_session)
 ) -> StreamingResponse:
-    """SSE stream of session events. Events are invalidation signals —
-    tiny JSON payloads; clients refetch state over the REST API."""
+    """SSE stream: step_changed (invalidation signal) + step_progress
+    (live tokens/tools). Tiny payloads; clients refetch over REST."""
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "session not found")
@@ -368,4 +297,3 @@ async def session_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-

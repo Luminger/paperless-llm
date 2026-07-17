@@ -12,8 +12,11 @@ from app.db.models import (
     EntityType,
     JobStatus,
     ProposalStatus,
+    QueueLane,
     SessionPhase,
     SessionStatus,
+    StepKind,
+    StepState,
 )
 from app.services.transcript import TranscriptItem
 
@@ -35,21 +38,36 @@ class SessionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class RetryInfo(BaseModel):
-    """State of the session's latest queue item — drives the retry UI."""
+class StepOut(BaseModel):
+    """One timeline element. Generic frame data (state, attempts,
+    scheduling, timestamps) is uniform across kinds; ``input`` and
+    ``result`` are kind-specific; agent-turn steps carry their
+    transcript slice."""
 
-    state: str
-    attempts: int
+    id: int
+    session_id: int
+    kind: StepKind
+    state: StepState
+    lane: QueueLane
+    input: dict[str, Any] = {}
+    result: dict[str, Any] = {}
+    error: str | None
+    attempts: list[dict[str, Any]] = []
+    attempt_count: int
     max_attempts: int
-    next_attempt_at: datetime | None
-    # Chronological record of every finished attempt (never shadowed).
-    history: list[dict[str, Any]] = []
+    scheduled_at: datetime | None
+    supersedes_id: int | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    transcript: list[TranscriptItem] = []
+
+    model_config = {"from_attributes": True}
 
 
 class SessionDetailOut(SessionOut):
-    transcript: list[TranscriptItem] = []
+    steps: list[StepOut] = []
     proposals: list[ProposalOut] = []
-    retry: RetryInfo | None = None
 
 
 class ProposalOut(BaseModel):
@@ -145,18 +163,19 @@ class OcrReviewOut(BaseModel):
     timings: list[dict[str, Any]] = []
 
 
-class OcrGateRequest(BaseModel):
-    # None -> keep the existing content; string -> accepted (possibly
-    # hand-fixed in the diff view) content to write to paperless.
+class ResolveRequest(BaseModel):
+    """Resolution body for awaiting_user steps. OCR gate: None keeps the
+    existing content; a string is the accepted (possibly hand-fixed)
+    text."""
+
     content: str | None = None
 
 
-class OcrRerunRequest(BaseModel):
-    """Gate action: argue with the OCR — re-run it with instructions
-    folded into the OCR prompt (and optionally a different render DPI)."""
+class RedoRequest(BaseModel):
+    """Amended input for a redo (merged over the original step input) —
+    e.g. {"instructions": "..."} for an OCR re-run."""
 
-    instructions: str | None = None
-    dpi: int | None = None
+    input: dict[str, Any] | None = None
 
 
 class MessageRequest(BaseModel):

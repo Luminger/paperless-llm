@@ -34,6 +34,9 @@ class TranscriptItem(BaseModel):
     # Every item derived from the same model response shares that call's
     # timing — a response with several tool calls is still one LLM call.
     timing: dict[str, Any] | None = None
+    # Chronological anchor (part timestamp, else message timestamp) so
+    # the UI can merge the transcript with session events by time.
+    ts: str | None = None
 
 
 def _text_of(content: Any) -> str:
@@ -81,10 +84,12 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
         details = message.get("provider_details")
         if isinstance(details, dict):
             timing = details.get("pllm_timing")
+        message_ts = message.get("timestamp")
         for part in message.get("parts") or []:
             if not isinstance(part, dict):
                 continue
             kind = part.get("part_kind")
+            ts = part.get("timestamp") or message_ts
 
             if kind == "user-prompt":
                 text = _text_of(part.get("content"))
@@ -97,18 +102,22 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
                         role="user",
                         content=text,
                         origin="pipeline" if is_pipeline else "chat",
+                        ts=ts,
                     )
                 )
             elif kind == "text":
                 text = str(part.get("content") or "").strip()
                 if text:
-                    items.append(TranscriptItem(role="agent", content=text, timing=timing))
+                    items.append(
+                        TranscriptItem(role="agent", content=text, timing=timing, ts=ts)
+                    )
             elif kind == "tool-call":
                 item = TranscriptItem(
                     role="tool",
                     tool_name=str(part.get("tool_name") or ""),
                     tool_args=_parse_args(part.get("args")),
                     timing=timing,
+                    ts=ts,
                 )
                 items.append(item)
                 if part.get("tool_call_id"):
