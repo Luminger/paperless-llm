@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+frontend/dist/
+
+# App state
+*.sqlite3
+*.db
+data/
+
+# Nix
+result
+.direnv/
+
+# Editor
+.idea/
+.vscode/
+paperless-llm.toml
+deploy/playground/.env
