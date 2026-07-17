@@ -143,7 +143,7 @@ describe("SessionDetail step feed", () => {
     mocked.resolveStep.mockResolvedValue(mkStep({ kind: "ocr", state: "succeeded" }));
     renderDetail();
 
-    expect(await screen.findByText(/OCR — your input needed/)).toBeInTheDocument();
+    expect(await screen.findByText("your input needed")).toBeInTheDocument();
     await waitFor(() => expect(document.body.textContent).toContain("old garbled line"));
 
     await userEvent.click(await screen.findByRole("button", { name: "edit new text" }));
@@ -201,17 +201,17 @@ describe("SessionDetail step feed", () => {
     mocked.getSession.mockResolvedValue(makeDetail({ steps: [first, second, makeDetail().steps[0]] }));
     renderDetail();
 
-    expect(await screen.findByText(/OCR — superseded/)).toBeInTheDocument();
+    expect(await screen.findByText("superseded")).toBeInTheDocument();
     // Collapsed summary shows the parameters it ran with.
     expect(screen.getByText(/instructions: “first try”/)).toBeInTheDocument();
-    expect(screen.getByText(/superseded, expand to inspect/)).toBeInTheDocument();
+    expect(screen.getByText(/expand to inspect/)).toBeInTheDocument();
     // Expanding reveals the diff of THAT run (read-only, no edit button).
-    await userEvent.click(screen.getByText(/superseded, expand to inspect/));
+    await userEvent.click(screen.getByText(/expand to inspect/));
     await waitFor(() => expect(document.body.textContent).toContain("the old OCR output"));
     expect(document.body.textContent).toContain("paperless text then");
     expect(screen.queryByRole("button", { name: "edit new text" })).not.toBeInTheDocument();
     // The successor shows its own params.
-    expect(screen.getByText(/with instructions: “mind the stamp”/)).toBeInTheDocument();
+    expect(screen.getByText(/instructions: “mind the stamp”/)).toBeInTheDocument();
     expect(screen.getByText(/new content accepted/)).toBeInTheDocument();
   });
 
@@ -266,10 +266,10 @@ describe("SessionDetail step feed", () => {
     mocked.retryStep.mockResolvedValue(mkStep({ state: "pending" }));
     renderDetail();
 
-    expect(await screen.findByText(/Analysis — failed/)).toBeInTheDocument();
+    expect(await screen.findByText("failed")).toBeInTheDocument();
     expect(screen.getByText("Attempt 1")).toBeInTheDocument();
     expect(screen.getByText("Attempt 3")).toBeInTheDocument();
-    expect(screen.getByText(/all 2 automatic retries used/)).toBeInTheDocument();
+    expect(screen.getByText(/2 auto-retries used/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry now" }));
     await waitFor(() => expect(mocked.retryStep).toHaveBeenCalledWith(9, failed.id));
   });
@@ -285,7 +285,7 @@ describe("SessionDetail step feed", () => {
     mocked.getSession.mockResolvedValue(makeDetail({ steps: [scheduled] }));
     renderDetail();
     expect(await screen.findByText(/retry scheduled/)).toBeInTheDocument();
-    expect(screen.getByText(/Automatic retry 1 of 2 at/)).toBeInTheDocument();
+    expect(screen.getByText(/auto-retry 1\/2 at/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry now" })).toBeInTheDocument();
   });
 
@@ -316,7 +316,7 @@ describe("SessionDetail step feed", () => {
       }),
     );
     renderDetail();
-    expect(await screen.findByText(/Analysis — running…/)).toBeInTheDocument();
+    expect(await screen.findByText("running…")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Continue this session/ }),
     ).not.toBeInTheDocument();

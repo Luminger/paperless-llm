@@ -588,7 +588,7 @@ export function ProposalCard({
       </div>
 
       {typeof p.agent_payload.reason === "string" && p.agent_payload.reason && (
-        <p className="rounded-lg bg-card p-3 text-sm text-muted-foreground shadow-xs">
+        <p className="border-l-2 border-primary/40 pl-3 text-sm leading-6 text-muted-foreground">
           <span className="font-medium text-foreground">Agent's reasoning: </span>
           {p.agent_payload.reason}
         </p>

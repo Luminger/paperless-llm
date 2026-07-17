@@ -26,54 +26,41 @@ export function ContinueBox({ sessionId }: { sessionId: number }) {
 
   if (!open) {
     return (
-      <li className="relative pl-8">
-        <span className="absolute top-1 left-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/40" />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 gap-1.5 text-muted-foreground"
-          onClick={() => setOpen(true)}
-        >
-          <MessageSquarePlus className="size-4" />
-          Continue this session…
-        </Button>
-      </li>
+      <button
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed py-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        onClick={() => setOpen(true)}
+      >
+        <MessageSquarePlus className="size-4" />
+        Continue this session…
+      </button>
     );
   }
 
   return (
-    <li className="relative pl-8">
-      <span className="absolute top-1 left-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/40" />
-      <form
-        className="space-y-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (draft.trim()) send.mutate(draft.trim());
-        }}
-      >
-        <Textarea
-          aria-label="steer the agent"
-          autoFocus
-          rows={2}
-          placeholder="Ask a question, request different metadata, point out something the agent missed…"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={!draft.trim() || send.isPending}>
-            Send
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
-        </div>
-        <ErrorNotice error={send.error} />
-      </form>
-    </li>
+    <form
+      className="space-y-2 rounded-xl border border-dashed p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (draft.trim()) send.mutate(draft.trim());
+      }}
+    >
+      <Textarea
+        aria-label="steer the agent"
+        autoFocus
+        rows={2}
+        placeholder="Ask a question, request different metadata, point out something the agent missed…"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={!draft.trim() || send.isPending}>
+          Send
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+      <ErrorNotice error={send.error} />
+    </form>
   );
 }

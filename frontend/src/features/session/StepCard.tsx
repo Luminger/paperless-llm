@@ -1,10 +1,15 @@
-// The generic step frame: state dot, title, timestamps, kind-specific
-// body, live trace, attempt history, error, retry/redo controls.
+// The generic step frame: ONE card per step with a uniform header
+// strip (state, title, time, controls) and a consistently padded body.
+// Kind-specific code only renders body content.
 
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { ErrorNotice } from "@/components/app/states";
+import { cn } from "@/lib/utils";
 import { api, type Proposal, type Step } from "../../api";
 import { formatClock } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
@@ -15,20 +20,45 @@ import { OcrGateBody } from "./OcrGate";
 import { RedoDialog } from "./RedoDialog";
 
 const STATE_DOT: Record<Step["state"], string> = {
-  pending: "bg-muted-foreground/30",
+  pending: "bg-muted-foreground/40",
   running: "bg-blue-500 animate-pulse",
   awaiting_user: "bg-amber-500",
   succeeded: "bg-primary",
   failed: "bg-destructive",
-  superseded: "bg-muted-foreground/20",
-  cancelled: "bg-muted-foreground/30",
+  superseded: "bg-muted-foreground/25",
+  cancelled: "bg-muted-foreground/40",
 };
+
+const KIND_LABEL: Record<Step["kind"], string> = {
+  ocr: "OCR",
+  analysis: "Analysis",
+  chat: "Conversation",
+};
+
+function stateSuffix(step: Step): string | null {
+  switch (step.state) {
+    case "pending":
+      return step.scheduled_at ? "retry scheduled" : "queued";
+    case "running":
+      return "running…";
+    case "awaiting_user":
+      return "your input needed";
+    case "failed":
+      return "failed";
+    case "superseded":
+      return "superseded";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return null;
+  }
+}
 
 function AttemptHistory({ step }: { step: Step }) {
   const finished = step.attempts.filter((a) => a.attempt != null);
   if (finished.length <= 1 && !step.attempts.some((a) => a.manual_retry_at)) return null;
   return (
-    <ol className="space-y-0.5 text-xs text-muted-foreground">
+    <ol className="space-y-0.5 text-xs leading-5 text-muted-foreground">
       {step.attempts.map((a, i) =>
         a.manual_retry_at ? (
           <li key={i} className="text-muted-foreground/60">
@@ -69,27 +99,33 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
   const maxRetries = Math.max(0, step.max_attempts - 1);
   const retriesDone = Math.max(0, step.attempt_count - 1);
   return (
-    <div className="flex items-center gap-3 text-xs">
+    <div className="flex items-center gap-2">
       {scheduled && (
-        <span className="text-muted-foreground">
-          Automatic retry {retriesDone + 1} of {maxRetries} at {formatClock(step.scheduled_at)}
+        <span className="text-xs text-muted-foreground">
+          auto-retry {retriesDone + 1}/{maxRetries} at {formatClock(step.scheduled_at)}
         </span>
       )}
       {step.state === "failed" && maxRetries > 0 && (
-        <span className="text-muted-foreground">
-          all {maxRetries} automatic retr{maxRetries !== 1 ? "ies" : "y"} used
+        <span className="text-xs text-muted-foreground">
+          {maxRetries} auto-retr{maxRetries !== 1 ? "ies" : "y"} used
         </span>
       )}
       {/* Manual retries are never limited. */}
       {(step.state === "failed" || scheduled || step.state === "cancelled") && (
-        <Button size="sm" onClick={() => retry.mutate()} disabled={retry.isPending}>
+        <Button
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={() => retry.mutate()}
+          disabled={retry.isPending}
+        >
           Retry now
         </Button>
       )}
       {(step.state === "succeeded" || step.state === "failed") && (
         <Button
           size="sm"
-          variant="secondary"
+          variant="ghost"
+          className="h-6 px-2 text-xs text-muted-foreground"
           onClick={() => setRedoOpen(true)}
           title="Do this step over with adjusted parameters"
         >
@@ -97,7 +133,7 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
         </Button>
       )}
       {retry.error && (
-        <span className="text-destructive">{String(retry.error).slice(0, 140)}</span>
+        <span className="text-xs text-destructive">{String(retry.error).slice(0, 140)}</span>
       )}
       {redoOpen && (
         <RedoDialog
@@ -116,9 +152,9 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
 function LiveTrace({ live }: { live: LiveActivity | undefined }) {
   if (!live || (live.tools.length === 0 && live.tokens === 0)) return null;
   return (
-    <div className="space-y-1 rounded-lg border border-blue-200 bg-blue-50/50 p-2 text-xs dark:border-blue-900 dark:bg-blue-950/30">
+    <div className="space-y-1 rounded-md border border-blue-200 bg-blue-50/50 p-2 text-xs leading-5 dark:border-blue-900 dark:bg-blue-950/30">
       {live.tools.map((t, i) => (
-        <p key={i} className="font-mono text-muted-foreground">
+        <p key={i} className="truncate font-mono text-muted-foreground">
           → {t.tool}
           {t.args && t.args !== "{}" && (
             <span className="text-muted-foreground/60"> {t.args}</span>
@@ -145,21 +181,16 @@ function OcrBody({ step }: { step: Step }) {
   const resolution = step.result.resolution as string | undefined;
   const pages = step.result.pages as number | undefined;
   const duration = step.result.duration_s as number | undefined;
-  return (
-    <div className="space-y-1 text-sm text-muted-foreground">
-      {typeof step.input.instructions === "string" && (
-        <p className="text-xs">with instructions: “{step.input.instructions}”</p>
-      )}
-      {pages != null && step.state !== "pending" && step.state !== "running" && (
-        <p className="text-xs">
-          {pages} page{pages !== 1 ? "s" : ""}
-          {duration ? ` · ${duration}s` : ""}
-          {resolution === "accepted" && " · new content accepted"}
-          {resolution === "kept_existing" && " · existing content kept"}
-        </p>
-      )}
-    </div>
-  );
+  const bits: string[] = [];
+  if (typeof step.input.instructions === "string")
+    bits.push(`instructions: “${step.input.instructions}”`);
+  if (pages != null && step.state !== "pending" && step.state !== "running") {
+    bits.push(`${pages} page${pages !== 1 ? "s" : ""}${duration ? ` · ${duration}s` : ""}`);
+    if (resolution === "accepted") bits.push("new content accepted");
+    if (resolution === "kept_existing") bits.push("existing content kept");
+  }
+  if (bits.length === 0) return null;
+  return <p className="text-xs leading-5 text-muted-foreground">{bits.join(" · ")}</p>;
 }
 
 function ProposalList({
@@ -177,19 +208,20 @@ function ProposalList({
     .filter((p): p is Proposal => p != null && p.kind !== "replace_content");
   if (mine.length === 0) return null;
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {mine.map((p) =>
         p.status === "superseded" ? (
-          <details key={p.id} className="rounded-lg border bg-muted/40 p-2">
+          <details key={p.id} className="rounded-md border border-dashed px-3 py-2">
             <summary className="cursor-pointer text-xs text-muted-foreground select-none">
               Proposal #{p.id} rev {p.revision} — superseded by a newer revision
             </summary>
-            <div className="mt-2 opacity-70">
+            <div className="mt-3 opacity-70">
               <ProposalCard proposal={p} archived={archived} />
             </div>
           </details>
         ) : (
-          <div key={p.id} className="rounded-lg border bg-muted/30 p-4">
+          <div key={p.id}>
+            <Separator className="mb-3" />
             <ProposalCard proposal={p} archived={archived} />
           </div>
         ),
@@ -213,34 +245,10 @@ function TurnBody({
       <Transcript items={step.transcript} />
       <ProposalList ids={ids} proposals={proposals} archived={archived} />
       {step.state === "succeeded" && step.kind === "analysis" && ids.length === 0 && (
-        <p className="text-sm text-muted-foreground">No changes proposed.</p>
+        <p className="px-2 text-sm text-muted-foreground">No changes proposed.</p>
       )}
     </div>
   );
-}
-
-function stepTitle(step: Step): string {
-  const base = {
-    ocr: "OCR",
-    analysis: "Analysis",
-    chat: "Conversation turn",
-  }[step.kind];
-  switch (step.state) {
-    case "pending":
-      return step.scheduled_at ? `${base} — retry scheduled` : `${base} — queued`;
-    case "running":
-      return `${base} — running…`;
-    case "awaiting_user":
-      return `${base} — your input needed`;
-    case "failed":
-      return `${base} — failed`;
-    case "superseded":
-      return `${base} — superseded`;
-    case "cancelled":
-      return `${base} — cancelled`;
-    default:
-      return base;
-  }
 }
 
 function paramsSummary(step: Step): string {
@@ -254,16 +262,14 @@ function paramsSummary(step: Step): string {
   return parts.length ? parts.join(" · ") : "default parameters";
 }
 
-/** Superseded steps stay fully inspectable: parameters, output, and
- * (for OCR) the diff the run produced at the time — collapsed by
- * default. */
+/** Superseded steps stay fully inspectable — collapsed by default. */
 function SupersededBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
   const text = step.result.text as string | undefined;
   const prev = step.result.previous_content as string | undefined;
   return (
-    <details className="rounded-lg border bg-muted/30 p-2">
+    <details>
       <summary className="cursor-pointer text-xs text-muted-foreground/70 select-none">
-        {paramsSummary(step)} — superseded, expand to inspect
+        {paramsSummary(step)} — expand to inspect
       </summary>
       <div className="mt-3 space-y-3 opacity-80">
         {step.kind === "ocr" ? (
@@ -296,38 +302,44 @@ export function StepCard({
   onChanged: () => void;
   archived: boolean;
 }) {
-  const collapsed = step.state === "superseded";
+  const superseded = step.state === "superseded";
+  const suffix = stateSuffix(step);
   return (
-    <li className="relative pb-6 pl-8 last:pb-0">
-      <span
-        className={`absolute top-1 left-0 h-3.5 w-3.5 rounded-full ${STATE_DOT[step.state]}`}
-      />
-      <span className="absolute top-5 bottom-0 left-[6px] w-px bg-border" />
-      <div className="mb-2 flex items-baseline gap-2">
-        <p className={`font-medium ${collapsed ? "text-muted-foreground/60" : ""}`}>
-          {stepTitle(step)}
-        </p>
-        <span className="text-xs text-muted-foreground/60">
+    <Card className={cn("gap-0 overflow-hidden py-0", superseded && "border-dashed")}>
+      {/* Uniform header strip. */}
+      <div className="flex h-10 items-center gap-2.5 border-b bg-muted/30 px-4">
+        <span className={cn("size-2 shrink-0 rounded-full", STATE_DOT[step.state])} />
+        <span className={cn("text-sm font-medium", superseded && "text-muted-foreground/70")}>
+          {KIND_LABEL[step.kind]}
+        </span>
+        {suffix && (
+          <Badge variant="secondary" className="text-xs font-normal text-muted-foreground">
+            {suffix}
+          </Badge>
+        )}
+        <span className="flex-1" />
+        {!archived && !superseded && <StepControls step={step} onChanged={onChanged} />}
+        <span className="font-mono text-[11px] text-muted-foreground/60">
           {formatClock(step.started_at ?? step.created_at)}
         </span>
       </div>
-      {collapsed ? (
-        <SupersededBody step={step} proposals={proposals} />
-      ) : (
-        <div className="space-y-2">
-          {step.kind === "ocr" ? (
-            <OcrBody step={step} />
-          ) : (
-            <TurnBody step={step} proposals={proposals} archived={archived} />
-          )}
-          {step.state === "running" && <LiveTrace live={live} />}
-          <AttemptHistory step={step} />
-          {step.error && step.state === "failed" && (
-            <ErrorNotice error={step.error} />
-          )}
-          {!archived && <StepControls step={step} onChanged={onChanged} />}
-        </div>
-      )}
-    </li>
+
+      <div className="space-y-3 px-4 py-3">
+        {superseded ? (
+          <SupersededBody step={step} proposals={proposals} />
+        ) : (
+          <>
+            {step.kind === "ocr" ? (
+              <OcrBody step={step} />
+            ) : (
+              <TurnBody step={step} proposals={proposals} archived={archived} />
+            )}
+            {step.state === "running" && <LiveTrace live={live} />}
+            <AttemptHistory step={step} />
+            {step.error && step.state === "failed" && <ErrorNotice error={step.error} />}
+          </>
+        )}
+      </div>
+    </Card>
   );
 }

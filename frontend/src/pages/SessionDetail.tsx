@@ -85,7 +85,7 @@ export default function SessionDetail() {
       </p>
       {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
 
-      <ol>
+      <div className="space-y-3">
         {s.steps.map((step) => (
           <StepCard
             key={step.id}
@@ -97,7 +97,7 @@ export default function SessionDetail() {
           />
         ))}
         {canContinue && <ContinueBox sessionId={s.id} />}
-      </ol>
+      </div>
     </div>
   );
 }
