@@ -64,7 +64,7 @@ function EntityLink({
   list: EntityRef[] | undefined;
 }) {
   if (id == null) return <span className="text-muted-foreground/60">—</span>;
-  const name = list?.find((e) => e.id === id)?.name ?? `#${id}`;
+  const name = list?.find((e) => e.id === id)?.name ?? (list ? "(unknown)" : "…");
   return (
     <Link className="text-primary hover:underline" to={entityHref(entityType, id)}>
       {name}
@@ -126,7 +126,7 @@ function DocumentFacts({ doc }: { doc: PaperlessDocument }) {
                     variant="secondary"
                     className="text-primary transition-colors hover:bg-primary/15"
                   >
-                    {tags?.find((x) => x.id === t)?.name ?? `#${t}`}
+                    {tags?.find((x) => x.id === t)?.name ?? "…"}
                   </Badge>
                 </Link>
               ))}

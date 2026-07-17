@@ -77,7 +77,7 @@ function buildPayload(
 }
 
 const name = (list: EntityRef[] | undefined, id: number | null | undefined) =>
-  id == null ? "—" : (list?.find((e) => e.id === id)?.name ?? `#${id}`);
+  id == null ? "—" : (list?.find((e) => e.id === id)?.name ?? (list ? "(unknown)" : "…"));
 
 function Row({
   label,
@@ -472,7 +472,7 @@ function ReviseBox({ proposal: p, onSent }: { proposal: Proposal; onSent: () => 
     mutationFn: (text: string) =>
       api.sendMessage(
         p.session_id,
-        `About proposal #${p.id} (${p.kind.replaceAll("_", " ")}): ${text}`,
+        `About the ${p.kind.replaceAll("_", " ")} proposal: ${text}`,
       ),
     onSuccess: () => {
       setDraft("");
@@ -575,13 +575,13 @@ export function ProposalCard({
     <div className="space-y-3">
       <div className="flex items-center gap-3">
         <span className="font-medium">
-          Proposal #{p.id}{" "}
+          Proposal{" "}
           <span className="text-muted-foreground/70">{p.kind.replaceAll("_", " ")}</span>
         </span>
         <StatusBadge status={p.status} />
         {p.revision > 1 && (
           <span className="text-sm text-muted-foreground/70">
-            rev {p.revision} (supersedes #{p.supersedes_id})
+            revision {p.revision}
           </span>
         )}
       </div>

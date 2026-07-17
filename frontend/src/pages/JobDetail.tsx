@@ -6,6 +6,7 @@ import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
 import { keys } from "../lib/keys";
 import { StatusBadge } from "../components/StatusBadge";
+import { scopeLabel } from "./Jobs";
 
 export default function JobDetail() {
   const { id } = useParams();
@@ -25,7 +26,7 @@ export default function JobDetail() {
   return (
     <div>
       <PageHeader
-        title={`Job #${job.id}`}
+        title={scopeLabel(job)}
         actions={<StatusBadge status={job.status} />}
       />
       <p className="-mt-2 mb-4 text-sm text-muted-foreground">

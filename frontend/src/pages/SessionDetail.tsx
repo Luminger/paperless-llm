@@ -69,14 +69,11 @@ export default function SessionDetail() {
             className="text-primary hover:underline"
             to={entityHref(s.entity_type, s.entity_id)}
           >
-            ← {s.entity_type === "document" ? "Document" : s.entity_type.replaceAll("_", " ")}{" "}
-            #{s.entity_id}
+            ← Back to the {s.entity_type === "document" ? "document" : s.entity_type.replaceAll("_", " ")}
           </Link>
         </nav>
       )}
-      <h1 className="mb-4 text-xl font-semibold tracking-tight">
-        {s.entity_type === "document" ? `Document #${s.entity_id} — analysis` : s.title}
-      </h1>
+      <h1 className="mb-4 text-xl font-semibold tracking-tight">{s.title}</h1>
       {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
 
       <div className="space-y-3">

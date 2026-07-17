@@ -203,6 +203,7 @@ async def analyze_entity(
 
     _job, s = await create_entity_job(
         db,
+        paperless,
         agent_kind=AgentKind(entity_type),
         entity_type=EntityType(entity_type),
         entity_id=entity_id,

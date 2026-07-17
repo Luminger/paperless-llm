@@ -264,7 +264,7 @@ function TurnBody({
     p.status === "superseded" ? (
       <details key={`p-${p.id}`} className="rounded-md border border-dashed px-3 py-2">
         <summary className="cursor-pointer text-xs text-muted-foreground select-none">
-          Proposal #{p.id} rev {p.revision} — superseded by a newer revision
+          Revision {p.revision} of this proposal — superseded by a newer one
         </summary>
         <div className="mt-3 opacity-70">
           <ProposalCard proposal={p} archived={archived} />

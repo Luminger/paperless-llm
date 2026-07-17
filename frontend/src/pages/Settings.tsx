@@ -89,9 +89,9 @@ function DateTimePrefs() {
           />
         </div>
         <p className="text-xs text-muted-foreground/70">
-          Preview: {formatDateTime(new Date().toISOString())} — timestamps are
-          stored in UTC on the server; these preferences are saved to the
-          server too, so every browser shows the same formats.
+          Preview: {formatDateTime(new Date().toISOString())}. Saved on the
+          server — every browser and device shows the same formats.
+          Timestamps themselves are always stored in UTC.
         </p>
         {save.error && (
           <p className="text-xs text-destructive">

@@ -103,20 +103,26 @@ describe("Jobs — every analysis is tracked", () => {
   it("labels single-document and entity jobs", async () => {
     mocked.listJobs.mockResolvedValue(
       jobPage([
-        makeJob({ id: 1, kind: "analyze", params: { document_ids: [7] } }),
+        makeJob({
+          id: 1,
+          kind: "analyze",
+          params: { document_ids: [7], label: "Kraxi Rechnung 2014-03" },
+        }),
         makeJob({
           id: 2,
           kind: "analyze_entity",
-          params: { entity_type: "correspondent", entity_id: 3 },
+          params: { entity_type: "correspondent", entity_id: 3, label: "Correspondent: Kraxi" },
         }),
         makeJob({ id: 3, kind: "webhook_analyze", params: { document_ids: [4, 5] } }),
       ]),
     );
     renderWithProviders(<Jobs />);
 
-    expect(await screen.findByText("Document #7")).toBeInTheDocument();
-    expect(screen.getByText("correspondent #3 review")).toBeInTheDocument();
+    // Human labels, never ids.
+    expect(await screen.findByText("Kraxi Rechnung 2014-03")).toBeInTheDocument();
+    expect(screen.getByText("Correspondent: Kraxi")).toBeInTheDocument();
     expect(screen.getByText("2 selected documents")).toBeInTheDocument();
     expect(screen.getByText("webhook")).toBeInTheDocument();
+    expect(screen.queryByText(/#7|#3/)).not.toBeInTheDocument();
   });
 });

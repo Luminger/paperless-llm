@@ -37,13 +37,12 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
     >
       <div className="flex w-full items-center gap-3">
         <Link className="flex min-w-0 flex-1 items-center gap-3" to={`/sessions/${s.id}`}>
-          <span className="font-mono text-sm text-muted-foreground/60">#{s.id}</span>
+          <span className="truncate text-sm font-medium">{s.title}</span>
           {showEntity && s.entity_type && (
-            <span className="font-medium">
-              {s.entity_type.replaceAll("_", " ")} {s.entity_id}
-            </span>
+            <Badge variant="secondary" className="shrink-0 font-normal text-muted-foreground">
+              {s.entity_type.replaceAll("_", " ")}
+            </Badge>
           )}
-          <span className="truncate text-sm text-muted-foreground">{s.title}</span>
         </Link>
         <span className="flex shrink-0 items-center gap-2">
           {s.phase === "ocr_review" && !s.archived_at && (

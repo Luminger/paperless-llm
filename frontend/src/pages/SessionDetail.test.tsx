@@ -393,7 +393,7 @@ describe("SessionDetail — archive & breadcrumb", () => {
   it("has a breadcrumb to the entity page", async () => {
     mocked.getSession.mockResolvedValue(makeDetail({}));
     renderDetail();
-    const crumb = await screen.findByRole("link", { name: /← Document #7/ });
+    const crumb = await screen.findByRole("link", { name: /← Back to the document/ });
     expect(crumb.getAttribute("href")).toBe("/documents/7");
   });
 
@@ -589,7 +589,8 @@ describe("Chronological turn rendering", () => {
 
     // The propose call is NOT a trace row — the proposal stands in
     // its place; the fold only counts the exploratory work.
-    expect(await screen.findByText(/Proposal #5/)).toBeInTheDocument();
+    // The proposal card is present (id-free header).
+    expect((await screen.findAllByText("Proposal")).length).toBeGreaterThan(0);
     expect(
       screen.getByText(/The agent's work — 1 tool call · 1 reasoning step/),
     ).toBeInTheDocument();

@@ -29,18 +29,14 @@ function JobProgress({ job }: { job: Job }) {
   );
 }
 
-function scopeLabel(job: Job): string {
+export function scopeLabel(job: Job): string {
   const p = job.params;
-  if (job.kind === "analyze_entity")
-    return `${String(p.entity_type).replaceAll("_", " ")} #${String(p.entity_id)} review`;
+  // Jobs carry a human label from creation; fall back to scope facts.
+  if (typeof p.label === "string" && p.label) return p.label;
   if (p.inbox) return "Inbox";
   if (p.untagged_only) return "Untagged documents";
-  if (p.tag_id) return `Tag #${p.tag_id}`;
-  if (Array.isArray(p.document_ids))
-    return p.document_ids.length === 1
-      ? `Document #${p.document_ids[0]}`
-      : `${p.document_ids.length} selected documents`;
-  return job.kind;
+  if (Array.isArray(p.document_ids)) return `${p.document_ids.length} selected documents`;
+  return job.kind.replaceAll("_", " ");
 }
 
 function NewJob({ onDone }: { onDone: () => void }) {
@@ -189,7 +185,6 @@ export default function Jobs() {
           {(jobs ?? []).map((j) => (
             <li key={j.id}>
               <Card className="flex flex-row items-center gap-4 p-3 text-sm">
-                <span className="w-12 text-muted-foreground/60">#{j.id}</span>
                 <span className="flex-1">
                   {scopeLabel(j)}
                   {j.kind === "webhook_analyze" && (

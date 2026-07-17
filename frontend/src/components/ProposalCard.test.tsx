@@ -256,7 +256,7 @@ describe("ProposalCard — contextual steering", () => {
     await waitFor(() =>
       expect(mocked.sendMessage).toHaveBeenCalledWith(
         9,
-        expect.stringMatching(/^About proposal #5 .*use the German title$/),
+        expect.stringMatching(/^About the update document metadata proposal: use the German title$/),
       ),
     );
   });

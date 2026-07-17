@@ -186,7 +186,6 @@ export default function Documents() {
                   onCheckedChange={() => ms.toggle(d.id)}
                 />
               )}
-              <span className="font-mono text-xs text-muted-foreground/60">#{d.id}</span>
               <Link
                 className="font-medium hover:text-primary hover:underline"
                 to={`/documents/${d.id}`}

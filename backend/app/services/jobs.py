@@ -47,15 +47,17 @@ async def resolve_documents(
     tag_id: int | None = None,
     inbox: bool = False,
     untagged_only: bool = False,
-) -> list[int]:
+) -> tuple[list[int], dict[int, str]]:
     """Deliberately deterministic scopes only — explicit ids, a tag, the
-    inbox, or untagged. Jobs are never defined by a full-text search."""
+    inbox, or untagged. Jobs are never defined by a full-text search.
+    Returns (ids, titles) — titles feed human session names; ids never
+    surface in the UI."""
     if document_ids:
-        return list(dict.fromkeys(document_ids))
+        return list(dict.fromkeys(document_ids)), {}
     if inbox:
         inbox_tags = [t.id for t in await paperless.list_tags() if t.is_inbox_tag]
         if not inbox_tags:
-            return []
+            return [], {}
         page = await paperless.search_documents(tag_ids=inbox_tags, page_size=100)
     elif tag_id:
         page = await paperless.search_documents(tag_ids=[tag_id], page_size=100)
@@ -65,7 +67,8 @@ async def resolve_documents(
             page_size=100,
         )
     ids = list(page.all) if page.all else [d.id for d in page.results]
-    return ids
+    titles = {d.id: d.title for d in page.results if d.title}
+    return ids, titles
 
 
 async def create_job(
@@ -85,7 +88,7 @@ async def create_job(
     trigger: str | None = None,
 ) -> tuple[Job, list[int]]:
     """Create the job + sessions + queue items. Returns (job, doc_ids)."""
-    ids = await resolve_documents(
+    ids, titles = await resolve_documents(
         paperless,
         document_ids=document_ids,
         tag_id=tag_id,
@@ -119,6 +122,29 @@ async def create_job(
         "apply_policy": apply_policy,
         "skipped_active": skipped,
     }
+    # Users see names, not numbers — resolve missing titles (explicit-id
+    # scopes) and derive a human job label.
+    for doc_id in ids:
+        if doc_id not in titles:
+            try:
+                titles[doc_id] = (await paperless.get_document(doc_id)).title
+            except Exception:  # noqa: BLE001 — label is cosmetic, never fatal
+                titles[doc_id] = ""
+    if inbox:
+        label = "Inbox"
+    elif untagged_only:
+        label = "Untagged documents"
+    elif tag_id:
+        try:
+            label = f"Tag: {(await paperless.get_tag(tag_id)).name}"
+        except Exception:  # noqa: BLE001
+            label = "Tag"
+    elif len(ids) == 1:
+        label = titles.get(ids[0]) or "1 document"
+    else:
+        label = f"{len(ids)} selected documents"
+    params["label"] = label
+
     if instructions:
         params["instructions"] = instructions
     if trigger:
@@ -139,7 +165,7 @@ async def create_job(
                 **({"instructions": instructions} if instructions else {}),
                 **({"trigger": trigger} if trigger else {}),
             },
-            title=f"Document #{doc_id} analysis",
+            title=titles.get(doc_id) or f"Document {doc_id}",
         )
         db.add(session)
         await db.flush()
@@ -160,6 +186,7 @@ async def create_job(
 
 async def create_entity_job(
     db: AsyncSession,
+    paperless: PaperlessClient,
     *,
     agent_kind: AgentKind,
     entity_type: EntityType,
@@ -168,9 +195,21 @@ async def create_entity_job(
 ) -> tuple[Job, Session]:
     """A single taxonomy review is a tracked job too (total=1) — it
     runs on the interactive lane."""
+    getter = {
+        EntityType.tag: paperless.get_tag,
+        EntityType.correspondent: paperless.get_correspondent,
+        EntityType.document_type: paperless.get_document_type,
+    }.get(entity_type)
+    try:
+        entity_name = (await getter(entity_id)).name if getter else ""
+    except Exception:  # noqa: BLE001 — names are cosmetic, never fatal
+        entity_name = ""
+    type_label = entity_type.value.replace("_", " ")
     params: dict[str, Any] = {
         "entity_type": str(entity_type.value),
         "entity_id": entity_id,
+        "label": f"{type_label.capitalize()}: {entity_name}" if entity_name
+                 else type_label.capitalize(),
     }
     if instructions:
         params["instructions"] = instructions
@@ -184,7 +223,7 @@ async def create_entity_job(
         entity_id=entity_id,
         job_id=job.id,
         params={**({"instructions": instructions} if instructions else {})},
-        title=f"{entity_type.value.replace('_', ' ')} #{entity_id} review",
+        title=entity_name or f"{type_label} {entity_id}",
     )
     db.add(session)
     await db.flush()
