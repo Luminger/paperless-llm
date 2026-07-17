@@ -216,15 +216,12 @@ function WorkFold({ items }: { items: TranscriptItem[] }) {
       .join(" · ") || `${items.length} steps`;
   return (
     <Panel
-      collapsible
+      defaultOpen={false}
       title={
         <>
           <PanelTitle>The agent's work</PanelTitle>
           <PanelTitleMuted>{label}</PanelTitleMuted>
         </>
-      }
-      meta={
-        <span className="text-xs text-muted-foreground/60">expand to inspect</span>
       }
     >
       <Transcript items={items} />
