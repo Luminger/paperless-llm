@@ -1,0 +1,228 @@
+"""DB-backed queue: enqueue/claim/run, retries, recovery, job counters.
+
+Uses a file-backed sqlite DB because the workers open their own
+sessions via the app's global engine."""
+
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+from sqlalchemy import select
+
+from app.config import reset_settings_cache
+from app.db.models import (
+    AgentKind,
+    Job,
+    JobStatus,
+    QueueItem,
+    QueueLane,
+    QueueState,
+    Session,
+    SessionPhase,
+    SessionStatus,
+)
+from app.db.session import dispose_engine, init_db, session_scope
+from app.services import queue as queue_mod
+from app.services.queue import QueueWorkers, enqueue, recover
+
+
+@pytest.fixture
+async def file_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("PLLM_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/q.sqlite3")
+    monkeypatch.setenv("PLLM_QUEUE__POLL_INTERVAL_SECONDS", "0.05")
+    reset_settings_cache()
+    await dispose_engine()
+    await init_db()
+    yield
+    await dispose_engine()
+    reset_settings_cache()
+
+
+async def _wait_for(predicate, limit=5.0):
+    async def check():
+        while True:
+            if await predicate():
+                return
+            await asyncio.sleep(0.05)
+
+    await asyncio.wait_for(check(), limit)
+
+
+async def _item_state(item_id: int) -> QueueState:
+    async with session_scope() as db:
+        return (await db.get(QueueItem, item_id)).state
+
+
+async def test_worker_runs_stage_to_done(file_db, monkeypatch):
+    calls: list[dict] = []
+
+    async def fake_stage(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setitem(queue_mod.STAGES, "start", fake_stage)
+    async with session_scope() as db:
+        item = await enqueue(db, "start", {"session_id": 1}, lane=QueueLane.interactive)
+        item_id = item.id
+
+    workers = QueueWorkers()
+    await workers.start()
+    try:
+        await _wait_for(lambda: _is(item_id, QueueState.done))
+    finally:
+        await workers.stop()
+    assert calls == [{"session_id": 1}]
+
+
+def _is(item_id: int, state: QueueState):
+    async def check() -> bool:
+        return await _item_state(item_id) == state
+
+    return check()
+
+
+async def test_crashing_stage_retries_then_fails_session(file_db, monkeypatch):
+    attempts: list[int] = []
+
+    async def bad_stage(**kwargs):
+        attempts.append(1)
+        raise RuntimeError("boom")
+
+    monkeypatch.setitem(queue_mod.STAGES, "start", bad_stage)
+    async with session_scope() as db:
+        s = Session(agent_kind=AgentKind.document, phase=SessionPhase.queued)
+        db.add(s)
+        await db.flush()
+        session_id = s.id
+        item = await enqueue(
+            db, "start", {"session_id": s.id}, lane=QueueLane.batch, session_id=s.id
+        )
+        item_id = item.id
+
+    workers = QueueWorkers()
+    await workers.start()
+    try:
+        await _wait_for(_is_final(item_id))
+    finally:
+        await workers.stop()
+
+    async with session_scope() as db:
+        item = await db.get(QueueItem, item_id)
+        assert item.state == QueueState.failed
+        assert item.attempts == item.max_attempts
+        assert "boom" in item.error
+        session = await db.get(Session, session_id)
+        assert session.status == SessionStatus.failed
+    assert len(attempts) == 3
+
+
+def _is_final(item_id: int):
+    async def check() -> bool:
+        state = await _item_state(item_id)
+        return state in (QueueState.done, QueueState.failed)
+
+    return check
+
+
+async def test_stage_recorded_session_failure_marks_item_failed(file_db, monkeypatch):
+    """Stages swallow their own errors and mark the session failed; the
+    queue must reflect that as a failed item (no retry — the failure is
+    already recorded)."""
+
+    async def stage_marks_failed(session_id: int):
+        async with session_scope() as db:
+            s = await db.get(Session, session_id)
+            s.status = SessionStatus.failed
+            s.error = "recorded by stage"
+            await db.commit()
+
+    monkeypatch.setitem(queue_mod.STAGES, "start", stage_marks_failed)
+    async with session_scope() as db:
+        s = Session(agent_kind=AgentKind.document, phase=SessionPhase.queued)
+        db.add(s)
+        await db.flush()
+        item = await enqueue(
+            db, "start", {"session_id": s.id}, lane=QueueLane.batch, session_id=s.id
+        )
+        item_id = item.id
+
+    workers = QueueWorkers()
+    await workers.start()
+    try:
+        await _wait_for(_is_final(item_id))
+    finally:
+        await workers.stop()
+
+    async with session_scope() as db:
+        item = await db.get(QueueItem, item_id)
+        assert item.state == QueueState.failed
+        assert item.attempts == 1  # no retry
+        assert item.error == "recorded by stage"
+
+
+async def test_job_counters_and_completion(file_db, monkeypatch):
+    async def ok_stage(**kwargs):
+        pass
+
+    monkeypatch.setitem(queue_mod.STAGES, "start", ok_stage)
+    async with session_scope() as db:
+        job = Job(kind="bulk_analyze", total=2)
+        db.add(job)
+        await db.flush()
+        job_id = job.id
+        i1 = await enqueue(db, "start", {}, lane=QueueLane.batch, job_id=job.id)
+        i2 = await enqueue(db, "start", {}, lane=QueueLane.batch, job_id=job.id)
+        ids = (i1.id, i2.id)
+
+    workers = QueueWorkers()
+    await workers.start()
+    try:
+        for i in ids:
+            await _wait_for(_is_final(i))
+        await _wait_for(_job_status_is(job_id, JobStatus.completed))
+    finally:
+        await workers.stop()
+
+    async with session_scope() as db:
+        job = await db.get(Job, job_id)
+        assert (job.done, job.failed) == (2, 0)
+
+
+def _job_status_is(job_id: int, status: JobStatus):
+    async def check() -> bool:
+        async with session_scope() as db:
+            return (await db.get(Job, job_id)).status == status
+
+    return check
+
+
+async def test_recover_retries_running_and_fails_orphans(file_db):
+    async with session_scope() as db:
+        # Crashed mid-run, attempts left -> retried.
+        db.add(QueueItem(stage="start", args={}, state=QueueState.running, attempts=1))
+        # Crashed with attempts exhausted -> failed (+ session failed).
+        s1 = Session(agent_kind=AgentKind.document, phase=SessionPhase.analyzing)
+        db.add(s1)
+        await db.flush()
+        db.add(
+            QueueItem(
+                stage="start", args={}, state=QueueState.running,
+                attempts=3, session_id=s1.id,
+            )
+        )
+        # In-flight session without any queue item -> orphan, failed.
+        s2 = Session(agent_kind=AgentKind.document, phase=SessionPhase.ocr_running)
+        db.add(s2)
+        await db.commit()
+        s1_id, s2_id = s1.id, s2.id
+
+    stats = await recover()
+    assert stats == {"retried": 1, "failed": 1, "orphaned": 1}
+
+    async with session_scope() as db:
+        states = sorted(
+            i.state.value for i in (await db.scalars(select(QueueItem))).all()
+        )
+        assert states == ["failed", "pending"]
+        assert (await db.get(Session, s1_id)).status == SessionStatus.failed
+        assert (await db.get(Session, s2_id)).status == SessionStatus.failed

@@ -76,6 +76,21 @@ class JobStatus(enum.StrEnum):
     cancelled = "cancelled"
 
 
+class QueueLane(enum.StrEnum):
+    """Two lanes so chat turns never wait behind bulk work."""
+
+    interactive = "interactive"
+    batch = "batch"
+
+
+class QueueState(enum.StrEnum):
+    pending = "pending"
+    running = "running"
+    done = "done"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
 class Session(Base):
     """One conversation with one agent, optionally bound to an entity."""
 
@@ -186,6 +201,55 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class QueueItem(Base):
+    """Persistent work queue: one row per pipeline-stage invocation.
+    In-process async workers claim rows; queued work survives restarts
+    (running items are retried on startup). Single-node by design — see
+    DESIGN.md "Queueing"."""
+
+    __tablename__ = "queue_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lane: Mapped[QueueLane] = mapped_column(
+        Enum(QueueLane, native_enum=False), default=QueueLane.batch
+    )
+    # Stage name resolved via the queue dispatch table.
+    stage: Mapped[str] = mapped_column(String(50))
+    args: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    state: Mapped[QueueState] = mapped_column(
+        Enum(QueueState, native_enum=False), default=QueueState.pending
+    )
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=3)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), nullable=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_queue_claim", "state", "lane", "id"),)
+
+
+class EntityEmbedding(Base):
+    """Cached name embeddings for taxonomy entities (entity index)."""
+
+    __tablename__ = "entity_embeddings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(30))
+    entity_id: Mapped[int] = mapped_column()
+    name: Mapped[str] = mapped_column(String(500))
+    vector: Mapped[list[Any]] = mapped_column(default=list)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_entity_embeddings_key", "entity_type", "entity_id", unique=True),
     )
 
 

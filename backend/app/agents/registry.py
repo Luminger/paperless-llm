@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pydantic_ai import Agent, RunContext
 
 from app.agents.deps import AgentDeps
-from app.agents.tools import ALL_TOOLS, DOCUMENT_AGENT_TOOLS
+from app.agents.tools import DOCUMENT_AGENT_TOOLS, TAXONOMY_AGENT_TOOLS
 from app.db.models import AgentKind
 from app.llm.factory import agent_model, agent_model_settings
 from app.services.events import bus
@@ -64,15 +64,42 @@ rewrite it. Steps:
    applicable ones), and the creation date printed on the document.
 3. Compare with current metadata. Propose only actual changes via
    propose_update_document_metadata. If a clearly needed entity is
-   missing, propose_create_entity (with assign_to_documents).
+   missing, first check find_similar_entities — only propose_create_entity
+   (with assign_to_documents) when nothing close exists.
 """,
 }
+
+_TAXONOMY_TASK = """
+Your task: review ONE {noun} of the archive's taxonomy (the user message
+states which). Steps:
+1. Look the entity up (list_{plural}) — name, matching rule, document
+   count. Sample a few of its documents (search_documents) if usage is
+   unclear.
+2. Hunt duplicates: find_similar_entities with the entity's name. High
+   similarity plus overlapping meaning ⇒ the entities should be merged.
+3. Judge the name itself: typos, inconsistent casing, junk (scanner
+   artifacts), overly specific or meaningless labels.
+Then propose AT MOST what is warranted:
+- propose_update_entity: rename or fix the matching rule.
+- propose_merge_entities: merge the WORSE-named/smaller entity (source)
+  INTO the canonical one (target); the target survives. When reviewing
+  entity X and it duplicates a better entity Y, source=X, target=Y.
+- propose_delete_entity: only for empty or nonsense entries.
+If the entity is fine as it is, finish WITHOUT a proposal and say so.
+"""
+
+for _kind, _noun, _plural in (
+    (AgentKind.tag, "tag", "tags"),
+    (AgentKind.correspondent, "correspondent", "correspondents"),
+    (AgentKind.document_type, "document type", "document_types"),
+):
+    _PROMPTS[_kind] = _COMMON + _TAXONOMY_TASK.format(noun=_noun, plural=_plural)
 
 
 def build_agent(kind: AgentKind) -> Agent[AgentDeps, str]:
     if kind not in _PROMPTS:
-        raise ValueError(f"agent kind {kind} not implemented yet (M3)")
-    tools = DOCUMENT_AGENT_TOOLS if kind == AgentKind.document else ALL_TOOLS
+        raise ValueError(f"agent kind {kind} not implemented")
+    tools = DOCUMENT_AGENT_TOOLS if kind == AgentKind.document else TAXONOMY_AGENT_TOOLS
     return Agent(
         agent_model(),
         deps_type=AgentDeps,

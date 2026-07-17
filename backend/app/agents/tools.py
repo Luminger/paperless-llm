@@ -161,6 +161,26 @@ async def list_document_types(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]
     return [_entity_summary(dt) for dt in await ctx.deps.paperless.list_document_types()]
 
 
+async def find_similar_entities(
+    ctx: RunContext[AgentDeps],
+    entity_type: TaxonomyType,
+    name: str,
+    top_k: int = 5,
+) -> list[dict[str, Any]]:
+    """Find existing entities whose names are similar to `name` (string
+    distance plus semantic similarity when available). Scores are 0..1;
+    anything above ~0.85 is likely the same thing. ALWAYS check this
+    before creating a new entity, and use it to hunt duplicates when
+    reviewing the taxonomy."""
+    from app.services.entity_index import find_similar
+
+    results = await find_similar(ctx.deps.db, ctx.deps.paperless, entity_type, name, top_k)
+    return [
+        {k: v for k, v in r.items() if k in ("id", "name", "document_count", "similarity")}
+        for r in results
+    ]
+
+
 async def ocr_document(
     ctx: RunContext[AgentDeps], document_id: int, force: bool = False
 ) -> dict[str, Any]:
@@ -415,6 +435,7 @@ READ_TOOLS = [
     list_tags,
     list_correspondents,
     list_document_types,
+    find_similar_entities,
     ocr_document,
 ]
 
@@ -436,4 +457,11 @@ DOCUMENT_AGENT_TOOLS = [
     for t in ALL_TOOLS
     if t
     not in (ocr_document, propose_update_entity, propose_merge_entities, propose_delete_entity)
+]
+
+# Taxonomy agents (tag/correspondent/document_type) review ONE entity:
+# rename, fix matching rules, merge into a canonical twin, or delete
+# junk. They never touch document metadata or content.
+TAXONOMY_AGENT_TOOLS = [
+    t for t in ALL_TOOLS if t not in (ocr_document, propose_update_document_metadata)
 ]

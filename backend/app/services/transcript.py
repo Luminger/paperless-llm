@@ -15,8 +15,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-# The pipeline's synthetic kickoff prompt (see pipeline._run_analysis).
-_PIPELINE_PROMPT_PREFIX = "Process document id="
+# The pipeline's synthetic kickoff prompts (see pipeline._kickoff_prompt).
+_PIPELINE_PROMPT_PREFIXES = ("Process document id=", "Review ")
 
 _RESULT_LIMIT = 500
 
@@ -68,6 +68,7 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
     items: list[TranscriptItem] = []
     # tool_call_id -> transcript item, to attach results to their calls.
     calls: dict[str, TranscriptItem] = {}
+    first_user = True
 
     for message in history:
         if not isinstance(message, dict):
@@ -79,15 +80,15 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
 
             if kind == "user-prompt":
                 text = _text_of(part.get("content"))
+                # Only the session's FIRST user prompt can be the
+                # pipeline's synthetic kickoff.
+                is_pipeline = first_user and text.startswith(_PIPELINE_PROMPT_PREFIXES)
+                first_user = False
                 items.append(
                     TranscriptItem(
                         role="user",
                         content=text,
-                        origin=(
-                            "pipeline"
-                            if text.startswith(_PIPELINE_PROMPT_PREFIX)
-                            else "chat"
-                        ),
+                        origin="pipeline" if is_pipeline else "chat",
                     )
                 )
             elif kind == "text":

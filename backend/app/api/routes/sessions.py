@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_paperless
 from app.api.routes.proposals import _out as proposal_out
 from app.api.schemas import (
+    AnalyzeEntityRequest,
     AnalyzeRequest,
     MessageRequest,
     OcrGateRequest,
@@ -25,6 +26,7 @@ from app.db.models import (
     EntityType,
     OcrResult,
     Proposal,
+    QueueLane,
     Session,
     SessionPhase,
     SessionStatus,
@@ -33,22 +35,10 @@ from app.db.session import get_session
 from app.paperless import PaperlessClient
 from app.services import pipeline
 from app.services.events import bus
+from app.services.queue import enqueue
 from app.services.transcript import derive_transcript
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
-
-
-# Strong references: the event loop only keeps weak refs to tasks — an
-# unreferenced pipeline stage can be garbage-collected mid-flight.
-_tasks: set[asyncio.Task] = set()
-
-
-def _spawn(coro) -> None:
-    """Schedule a pipeline stage. Single-process asyncio for now; the
-    M4 celery lanes replace this. Tests monkeypatch it."""
-    task = asyncio.get_running_loop().create_task(coro)
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
 
 
 @router.get("")
@@ -114,8 +104,44 @@ async def analyze_document(
         title=f"Document #{document_id} analysis",
     )
     db.add(s)
-    await db.commit()
-    _spawn(pipeline.run_stage_start(s.id))
+    await db.flush()
+    await enqueue(
+        db,
+        "start",
+        {"session_id": s.id},
+        lane=QueueLane.interactive,
+        session_id=s.id,
+    )
+    return SessionOut.model_validate(s)
+
+
+@router.post("/analyze/{entity_type}/{entity_id}")
+async def analyze_entity(
+    entity_type: str,
+    entity_id: int,
+    body: AnalyzeEntityRequest | None = None,
+    db: AsyncSession = Depends(get_session),
+) -> SessionOut:
+    """Start a taxonomy review session (tag/correspondent/document_type).
+    No OCR phase — straight to the agent."""
+    if entity_type not in ("tag", "correspondent", "document_type"):
+        raise HTTPException(422, f"cannot analyze entity type {entity_type!r}")
+    body = body or AnalyzeEntityRequest()
+    s = Session(
+        agent_kind=AgentKind(entity_type),
+        entity_type=EntityType(entity_type),
+        entity_id=entity_id,
+        phase=SessionPhase.queued,
+        params=(
+            {"instructions": body.instructions} if body.instructions else {}
+        ),
+        title=f"{entity_type.replace('_', ' ')} #{entity_id} review",
+    )
+    db.add(s)
+    await db.flush()
+    await enqueue(
+        db, "start", {"session_id": s.id}, lane=QueueLane.interactive, session_id=s.id
+    )
     return SessionOut.model_validate(s)
 
 
@@ -171,7 +197,14 @@ async def resolve_ocr_gate(
     if latest is None:
         raise HTTPException(409, "no OCR result to accept")
     await pipeline.apply_ocr_gate(db, paperless, s, latest.text, body.content)
-    _spawn(pipeline.run_stage_analysis(s.id))
+    await enqueue(
+        db,
+        "analysis",
+        {"session_id": s.id},
+        lane=QueueLane.interactive if s.job_id is None else QueueLane.batch,
+        session_id=s.id,
+        job_id=s.job_id,
+    )
     return SessionOut.model_validate(s)
 
 
@@ -191,9 +224,16 @@ async def rerun_ocr(
     s.phase = SessionPhase.ocr_running
     if body.instructions:
         s.params = {**s.params, "ocr_instructions": body.instructions}
-    await db.commit()
+    await db.flush()
+    await enqueue(
+        db,
+        "reocr",
+        {"session_id": s.id, "instructions": body.instructions, "dpi": body.dpi},
+        lane=QueueLane.interactive,
+        session_id=s.id,
+        job_id=s.job_id,
+    )
     bus.publish(s.id, "phase_changed", phase=SessionPhase.ocr_running.value)
-    _spawn(pipeline.run_stage_reocr(s.id, body.instructions, body.dpi))
     return SessionOut.model_validate(s)
 
 
@@ -220,9 +260,15 @@ async def send_message(
     # concurrent sends 409 deterministically.
     s.status = SessionStatus.running
     s.error = None
-    await db.commit()
+    await db.flush()
+    await enqueue(
+        db,
+        "steering",
+        {"session_id": s.id, "content": body.content},
+        lane=QueueLane.interactive,
+        session_id=s.id,
+    )
     bus.publish(s.id, "message_appended")
-    _spawn(pipeline.run_stage_steering(s.id, body.content))
     return SessionOut.model_validate(s)
 
 

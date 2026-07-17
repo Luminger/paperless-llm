@@ -262,3 +262,67 @@ async def test_instrumented_tools_publish_sse_events(db, paperless_client):
         assert types[-1] == "run_finished"
     finally:
         bus.unsubscribe(session.id, q)
+
+
+@respx.mock
+async def test_taxonomy_agent_merge_flow(db, paperless_client):
+    """A scripted taxonomy turn: the merge proposal validates against
+    live taxonomy and persists with the right target entity."""
+    from app.agents.tools import TAXONOMY_AGENT_TOOLS
+
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/").mock(
+        return_value=Response(
+            200,
+            json={"count": 2, "next": None, "results": [
+                {"id": 4, "name": "Kraxi GmbH", "document_count": 1,
+                 "match": "", "matching_algorithm": 0},
+                {"id": 8, "name": "Kraxi", "document_count": 5,
+                 "match": "", "matching_algorithm": 0},
+            ]},
+        )
+    )
+    session = Session(agent_kind=AgentKind.correspondent)
+    db.add(session)
+    await db.commit()
+
+    script = [
+        ModelResponse(parts=[
+            ToolCallPart(
+                tool_name="propose_merge_entities",
+                args={"entity_type": "correspondent", "source_id": 4,
+                      "target_id": 8, "reason": "duplicate of Kraxi"},
+            )
+        ]),
+        ModelResponse(parts=[TextPart(content="Proposed merging the duplicate.")]),
+    ]
+    state = {"i": 0}
+
+    async def fn(messages, info: AgentInfo) -> ModelResponse:
+        step = script[min(state["i"], len(script) - 1)]
+        state["i"] += 1
+        return step
+
+    agent = Agent(FunctionModel(fn), deps_type=AgentDeps, tools=list(TAXONOMY_AGENT_TOOLS))
+    outcome = await run_agent_turn(
+        paperless_client, db, session, "Review correspondent id=4.", agent=agent
+    )
+    assert len(outcome.proposal_ids) == 1
+
+    from sqlalchemy import select
+
+    from app.db.models import Proposal
+
+    p = await db.scalar(select(Proposal))
+    assert p.kind == "merge_entities"
+    assert p.agent_payload["source_id"] == 4 and p.agent_payload["target_id"] == 8
+    assert p.entity_type.value == "correspondent"
+
+
+def test_all_agent_kinds_buildable(monkeypatch):
+    """Prompts + instrumented toolsets survive agent construction for
+    every kind (schema generation happens here)."""
+    from app.agents.registry import build_agent
+    from app.db.models import AgentKind
+
+    for kind in AgentKind:
+        assert build_agent(kind) is not None

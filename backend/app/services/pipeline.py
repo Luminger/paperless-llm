@@ -24,6 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.runner import run_agent_turn
 from app.config import get_settings
 from app.db.models import (
+    AgentKind,
+    EntityType,
     Proposal,
     ProposalStatus,
     Session,
@@ -68,29 +70,6 @@ async def _mark_failed(db: AsyncSession, session: Session, exc: Exception) -> No
     await db.commit()
     bus.publish(session.id, "failed", error=session.error)
 
-
-async def recover_interrupted_sessions() -> int:
-    """Startup recovery: single-process background tasks die with the
-    process, so any session still in an in-flight phase is orphaned.
-    Mark it failed (the user can start a fresh analysis)."""
-    from sqlalchemy import select
-
-    async with session_scope() as db:
-        stale = (
-            await db.scalars(
-                select(Session).where(
-                    Session.phase.in_(
-                        [SessionPhase.queued, SessionPhase.ocr_running, SessionPhase.analyzing]
-                    ),
-                    Session.status != SessionStatus.failed,
-                )
-            )
-        ).all()
-        for s in stale:
-            s.status = SessionStatus.failed
-            s.error = "interrupted: the app restarted while this stage was running"
-        await db.commit()
-        return len(stale)
 
 
 async def run_stage_start(session_id: int) -> None:
@@ -166,9 +145,18 @@ async def run_stage_steering(session_id: int, content: str) -> None:
                 await _mark_failed(db, session, e)
 
 
+def _kickoff_prompt(session: Session) -> str:
+    """The synthetic first prompt of a pipeline session. Prefixes must
+    stay in sync with transcript._PIPELINE_PROMPT_PREFIXES."""
+    if session.agent_kind == AgentKind.document:
+        return f"Process document id={session.entity_id}."
+    noun = (session.entity_type or EntityType.tag).value.replace("_", " ")
+    return f"Review {noun} id={session.entity_id}."
+
+
 async def _run_analysis(db: AsyncSession, paperless: PaperlessClient, session: Session) -> None:
     await _set_phase(db, session, SessionPhase.analyzing)
-    prompt = f"Process document id={session.entity_id}."
+    prompt = _kickoff_prompt(session)
     if session.params.get("ocr_gate") == "accepted":
         prompt += (
             "\nThe document's content was just re-OCRed and reviewed by the "
@@ -183,7 +171,40 @@ async def _run_analysis(db: AsyncSession, paperless: PaperlessClient, session: S
     if session.params.get("instructions"):
         prompt += f"\nAdditional instructions from the user: {session.params['instructions']}"
     await run_agent_turn(paperless, db, session, prompt)
+    await _maybe_auto_apply(db, paperless, session)
     await _set_phase(db, session, SessionPhase.done)
+
+
+async def _maybe_auto_apply(
+    db: AsyncSession, paperless: PaperlessClient, session: Session
+) -> None:
+    """Campaign/webhook sessions may carry apply_policy=auto: apply the
+    fresh proposals immediately — validated, journaled, revertible; the
+    policy only skips the waiting. Failures leave the proposal pending
+    for a human instead of failing the session."""
+    if session.params.get("apply_policy") != "auto":
+        return
+    from sqlalchemy import select
+
+    from app.proposals.apply import apply_proposal
+
+    proposals = (
+        await db.scalars(
+            select(Proposal).where(
+                Proposal.session_id == session.id,
+                Proposal.status == ProposalStatus.pending,
+            )
+        )
+    ).all()
+    applied = 0
+    for p in proposals:
+        try:
+            await apply_proposal(paperless, db, p)
+            applied += 1
+        except Exception:  # noqa: BLE001 — leave for human review
+            log.exception("auto-apply failed for proposal %s", p.id)
+    if applied:
+        bus.publish(session.id, "proposals_applied", count=applied)
 
 
 async def apply_ocr_gate(

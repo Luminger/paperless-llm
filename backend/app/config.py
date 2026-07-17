@@ -123,6 +123,20 @@ class WebhookConfig(BaseModel):
     # Shared secret expected in the X-PLLM-Token header of webhook ingress.
     # Empty disables the webhook endpoint entirely.
     secret: str = ""
+    # Defaults for sessions created via webhook ingress.
+    redo_ocr: bool = False
+    apply_policy: Literal["review", "auto"] = "review"
+
+
+class QueueConfig(BaseModel):
+    """In-process worker pool over the persistent DB queue. Two lanes:
+    interactive (chat turns, single analyses) and batch (campaigns).
+    Concurrency here multiplies against the LLM semaphores — the model
+    endpoint's max_concurrent is the real global cap."""
+
+    interactive_concurrency: int = 2
+    batch_concurrency: int = 2
+    poll_interval_seconds: float = 1.0
 
 
 class Settings(BaseSettings):
@@ -135,9 +149,9 @@ class Settings(BaseSettings):
     llm: LlmConfig = LlmConfig()
     paperless: PaperlessConfig = PaperlessConfig()
     webhook: WebhookConfig = WebhookConfig()
+    queue: QueueConfig = QueueConfig()
 
     database_url: str = "sqlite+aiosqlite:///./data/paperless_llm.sqlite3"
-    redis_url: str = "redis://127.0.0.1:6379/0"
     # Where OCR page renders / caches live.
     data_dir: Path = Path("./data")
 

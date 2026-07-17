@@ -6,12 +6,18 @@ proposals")."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_paperless
+from app.api.schemas import MergeCandidateOut
+from app.db.session import get_session
 from app.paperless import PaperlessClient
+from app.services.entity_index import merge_candidates
 
 router = APIRouter(prefix="/api/entities", tags=["entities"])
+
+TAXONOMY_TYPES = ("tag", "correspondent", "document_type")
 
 
 @router.get("/documents")
@@ -56,3 +62,18 @@ async def list_document_types(paperless: PaperlessClient = Depends(get_paperless
 @router.get("/storage_paths")
 async def list_storage_paths(paperless: PaperlessClient = Depends(get_paperless)):
     return [s.model_dump() for s in await paperless.list_storage_paths()]
+
+
+@router.get("/{entity_type}/merge-candidates")
+async def get_merge_candidates(
+    entity_type: str,
+    db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> list[MergeCandidateOut]:
+    """Deterministic duplicate pre-pass over one taxonomy: pairs whose
+    names are close by string distance or embedding cosine. The agent
+    (or the human) adjudicates; this only finds candidates."""
+    if entity_type not in TAXONOMY_TYPES:
+        raise HTTPException(422, f"no merge candidates for {entity_type!r}")
+    pairs = await merge_candidates(db, paperless, entity_type)
+    return [MergeCandidateOut.model_validate(p) for p in pairs]

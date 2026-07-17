@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from app.db.models import (
     AgentKind,
     EntityType,
+    JobStatus,
     ProposalStatus,
     SessionPhase,
     SessionStatus,
@@ -65,6 +66,57 @@ class ProposalPatch(BaseModel):
 class AnalyzeRequest(BaseModel):
     redo_ocr: bool = False
     instructions: str | None = None
+
+
+class AnalyzeEntityRequest(BaseModel):
+    instructions: str | None = None
+
+
+class JobCreate(BaseModel):
+    """Bulk campaign. Document set: explicit ids, a full-text query,
+    the inbox, or all untagged documents."""
+
+    document_ids: list[int] | None = None
+    query: str | None = None
+    inbox: bool = False
+    untagged_only: bool = False
+    redo_ocr: bool = False
+    apply_policy: Literal["review", "auto"] = "review"
+    instructions: str | None = None
+
+
+class JobOut(BaseModel):
+    id: int
+    kind: str
+    params: dict[str, Any] = {}
+    status: JobStatus
+    total: int
+    done: int
+    failed: int
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class JobDetailOut(JobOut):
+    sessions: list[SessionOut] = []
+
+
+class StatsOut(BaseModel):
+    pending_proposals: int
+    active_sessions: int
+    queue_pending: dict[str, int]
+    active_jobs: int
+
+
+class MergeCandidateOut(BaseModel):
+    entity_type: str
+    source: dict[str, Any]
+    target: dict[str, Any]
+    string_score: float
+    semantic_score: float | None
 
 
 class OcrReviewOut(BaseModel):
