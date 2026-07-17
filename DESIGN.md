@@ -215,25 +215,32 @@ Proposal kinds (v1): `update_document_metadata`, `replace_content`,
 
 ## Queueing & triggers
 
-**Persistent DB-backed queue (`queue_items`) with in-process async
-workers** — deliberately NOT celery/redis: this is a single-node tool
-whose true concurrency cap is the LLM endpoint itself, the SSE event
-bus is in-process, and a DB queue gives strictly better restart
-behavior (queued work survives; interrupted work is retried). The
-stage functions stay queue-agnostic, so a distributed queue remains a
-contained swap if multi-node ever becomes real. Two lanes:
+**The Step is the unit of everything.** A session is an ordered list
+of `steps` rows — one per executable timeline element (ocr, analysis,
+chat). The step doubles as the queue item: in-process async workers
+claim pending steps by lane — deliberately NOT celery/redis: this is a
+single-node tool whose true concurrency cap is the LLM endpoint
+itself, the SSE event bus is in-process, and a DB queue gives strictly
+better restart behavior (queued work survives; interrupted work is
+retried). Executors are a registry (kind -> coroutine) that fill
+`step.result`, return AWAIT_USER (gates), or raise; ALL state
+transitions, attempt history, retry policy, and the session's derived
+phase/status live in the engine (single writer). Generic actions apply
+to every kind, implemented once: retry, redo (supersede + fresh step
+with amended input — an OCR re-run is a redo), resolve (awaiting_user).
+A distributed queue remains a contained swap if multi-node ever
+becomes real. Two lanes:
 
 - `interactive` — chat turns, single manual analyses; own worker slots
   so bulk jobs never starve the UI.
 - `batch` — campaigns, webhook-ingested docs, (M5) RAG indexing.
 
-**Failure policy**: a failed stage (crash or stage-recorded error) is
-retried `queue.retry_attempts` times with `queue.retry_delay_seconds`
-between attempts; every attempt is appended to the item's attempt log
-(never shadowed) and shown in the timeline. "Retry now" in the UI
-skips the backoff or revives exhausted stages — manual retries are
-never limited. Worker concurrency per lane and the per-endpoint
-`max_concurrent` semaphore are settings.
+**Failure policy**: a failed step is retried `queue.retry_attempts`
+times with `queue.retry_delay_seconds` between attempts; every attempt
+is appended to the step's attempt log (never shadowed) and shown in
+the timeline. "Retry now" skips the backoff or revives exhausted
+steps — manual retries are never limited. Worker concurrency per lane
+and the per-endpoint `max_concurrent` semaphore are settings.
 
 **Triggers**:
 1. Manual — per entity from the UI.
