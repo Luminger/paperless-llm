@@ -83,25 +83,16 @@ function Row({
   label,
   current,
   changed,
-  agentProposed,
   children,
 }: {
   label: string;
   current: string;
   changed: boolean;
-  agentProposed: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div className="grid grid-cols-[10rem_1fr_1.4fr] items-center gap-3 border-b border-border/50 py-2">
-      <div className="text-sm text-muted-foreground">
-        {label}
-        {agentProposed && (
-          <Badge variant="secondary" className="ml-1 px-1 py-0 text-[10px] text-blue-700 dark:text-blue-300">
-            agent
-          </Badge>
-        )}
-      </div>
+      <div className="text-sm text-muted-foreground">{label}</div>
       <div className="truncate text-sm text-muted-foreground">{current}</div>
       <div className={changed ? "rounded-md bg-amber-50 p-1 dark:bg-amber-950/40" : "p-1"}>
         {children}
@@ -228,7 +219,6 @@ function MetadataEditor({
     setEdited(next);
     onChange(buildPayload(next, doc, proposal.agent_payload));
   };
-  const inAgent = (k: string) => k in proposal.agent_payload;
   const currentCreated = doc.created?.slice(0, 10) ?? null;
 
   return (
@@ -242,7 +232,6 @@ function MetadataEditor({
         label="Title"
         current={doc.title || "—"}
         changed={desired.title !== doc.title}
-        agentProposed={inAgent("title")}
       >
         <Input
           className="h-8"
@@ -255,7 +244,6 @@ function MetadataEditor({
         label="Correspondent"
         current={name(correspondents, doc.correspondent)}
         changed={desired.correspondent !== (doc.correspondent ?? null)}
-        agentProposed={inAgent("correspondent")}
       >
         <EntitySelect
           label="correspondent"
@@ -269,7 +257,6 @@ function MetadataEditor({
         label="Document type"
         current={name(docTypes, doc.document_type)}
         changed={desired.document_type !== (doc.document_type ?? null)}
-        agentProposed={inAgent("document_type")}
       >
         <EntitySelect
           label="document type"
@@ -283,7 +270,6 @@ function MetadataEditor({
         label="Storage path"
         current={name(storagePaths, doc.storage_path)}
         changed={desired.storage_path !== (doc.storage_path ?? null)}
-        agentProposed={inAgent("storage_path")}
       >
         <EntitySelect
           label="storage path"
@@ -300,7 +286,6 @@ function MetadataEditor({
           JSON.stringify([...desired.tags].sort()) !==
           JSON.stringify([...doc.tags].sort())
         }
-        agentProposed={inAgent("add_tags") || inAgent("remove_tags")}
       >
         <TagsEditor
           value={desired.tags}
@@ -313,7 +298,6 @@ function MetadataEditor({
         label="Created"
         current={formatDate(currentCreated)}
         changed={desired.created !== currentCreated}
-        agentProposed={inAgent("created")}
       >
         <DateField
           ariaLabel="created date"
