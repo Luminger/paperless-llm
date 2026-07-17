@@ -13,7 +13,7 @@ network.
    path, custom fields).
 2. **Taxonomy governance**: review, merge, rename, and clean up tags,
    correspondents, and document types — one entity at a time, with the LLM
-   adjudicating and a human approving.
+   adjudicating and a human deciding.
 3. **Human-in-the-loop by default**: agents emit *proposals*, not writes.
    Every proposal is reviewable, editable, steerable via chat, and journaled
    when applied. Auto-apply is opt-in per job.
@@ -193,7 +193,7 @@ Proposal          kind, revision, supersedes_id?, step_id,
                   agent_payload  (immutable: exactly what the model emitted)
                   user_payload?  (user's edited version, full edit visibility)
                   base_snapshot  (paperless state of touched fields at emit)
-                  status: draft | pending | approved | rejected | applied |
+                  status: draft | pending | rejected | applied |
                           superseded | no_change (apply-time: already matched)
 AppliedChange     proposal_id, paperless before/after snapshots — undo journal
 Job               bulk run: scope (inbox|tag|untagged|ids — deliberately
@@ -585,12 +585,12 @@ scenarios accumulate from M1 on.
    useful without it): one design language and one set of patterns
    across the whole API and UI, grown feature-by-feature until now.
    Decisions: shadcn/ui (vendored) for primitives; TS types generated
-   from OpenAPI; "jobs" is the one name; approve flow deleted (the
-   model is propose → user applies); no query-scoped jobs.
+   from OpenAPI; "jobs" is the one name; the proposal lifecycle is
+   propose → user applies or rejects; no query-scoped jobs.
    Phased, tests green after each phase:
-   - **Phase 0 — decided cleanups**: nav says Jobs; `query` job scope
-     removed (tag scope added); approve route + `approved` status
-     deleted (enum migration); dead surface swept.
+   - **Phase 0 — decided cleanups**: one name per concept (jobs),
+     deterministic job scopes only (tag scope added), dead surface
+     swept, migrations re-squashed.
    - **Phase 1 — API contract**: one list envelope for app-owned
      collections; explicit response schema on every route; one error
      shape `{code, message}` rendered humanely in the UI; TS types

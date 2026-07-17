@@ -98,10 +98,7 @@ async def test_patch_replaces_and_validates(client, db):
 
 
 async def test_reject_conflicts(client, db):
-    """The lifecycle is propose -> apply|reject; there is no approve."""
     p = await _seed_proposal(db)
-    # The approve flow is gone entirely.
-    assert (await client.post(f"/api/proposals/{p.id}/approve")).status_code in (404, 405)
     assert (await client.post(f"/api/proposals/{p.id}/reject")).json()["status"] == "rejected"
     # Rejecting again conflicts.
     assert (await client.post(f"/api/proposals/{p.id}/reject")).status_code == 409

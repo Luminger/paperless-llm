@@ -126,12 +126,11 @@ describe("ProposalCard — metadata editor", () => {
     });
   });
 
-  it("workflow: apply and reject only — no separate approve — plus hint text", async () => {
+  it("workflow: apply and reject, plus hint text", async () => {
         mocked.proposalAction.mockResolvedValue(metadataProposal({ status: "applied" }));
     renderCard(metadataProposal());
     await screen.findAllByText("Telarko Deutschland GmbH");
 
-    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Apply to paperless" }));
     await waitFor(() => expect(mocked.proposalAction).toHaveBeenCalledWith(1, "apply"));
