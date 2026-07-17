@@ -384,9 +384,9 @@ updates and entity creations alike, rendered as full inline editor
 cards with resolved names) — lives on one timeline page.
 `/proposals/:id` deep-links redirect to the owning session.
 
-App chrome: top nav with user icon + dropdown (about/version, link to
-settings; becomes the account menu when auth lands in M6) and a
-**Settings** page (read-only overview of model profiles, queue/retry
+App chrome: top nav with user icon + dropdown (theme switch
+light/dark/system — default system —, about/version, link to settings;
+becomes the account menu when auth lands in M6) and a **Settings** page (read-only overview of model profiles, queue/retry
 config, embeddings/webhook status — config stays file/env-driven, the
 page makes it inspectable).
 
@@ -599,7 +599,9 @@ scenarios accumulate from M1 on.
      existing zinc/emerald language; primitives (Button, Card, Table,
      Badge, Dialog, DropdownMenu, form fields, EmptyState, loading/
      error states, PageHeader) concentrate every color/spacing
-     decision; central query-key registry with typed invalidation
+     decision; **light/dark theme** via CSS variables with a
+     light/dark/system switch (defaults to system, persisted
+     locally); central query-key registry with typed invalidation
      helpers.
    - **Phase 3 — page migration**: Dashboard, Documents, Taxonomy,
      Jobs, Log, EntityPage onto the primitives and one page scaffold
