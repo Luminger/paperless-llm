@@ -1,5 +1,9 @@
-"""Bulk jobs: resolve a document set, create one session per
-document, enqueue their pipelines on the batch lane.
+"""Jobs: EVERY analysis run is tracked as a job — a single manual
+analysis, a bulk run, or a webhook ingest. The job is the execution
+record (progress, failures); sessions link to it.
+
+Lanes: single manual analyses run on the interactive lane, bulk and
+webhook work on the batch lane — tracking does not change scheduling.
 
 Per-job ``apply_policy``:
 - ``review`` (default): proposals wait for a human, as always.
@@ -20,6 +24,7 @@ from app.db.models import (
     AgentKind,
     EntityType,
     Job,
+    QueueLane,
     Session,
     SessionPhase,
     SessionStatus,
@@ -75,6 +80,9 @@ async def create_job(
     apply_policy: Literal["review", "auto"] = "review",
     instructions: str | None = None,
     skip_active: bool = True,
+    kind: str = "bulk_analyze",
+    lane: QueueLane = QueueLane.batch,
+    trigger: str | None = None,
 ) -> tuple[Job, list[int]]:
     """Create the job + sessions + queue items. Returns (job, doc_ids)."""
     ids = await resolve_documents(
@@ -113,7 +121,9 @@ async def create_job(
     }
     if instructions:
         params["instructions"] = instructions
-    job = Job(kind="bulk_analyze", params=params, total=len(ids))
+    if trigger:
+        params["trigger"] = trigger
+    job = Job(kind=kind, params=params, total=len(ids))
     db.add(job)
     await db.flush()
 
@@ -127,20 +137,64 @@ async def create_job(
                 "redo_ocr": redo_ocr,
                 "apply_policy": apply_policy,
                 **({"instructions": instructions} if instructions else {}),
+                **({"trigger": trigger} if trigger else {}),
             },
             title=f"Document #{doc_id} analysis",
         )
         db.add(session)
         await db.flush()
         await create_step(
-            db, session, StepKind.ocr if redo_ocr else StepKind.analysis
+            db, session, StepKind.ocr if redo_ocr else StepKind.analysis,
+            lane=lane,
         )
     await record(
         db, "job", "created",
-        job_id=job.id, documents=ids, skipped_active=skipped,
+        job_id=job.id, job_kind=kind, documents=ids, skipped_active=skipped,
         apply_policy=apply_policy, redo_ocr=redo_ocr,
         scope={"inbox": inbox, "tag_id": tag_id, "untagged_only": untagged_only,
                "document_ids": document_ids},
     )
     await db.commit()
     return job, ids
+
+
+async def create_entity_job(
+    db: AsyncSession,
+    *,
+    agent_kind: AgentKind,
+    entity_type: EntityType,
+    entity_id: int,
+    instructions: str | None = None,
+) -> tuple[Job, Session]:
+    """A single taxonomy review is a tracked job too (total=1) — it
+    runs on the interactive lane."""
+    params: dict[str, Any] = {
+        "entity_type": str(entity_type.value),
+        "entity_id": entity_id,
+    }
+    if instructions:
+        params["instructions"] = instructions
+    job = Job(kind="analyze_entity", params=params, total=1)
+    db.add(job)
+    await db.flush()
+
+    session = Session(
+        agent_kind=agent_kind,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        job_id=job.id,
+        params={**({"instructions": instructions} if instructions else {})},
+        title=f"{entity_type.value.replace('_', ' ')} #{entity_id} review",
+    )
+    db.add(session)
+    await db.flush()
+    await create_step(
+        db, session, StepKind.analysis, lane=QueueLane.interactive
+    )
+    await record(
+        db, "job", "created",
+        job_id=job.id, job_kind="analyze_entity",
+        entity_type=str(entity_type.value), entity_id=entity_id,
+    )
+    await db.commit()
+    return job, session

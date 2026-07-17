@@ -153,25 +153,29 @@ async def analyze_document(
     document_id: int,
     body: AnalyzeRequest | None = None,
     db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
 ) -> SessionOut:
-    """Start a document analysis: a session whose first step is either
-    the OCR (gated) or the analysis itself."""
+    """Start a document analysis. Even a single analysis is a tracked
+    job (total=1); it runs on the interactive lane."""
     body = body or AnalyzeRequest()
-    s = Session(
-        agent_kind=AgentKind.document,
-        entity_type=EntityType.document,
-        entity_id=document_id,
-        params={
-            "redo_ocr": body.redo_ocr,
-            **({"instructions": body.instructions} if body.instructions else {}),
-        },
-        title=f"Document #{document_id} analysis",
+    from app.db.models import QueueLane
+    from app.services.jobs import create_job as create_job_service
+
+    job, _ids = await create_job_service(
+        db,
+        paperless,
+        document_ids=[document_id],
+        redo_ocr=body.redo_ocr,
+        instructions=body.instructions,
+        skip_active=False,  # an explicit manual run is always honored
+        kind="analyze",
+        lane=QueueLane.interactive,
+        trigger="manual",
     )
-    db.add(s)
-    await db.flush()
-    await engine.create_step(
-        db, s, StepKind.ocr if body.redo_ocr else StepKind.analysis
+    s = await db.scalar(
+        select(Session).where(Session.job_id == job.id).order_by(Session.id)
     )
+    assert s is not None
     return SessionOut.model_validate(s)
 
 
@@ -195,16 +199,15 @@ async def analyze_entity(
                 422, "the inbox tag is a workflow marker and cannot be analyzed"
             )
     body = body or AnalyzeEntityRequest()
-    s = Session(
+    from app.services.jobs import create_entity_job
+
+    _job, s = await create_entity_job(
+        db,
         agent_kind=AgentKind(entity_type),
         entity_type=EntityType(entity_type),
         entity_id=entity_id,
-        params={"instructions": body.instructions} if body.instructions else {},
-        title=f"{entity_type.replace('_', ' ')} #{entity_id} review",
+        instructions=body.instructions,
     )
-    db.add(s)
-    await db.flush()
-    await engine.create_step(db, s, StepKind.analysis)
     return SessionOut.model_validate(s)
 
 

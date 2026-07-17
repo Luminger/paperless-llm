@@ -31,10 +31,15 @@ function JobProgress({ job }: { job: Job }) {
 
 function scopeLabel(job: Job): string {
   const p = job.params;
+  if (job.kind === "analyze_entity")
+    return `${String(p.entity_type).replaceAll("_", " ")} #${String(p.entity_id)} review`;
   if (p.inbox) return "Inbox";
   if (p.untagged_only) return "Untagged documents";
   if (p.tag_id) return `Tag #${p.tag_id}`;
-  if (Array.isArray(p.document_ids)) return `${p.document_ids.length} selected documents`;
+  if (Array.isArray(p.document_ids))
+    return p.document_ids.length === 1
+      ? `Document #${p.document_ids[0]}`
+      : `${p.document_ids.length} selected documents`;
   return job.kind;
 }
 
@@ -194,6 +199,11 @@ export default function Jobs() {
                 <span className="w-12 text-muted-foreground/60">#{j.id}</span>
                 <span className="flex-1">
                   {scopeLabel(j)}
+                  {j.kind === "webhook_analyze" && (
+                    <Badge variant="secondary" className="ml-2 text-blue-700 dark:text-blue-300">
+                      webhook
+                    </Badge>
+                  )}
                   {j.params.apply_policy === "auto" && (
                     <Badge
                       variant="secondary"

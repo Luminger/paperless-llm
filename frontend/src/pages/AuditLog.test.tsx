@@ -75,3 +75,40 @@ describe("AuditLog", () => {
     expect(mocked.listAudit).toHaveBeenLastCalledWith(1, 20, "changes");
   });
 });
+
+describe("AuditLog — scheduled tasks", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("renders task entries and offers the Tasks filter", async () => {
+    mocked.listAudit.mockResolvedValue({
+      count: 2,
+      page: 1,
+      page_size: 20,
+      results: [
+        entry({
+          id: 10,
+          kind: "task",
+          action: "scheduled",
+          actor: "user",
+          detail: { step_kind: "analysis", session_id: 4, lane: "interactive" },
+        }),
+        entry({
+          id: 11,
+          kind: "task",
+          action: "retry_scheduled",
+          actor: "system",
+          detail: { step_kind: "ocr", session_id: 4, attempt: 1 },
+        }),
+      ],
+    });
+    renderWithProviders(<AuditLog />);
+
+    expect(await screen.findByText(/queued.*analysis step/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/automatic retry 1 of ocr step scheduled/),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(mocked.listAudit).toHaveBeenLastCalledWith(1, 20, "task");
+  });
+});

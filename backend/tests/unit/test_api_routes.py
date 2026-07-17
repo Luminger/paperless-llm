@@ -333,9 +333,19 @@ async def test_analyze_creates_queued_session(client, db):
     assert r.status_code == 200
     body = r.json()
     assert body["phase"] == "queued"
-    assert body["params"] == {"redo_ocr": True, "instructions": "hi"}
+    assert body["params"]["redo_ocr"] is True
+    assert body["params"]["instructions"] == "hi"
     steps = await _steps(db, "ocr")
     assert len(steps) == 1 and steps[0].session_id == body["id"]
+    # Even a single analysis is a tracked job on the interactive lane.
+    assert steps[0].lane.value == "interactive"
+    from app.db.models import Job
+    from app.db.models import Session as Sess
+
+    sess = await db.get(Sess, body["id"])
+    assert sess.job_id is not None
+    job = await db.get(Job, sess.job_id)
+    assert job.kind == "analyze" and job.total == 1
 
 
 async def test_analyze_taxonomy_entity(client, db):
@@ -1002,3 +1012,38 @@ async def test_unfinished_includes_sessions_with_pending_proposals(client, db):
     await client.post(f"/api/proposals/{p.id}/reject")
     body = (await client.get("/api/sessions?unfinished=true")).json()
     assert not any(item["id"] == p.session_id for item in body["results"])
+
+
+async def test_entity_analysis_is_a_tracked_job(client, db):
+    """Taxonomy reviews are tracked jobs too (total=1, interactive)."""
+    r = await client.post("/api/sessions/analyze/correspondent/3", json={})
+    assert r.status_code == 200
+    from app.db.models import Job
+    from app.db.models import Session as Sess
+
+    sess = await db.get(Sess, r.json()["id"])
+    assert sess.job_id is not None
+    job = await db.get(Job, sess.job_id)
+    assert job.kind == "analyze_entity" and job.total == 1
+    assert job.params["entity_type"] == "correspondent"
+
+
+async def test_task_scheduling_is_audited(client, db):
+    """Step scheduling shows up in the audit log; the 'changes' filter
+    stays free of it."""
+    await client.post("/api/sessions/analyze/document/7", json={"redo_ocr": False})
+
+    tasks = (await client.get("/api/audit?kind=task")).json()
+    assert tasks["count"] >= 1
+    entry = tasks["results"][0]
+    assert entry["action"] == "scheduled"
+    assert entry["detail"]["step_kind"] == "analysis"
+    assert entry["detail"]["lane"] == "interactive"
+
+    # Job creation is audited for singles too.
+    jobs = (await client.get("/api/audit?kind=job")).json()
+    assert any(e["detail"].get("job_kind") == "analyze" for e in jobs["results"])
+
+    # Data-changes view excludes scheduling noise.
+    changes = (await client.get("/api/audit?kind=changes")).json()
+    assert all(e["kind"] != "task" for e in changes["results"])

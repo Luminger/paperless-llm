@@ -196,10 +196,12 @@ Proposal          kind, revision, supersedes_id?, step_id,
                   status: draft | pending | rejected | applied |
                           superseded | no_change (apply-time: already matched)
 AppliedChange     proposal_id, paperless before/after snapshots — undo journal
-Job               bulk run: scope (inbox|tag|untagged|ids — deliberately
-                  NO free-text-query scope: jobs run over deterministic
-                  selections, not search results), apply_policy
-                  (review|auto), progress counters, per-document sessions
+Job               EVERY analysis run is a tracked job — single manual
+                  analyses (total=1, interactive lane), taxonomy
+                  reviews, bulk runs, webhook ingests. Scopes are
+                  deterministic (inbox|tag|untagged|ids — deliberately
+                  NO free-text-query scope); apply_policy (review|auto),
+                  progress counters, per-session links
 EntityInstruction app-local per-entity agent instructions (see below)
 AuditLog          data operations + paperless traffic, actor-attributed
 Counter           lifetime counters (OCR runs/pages, LLM requests/tokens)
@@ -274,10 +276,12 @@ label — analyzing it is refused (backend 422, no UI affordance).
 
 ## Transparency & audit
 
-- **Audit log** records data operations only (applies/reverts with
+- **Audit log** records data operations (applies/reverts with
   per-field from→to diffs derived from journal snapshots, OCR gate
-  acceptances, campaigns, webhook ingests) plus every paperless request —
-  never app lifecycle noise. Entries are actor-attributed via a
+  acceptances, jobs, webhook ingests), **task scheduling** (step
+  enqueues, automatic retry scheduling, manual retries, redos — own
+  "Tasks" filter, excluded from the "Data changes" view), plus every
+  paperless request — never app lifecycle noise. Entries are actor-attributed via a
   request-scoped contextvar (`user`, `system`; namespaced strings make
   multi-user attribution a value change, not a schema change).
   Paperless traffic is buffered in memory and flushed by a background
@@ -327,13 +331,14 @@ the timeline. "Retry now" skips the backoff or revives exhausted
 steps — manual retries are never limited. Worker concurrency per lane
 and the per-endpoint `max_concurrent` semaphore are settings.
 
-**Triggers**:
-1. Manual — per entity from the UI.
+**Triggers** (each one creates a job — the execution record):
+1. Manual — per entity from the UI (job with total=1, interactive
+   lane; tracking does not change scheduling).
 2. Bulk — UI multi-select or deterministic scopes (inbox, tag,
-   untagged) → job. Free-text search may aid *browsing*, but jobs are
-   never defined by a search query.
+   untagged) → batch-lane job. Free-text search may aid *browsing*,
+   but jobs are never defined by a search query.
 3. Webhook — `POST /api/webhooks/paperless` for paperless-ngx workflow
-   actions on document-added (shared-secret header).
+   actions on document-added (shared-secret header) → batch-lane job.
 
 ## HTTP API surface (backend)
 

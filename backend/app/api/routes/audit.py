@@ -25,7 +25,9 @@ async def list_audit(
     page_size = min(100, max(1, page_size))
     where = []
     if kind == "changes":
-        where.append(AuditLog.kind != "paperless")
+        # Data changes only — neither raw paperless traffic nor task
+        # scheduling noise.
+        where.append(AuditLog.kind.notin_(("paperless", "task")))
     elif kind:
         where.append(AuditLog.kind == kind)
     count = (

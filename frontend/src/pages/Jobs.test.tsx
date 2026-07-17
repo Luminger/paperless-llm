@@ -93,3 +93,30 @@ describe("Jobs", () => {
     );
   });
 });
+
+describe("Jobs — every analysis is tracked", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.listTags.mockResolvedValue([]);
+  });
+
+  it("labels single-document and entity jobs", async () => {
+    mocked.listJobs.mockResolvedValue(
+      jobPage([
+        makeJob({ id: 1, kind: "analyze", params: { document_ids: [7] } }),
+        makeJob({
+          id: 2,
+          kind: "analyze_entity",
+          params: { entity_type: "correspondent", entity_id: 3 },
+        }),
+        makeJob({ id: 3, kind: "webhook_analyze", params: { document_ids: [4, 5] } }),
+      ]),
+    );
+    renderWithProviders(<Jobs />);
+
+    expect(await screen.findByText("Document #7")).toBeInTheDocument();
+    expect(screen.getByText("correspondent #3 review")).toBeInTheDocument();
+    expect(screen.getByText("2 selected documents")).toBeInTheDocument();
+    expect(screen.getByText("webhook")).toBeInTheDocument();
+  });
+});

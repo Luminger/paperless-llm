@@ -417,7 +417,8 @@ export interface paths {
          * @description Paginated session list, filterable by bound entity. Active and
          *     archived sessions are separate lists (archived=true for the
          *     latter); unfinished=true keeps only sessions that still need
-         *     something (gates, running/queued work, failures).
+         *     something (gates, running/queued work, failures — or proposals
+         *     still waiting for review).
          */
         get: operations["list_sessions_api_sessions_get"];
         put?: never;
@@ -439,8 +440,8 @@ export interface paths {
         put?: never;
         /**
          * Analyze Document
-         * @description Start a document analysis: a session whose first step is either
-         *     the OCR (gated) or the analysis itself.
+         * @description Start a document analysis. Even a single analysis is a tracked
+         *     job (total=1); it runs on the interactive lane.
          */
         post: operations["analyze_document_api_sessions_analyze_document__document_id__post"];
         delete?: never;

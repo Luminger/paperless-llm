@@ -17,6 +17,7 @@ const KIND_COLORS: Record<string, string> = {
   webhook: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
   session: "bg-muted text-muted-foreground",
   paperless: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  task: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
 };
 
 function ActorBadge({ actor }: { actor: string }) {
@@ -73,6 +74,29 @@ function summary(e: AuditEntry): React.ReactNode {
             session #{String(d.session_id)}
           </Link>{" "}
           {e.action}
+        </>
+      );
+    case "task/scheduled":
+    case "task/retry_requested":
+    case "task/redone":
+      return (
+        <>
+          {e.action === "scheduled" && "queued"}
+          {e.action === "retry_requested" && "manual retry of"}
+          {e.action === "redone" && "redid"}{" "}
+          {String(d.step_kind)} step{" — "}
+          <Link className="text-primary hover:underline" to={`/sessions/${d.session_id}`}>
+            session #{String(d.session_id)}
+          </Link>
+        </>
+      );
+    case "task/retry_scheduled":
+      return (
+        <>
+          automatic retry {String(d.attempt)} of {String(d.step_kind)} step scheduled{" — "}
+          <Link className="text-primary hover:underline" to={`/sessions/${d.session_id}`}>
+            session #{String(d.session_id)}
+          </Link>
         </>
       );
     case "paperless/fetch":
@@ -143,6 +167,7 @@ function EntryDetails({ e }: { e: AuditEntry }) {
 const FILTERS = [
   { key: "", label: "Everything" },
   { key: "changes", label: "Data changes" },
+  { key: "task", label: "Tasks" },
   { key: "paperless", label: "Paperless traffic" },
 ] as const;
 

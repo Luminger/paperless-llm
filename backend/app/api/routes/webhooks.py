@@ -11,11 +11,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_paperless
 from app.config import get_settings
-from app.db.models import AgentKind, EntityType, Session, StepKind
 from app.db.session import get_session
+from app.paperless import PaperlessClient
 from app.services.audit import record
-from app.services.steps import create_step
+from app.services.jobs import create_job
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,9 @@ def _extract_document_ids(body: Any) -> list[int]:
 
 @router.post("/paperless", status_code=202)
 async def paperless_webhook(
-    request: Request, db: AsyncSession = Depends(get_session)
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
 ) -> dict[str, Any]:
     cfg = get_settings().webhook
     if not cfg.secret:
@@ -64,26 +67,31 @@ async def paperless_webhook(
     if not ids:
         raise HTTPException(422, "no document id found in webhook body")
 
-    session_ids: list[int] = []
-    for doc_id in ids:
-        s = Session(
-            agent_kind=AgentKind.document,
-            entity_type=EntityType.document,
-            entity_id=doc_id,
-            params={
-                "redo_ocr": cfg.redo_ocr,
-                "apply_policy": cfg.apply_policy,
-                "trigger": "webhook",
-            },
-            title=f"Document #{doc_id} analysis",
-        )
-        db.add(s)
-        await db.flush()
-        await create_step(
-            db, s, StepKind.ocr if cfg.redo_ocr else StepKind.analysis
-        )
-        session_ids.append(s.id)
-    await record(db, "webhook", "ingested", documents=ids, session_ids=session_ids)
+    # Webhook ingests are tracked jobs like every other analysis.
+    job, queued = await create_job(
+        db,
+        paperless,
+        document_ids=ids,
+        redo_ocr=cfg.redo_ocr,
+        apply_policy=cfg.apply_policy,
+        kind="webhook_analyze",
+        trigger="webhook",
+    )
+    from sqlalchemy import select
+
+    from app.db.models import Session
+
+    session_ids = list(
+        (
+            await db.scalars(
+                select(Session.id).where(Session.job_id == job.id).order_by(Session.id)
+            )
+        ).all()
+    )
+    await record(
+        db, "webhook", "ingested",
+        documents=ids, session_ids=session_ids, job_id=job.id,
+    )
     await db.commit()
     log.info("webhook queued sessions %s for documents %s", session_ids, ids)
-    return {"queued_documents": ids, "session_ids": session_ids}
+    return {"queued_documents": ids, "session_ids": session_ids, "job_id": job.id}

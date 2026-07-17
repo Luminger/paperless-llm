@@ -49,6 +49,7 @@ from app.llm.ocr import run_ocr
 from app.paperless import PaperlessClient
 from app.proposals.apply import apply_proposal
 from app.proposals.schemas import ReplaceContent, dump_payload
+from app.services.audit import record as audit_record
 from app.services.events import bus
 
 log = logging.getLogger(__name__)
@@ -151,6 +152,12 @@ async def create_step(
     )
     db.add(step)
     await db.flush()
+    # Scheduling is a data operation — it shows up in the audit log.
+    await audit_record(
+        db, "task", "scheduled",
+        step_id=step.id, step_kind=str(kind.value),
+        session_id=session.id, lane=str(step.lane.value),
+    )
     await sync_session(db, session)
     await db.commit()
     _publish(step)
@@ -174,6 +181,11 @@ async def retry_step(db: DbSession, step: Step) -> Step:
         step.attempts = [*step.attempts, {"manual_retry_at": utcnow().isoformat()}]
     else:
         raise StepActionError(f"step is {step.state.value}; nothing to retry")
+    await audit_record(
+        db, "task", "retry_requested",
+        step_id=step.id, step_kind=str(step.kind.value),
+        session_id=step.session_id,
+    )
     session = await db.get(Session, step.session_id)
     if session is not None:
         await sync_session(db, session)
@@ -229,6 +241,13 @@ async def redo_step(
     for p in open_proposals:
         p.status = ProposalStatus.superseded
 
+    await audit_record(
+        db, "task", "redone",
+        step_id=step.id, step_kind=str(step.kind.value),
+        session_id=session.id,
+        superseded_steps=[s.id for s in to_supersede],
+        superseded_proposals=[p.id for p in open_proposals],
+    )
     return await create_step(
         db,
         session,
@@ -551,6 +570,13 @@ class StepWorkers:
                     delay = get_settings().queue.retry_delay_seconds
                     step.state = StepState.pending  # delayed auto-retry
                     step.scheduled_at = utcnow() + timedelta(seconds=delay)
+                    await audit_record(
+                        db, "task", "retry_scheduled",
+                        step_id=step.id, step_kind=str(step.kind.value),
+                        session_id=step.session_id, attempt=attempt_no,
+                        scheduled_at=step.scheduled_at.isoformat(),
+                        error=error[:300],
+                    )
                 else:
                     step.state = StepState.failed
                     step.finished_at = utcnow()
