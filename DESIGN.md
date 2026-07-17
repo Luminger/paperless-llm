@@ -31,8 +31,6 @@ network.
   reprocess (tracked as a future concern; the journal at least detects it).
 - Multi-user auth. Deployment sits behind a reverse proxy / VPN. A simple
   shared token may be added for the webhook endpoint.
-- Token-level streaming of agent output (blocked on qwen3_xml streaming
-  parser bugs upstream; see Model profiles).
 
 ## System context
 
@@ -62,7 +60,7 @@ setup and rationale (vLLM v0.25.x, Qwen3.6-27B INT4 on 2x3090):
 | Endpoint & model | `base_url`, `model`, `api_key` | `http://127.0.0.1:8001/v1`, `qwen3.6-27b` |
 | Server-side concurrency | `max_concurrent` (app-level semaphore, shared across workers and interactive lane) | 2 — server has `--max-num-seqs 3` shared with other consumers |
 | Images per request | `llm.ocr.max_images_per_request` | 2 — server has `--limit-mm-per-prompt {"image": 2}` |
-| Token streaming | `supports_streaming` | false — qwen3_xml streaming parser has known edge-case bugs (vLLM PRs #43714/#43783); UI uses event-level SSE instead |
+| Token streaming | `supports_streaming` | true — verified stable on the reference stack (earlier qwen3_xml parser concerns did not materialize); streaming feeds live progress (token counts, text tail) and per-call timing (TTFT, tok/s). The knob remains for servers with broken streaming tool-call parsing |
 | Thinking mode | `thinking` = `server_default` \| `on` \| `off` (via `chat_template_kwargs`) | `server_default` (on); reasoning shown collapsed in UI |
 | Sampling | optional per-profile overrides (`temperature`, `top_p`, ...) | agent: server defaults; OCR: `temperature=0.1` |
 | Context budget | `max_input_tokens` (used to clamp tool results / doc content) | 262144 native; clamp far below for sanity |
@@ -173,9 +171,10 @@ hand-fix). Only then does the metadata agent run — against the
 post-gate content. Agents never re-OCR or rewrite content themselves;
 similarity scores are internal-only and never user-facing.
 
-Stages are queue-agnostic functions; they run as referenced asyncio
-background tasks today and move onto the celery lanes in M4 unchanged.
-Startup recovery marks orphaned in-flight sessions as failed.
+Each stage is a **Step** (see Queueing): OCR runs as an `ocr` step whose
+executor pauses at the gate (`awaiting_user`); accepting or fixing the
+text resolves it and enqueues the `analysis` step. Startup recovery
+re-queues steps that were interrupted mid-run.
 
 ## Sessions, proposals, steering
 
@@ -184,16 +183,25 @@ optionally bound to an entity. The pydantic-ai message history is persisted
 (serialized) so any session can be resumed and steered.
 
 ```
-Session        id, agent_kind, entity_type?, entity_id?, title,
-               message_history (JSON), status, created/updated
-Proposal       id, session_id, kind, revision, supersedes_id?,
-               agent_payload   (immutable: exactly what the model emitted)
-               user_payload?   (user's edited version, full edit visibility)
-               status: draft | pending | approved | rejected | applied | superseded
-AppliedChange  proposal_id, paperless_before (snapshot), paperless_after,
-               applied_at    — the undo journal
-Job            kind, params (apply_policy: review|auto, batch_size, filters,
-               schedule?), progress, status
+Session           agent_kind, entity_type?, entity_id?, title,
+                  message_history (JSON), archived_at?;
+                  phase/status are DERIVED from its steps (single writer)
+Step              the timeline AND queue unit: kind (ocr|analysis|chat),
+                  state, lane, params, result, attempt log, scheduled_at,
+                  superseded_by?, message_range into the session history
+Proposal          kind, revision, supersedes_id?, step_id,
+                  agent_payload  (immutable: exactly what the model emitted)
+                  user_payload?  (user's edited version, full edit visibility)
+                  base_snapshot  (paperless state of touched fields at emit)
+                  status: draft | pending | approved | rejected | applied |
+                          superseded | no_change (apply-time: already matched)
+AppliedChange     proposal_id, paperless before/after snapshots — undo journal
+Job               campaign: scope (inbox|query|untagged|ids), apply_policy
+                  (review|auto), progress counters, per-document sessions
+EntityInstruction app-local per-entity agent instructions (see below)
+AuditLog          data operations + paperless traffic, actor-attributed
+Counter           lifetime counters (OCR runs/pages, LLM requests/tokens)
+OcrResult         OCR cache keyed by (doc, checksum, model, prompt version)
 ```
 
 **Steering** (`POST /sessions/{id}/messages`): appends a user message and
@@ -207,11 +215,56 @@ proposal as follows: ...") so manual fixes and "agent, fix it" compose.
 revision's `agent_payload`. Snapshots before-state to the journal. Merges
 (correspondents/tags) are implemented as bulk reassignment
 (`/api/documents/bulk_edit/`) followed by entity deletion, journaled for
-undo. Per-job `auto` policy applies without review.
+undo. Per-job `auto` policy applies without review (still journaled and
+revertible).
 
 Proposal kinds (v1): `update_document_metadata`, `replace_content`,
 `create_entity`, `update_entity`, `merge_entities`, `delete_entity`
 (entity ∈ {tag, correspondent, document_type, storage_path}).
+
+**Redo supersedes downstream**: redoing a step (e.g. re-running OCR with
+different instructions) supersedes that step AND every step after it,
+including their open proposals — later results were built on invalidated
+state. Applied/rejected proposals are left alone. Superseded steps stay
+inspectable on the timeline. A redo always asks how (amended
+instructions/DPI/message), never silently reruns.
+
+### Per-entity instructions
+
+Taxonomy entities carry optional **app-local instructions** (stored in
+this app, never in paperless), editable on their entity pages and shown
+in taxonomy lists. The agents' `list_*` tools attach them as
+`user_instructions` and the system prompt declares them binding. First
+sight of paperless's inbox tag seeds a default ("remove this tag from
+every document you analyze"); clearing stores an empty row, so seeded
+defaults never return. The inbox tag itself is a workflow marker, not a
+label — analyzing it is refused (backend 422, no UI affordance).
+
+## Transparency & audit
+
+- **Audit log** records data operations only (applies/reverts with
+  per-field from→to diffs derived from journal snapshots, OCR gate
+  acceptances, campaigns, webhook ingests) plus every paperless request —
+  never app lifecycle noise. Entries are actor-attributed via a
+  request-scoped contextvar (`user`, `system`; namespaced strings make
+  multi-user attribution a value change, not a schema change).
+  Paperless traffic is buffered in memory and flushed by a background
+  writer, so the HTTP client never touches the DB.
+- **Fetch transparency**: the paperless client tracks the last fetch per
+  resource; list views show data age with a manual refresh.
+- **Optimistic concurrency**: paperless has no revisions or etags, so
+  each proposal snapshots the touched fields at emit time
+  (`base_snapshot`). Apply re-checks value by value and refuses with a
+  conflict detail when paperless moved underneath; fields that already
+  converged to the proposed value don't conflict. If everything already
+  matches, the verdict is `no_change` — nothing written, nothing
+  journaled.
+- **Undo**: applied proposals are revertible from the journal; a revert
+  whose target already matches live paperless is refused as a no-op (and
+  greyed out in the UI). Archived sessions refuse new steps and
+  forward-applies (409) but reverts always remain available.
+- **Lifetime counters** (OCR runs/pages, LLM requests, input/output
+  tokens) accumulate atomically and surface on the dashboard.
 
 ## Queueing & triggers
 
@@ -251,21 +304,32 @@ and the per-endpoint `max_concurrent` semaphore are settings.
 ## HTTP API surface (backend)
 
 ```
-/api/sessions            CRUD, POST /{id}/messages (steering), GET /{id}/events (SSE)
-/api/proposals           list/filter, PATCH /{id} (user edits), POST /{id}/approve|reject|apply
-/api/jobs                CRUD, progress, cancel
-/api/entities            proxied browse: documents/tags/correspondents/doctypes (+ queue-for-analysis)
-/api/webhooks/paperless  ingress
-/api/settings            model profiles, queue config, RAG index status/reindex
+/api/sessions            paginated list (entity/archived/unfinished filters),
+                         analyze/{type}/{id}, POST /{id}/messages (chat),
+                         /{id}/steps/{sid}/resolve|retry|redo,
+                         /{id}/archive|unarchive, GET /{id}/events (SSE)
+/api/proposals           list/filter, PATCH /{id} (user edits),
+                         POST /{id}/apply|reject|revert, GET /{id}/revert-check
+/api/jobs                campaigns: create/list/detail/cancel
+/api/entities            proxied browse (+ name-resolved filters), entity
+                         detail, /{type}/merge-candidates,
+                         PUT /{type}/{id}/instructions
+/api/webhooks/paperless  ingress (shared-secret header)
+/api/audit               audit trail (actor, kind filters)
+/api/sync/status         per-resource paperless fetch freshness
+/api/stats  /api/meta    dashboard numbers · paperless external URL
 ```
 
-SSE event stream carries: agent run started, tool call started/finished,
-proposal drafted/revised, text output (chunked at event granularity, not
-token granularity), run finished, job progress.
+SSE is an **invalidation signal, not a data transport**: two events
+(`step_changed`, `step_progress`) tell the client to refetch state or
+update live progress (tokens generated, tool calls, text tail). Every
+model call is stamped with timing metadata (TTFT, duration, tok/s) that
+travels with the persisted message history and is shown on the
+transcript widgets it produced.
 
 ## Frontend
 
-**React + Vite + TypeScript + Tailwind + shadcn/ui**, npm, TanStack Query,
+**React + Vite + TypeScript + Tailwind**, npm, TanStack Query,
 SSE for live updates. No SSR; FastAPI serves the built `dist/` in
 production, Vite dev-server proxy in development.
 
@@ -277,16 +341,23 @@ cards with resolved names) — lives on one timeline page.
 `/proposals/:id` deep-links redirect to the owning session.
 
 Views:
-1. **Analyses** (home) — all sessions with phase/status badges
-   ("OCR review needed", "no changes proposed", failures with errors)
-2. **Session timeline** (centerpiece) — request params · OCR gate
-   (editable diff) · analysis step · inline proposal cards · (M2) chat
-   steering appended as further timeline steps
-3. **Documents** — search/browse, per-document analyze dialog
-   (re-do-OCR flag + instructions)
-4. **Browse & trigger** (M3) — taxonomy lists with analyze / bulk-queue
-5. **Jobs & settings** (M4) — batch config, apply policies, schedules,
-   RAG index status, model profile overview
+1. **Dashboard** (home) — sessions needing attention, lifetime counters,
+   quick actions
+2. **Session timeline** (centerpiece) — chronological step feed rendered
+   by one generic StepCard (state, attempt history, retry/redo/resolve
+   controls, live trace) with kind-specific bodies: OCR gate (editable
+   diff), agent turns (transcript + inline proposal cards with resolved
+   names), chat; persistent composer at the bottom; superseded steps
+   stay inspectable
+3. **Documents** — full-text search + name-resolved taxonomy filters,
+   multiselect (cross-page) → bulk campaign; rows link to entity pages
+4. **Taxonomy** — tags/correspondents/doctypes with merge candidates,
+   name filter, multiselect → review sessions
+5. **Entity pages** — facts, preview, instructions editor, session
+   history, paperless deep link (documents and taxonomy alike; analysis
+   starts here, not from lists)
+6. **Campaigns** — job list/detail with progress and per-doc sessions
+7. **Log** — audit trail with actor, kind filters, per-field diffs
 
 SPA with client-side routing; the backend serves `dist/` with an SPA
 fallback so deep links survive reloads.
@@ -327,15 +398,18 @@ backend/
     unit/
     integration/            # requires ad-hoc paperless (podman compose)
     live/                   # -m live_llm scenarios, opt-in
-    fixtures/corpus/        # generated PDFs + taxonomy seed data
+    fixtures/corpus/        # real, publicly shared PDFs (provenance in
+                            # external/MANIFEST.md) + taxonomy seed data
   app/
     config.py               # pydantic-settings; TOML + env
     db/                     # SQLAlchemy models, alembic migrations
     paperless/              # API client
-    llm/                    # model profile factory, OCR pipeline, embeddings client
-    rag/                    # VectorStore iface, sqlite-vec/pgvector backends, indexer
-    agents/                 # document, tag, correspondent, doctype, explorer, shared tools
+    llm/                    # model profile factory, OCR pipeline, timing wrapper
+    rag/                    # (M5) VectorStore iface, sqlite-vec/pgvector, indexer
+    agents/                 # document, tag, correspondent, doctype agents + shared tools
     proposals/              # schemas, apply engine, journal
+    services/               # step engine+workers, campaigns, entity index,
+                            # transcripts, instructions, audit, counters, events
     api/                    # FastAPI routers
 frontend/                   # Vite + React + TS
 deploy/                     # Containerfile(s), compose.yaml
@@ -371,8 +445,9 @@ Tests are part of every milestone's definition of done, in three tiers:
      future model) performs; results feed prompt iteration.
 
 **Seed corpus as a first-class asset** (`backend/tests/fixtures/corpus/` +
-a `seed` CLI command): generated PDFs (German + English — invoices,
-letters, junk pages) with known content, plus a deliberately messy taxonomy
+a `seed` CLI command): **real, publicly shared PDFs only** (German +
+English — invoices, letters, forms, scans; provenance recorded in
+`external/MANIFEST.md`), plus a deliberately messy taxonomy
 (near-duplicate correspondents, orphan tags, wrong doc types). The same
 seeded instance doubles as the reset-able playground for **manual
 functional testing** through the UI. The ad-hoc instance runs its own
@@ -393,8 +468,6 @@ paperless dataset into shape — and are parked to contain scope:
   concern than dataset curation.
 - **DSPy prompt optimization**: once reviewed proposals accumulate,
   they form labeled examples for optimizing agent prompts.
-- **Token-level streaming**: pending upstream vLLM qwen3_xml streaming
-  parser fixes.
 - **Searchable-PDF regeneration**: would require an OCR path with
   bounding boxes (OCRmyPDF/Tesseract), distinct from the LLM pipeline.
 - **Re-OCR overwrite protection**: guarding gate-accepted content
@@ -411,8 +484,9 @@ paperless dataset into shape — and are parked to contain scope:
    architecturally outside the tool loop, so this is never exercised.
 3. **Content overwrite on paperless reprocess** — deferred; journal
    snapshots make it detectable.
-4. **qwen3_xml streaming bugs** — avoided via non-streaming agent runs;
-   revisit when upstream PRs land.
+4. **Serving-stack quirks** (streaming parsers, image limits, thinking
+   modes) — contained as per-profile config; streaming can be switched
+   off per profile when a server misbehaves.
 5. **Throughput** — page-by-page OCR is slow by design on this hardware;
    addressed by queueing, caching, and settings rather than parallelism.
 
@@ -429,30 +503,33 @@ scenarios accumulate from M1 on.
    session-timeline UI (review queue was built and then retired in its
    favor), all-real seed corpus + ad-hoc instance + playground compose,
    test tiers (unit / integration / live).
-2. **M2 — chat on the timeline**: steering as timeline chat steps
-   (prose and/or superseding proposal revisions, chains rendered
-   inline), SSE event stream replacing polling (event-level; token
-   streaming stays off pending upstream qwen3_xml fixes), steering at
-   the OCR gate ("re-run at higher DPI"), interactive-lane semantics.
-   Tests: steering/revision units, SSE integration, chat component
-   tests.
-3. **M3 — taxonomy agents + entity matching**: Tag/Correspondent/
-   DocumentType agents on the same timeline, entity embedding index
-   (TEI) pulled forward for the merge-candidate pre-pass (embeddings +
-   string distance) and `find_similar_entities` dedup tool, browse &
-   trigger views, matching-rule proposals. Tests: merge/undo integration,
-   minimal VectorStore (entity index only), taxonomy live scenarios.
-4. **M4 — queueing, triggers & persistence**: celery + redis lanes
-   replace the in-process spawner (stage functions unchanged), bulk
-   campaigns with per-job review|auto policy, Inbox-driven trigger,
-   webhook ingress, jobs & settings UI, dashboard, **alembic migrations**
-   (schema settles here). Tests: webhook + job lifecycle (eager celery
-   in unit tier, real worker in integration).
+2. **M2 — chat on the timeline** ✓ (shipped): steering as timeline chat
+   steps (prose and/or superseding proposal revisions, chains rendered
+   inline), SSE invalidation stream replacing polling, steering at the
+   OCR gate ("re-run at higher DPI"), interactive-lane semantics. Token
+   streaming was enabled after the reference stack proved stable,
+   bringing live traces and per-call timing.
+3. **M3 — taxonomy agents + entity matching** ✓ (shipped): Tag/
+   Correspondent/DocumentType agents on the same timeline, entity
+   embedding index (TEI) pulled forward for the merge-candidate
+   pre-pass (embeddings + string distance) and `find_similar_entities`
+   dedup tool, browse & trigger views, matching-rule proposals.
+4. **M4 — queueing, triggers & persistence** ✓ (shipped, evolved): a
+   **DB-backed step queue with in-process async workers** — a
+   deliberate deviation from the planned celery/redis (see Queueing for
+   the rationale; a distributed queue remains a contained swap). Bulk
+   campaigns with per-job review|auto policy, inbox/query/untagged/ids
+   scopes, webhook ingress, jobs UI + dashboard, **alembic migrations**
+   (squashed to a fresh baseline pre-1.0). The Step engine later
+   unified pipeline, queue, and timeline into one abstraction.
+   A settings/model-profile overview UI was deferred out of M4 (moved
+   to M6 packaging polish).
 5. **M5 — document RAG**: document-chunk index + incremental sync,
    `semantic_search_documents`, optional reranker, PostgreSQL + pgvector
    as first-class backend. Tests: VectorStore contract suite against
    both backends, indexer sync integration, retrieval live scenarios.
 6. **M6 — authentication, packaging & docs**: auth modes
    (none/proxy/paperless — see Authentication), security hardening,
-   production compose + Containerfile polish, Playwright e2e smoke
+   production compose + Containerfile polish, read-only settings /
+   model-profile overview page (deferred from M4), Playwright e2e smoke
    suite, user documentation.
