@@ -100,8 +100,7 @@ wrappers, shared across agents:
 - `search_documents` — full-text (`?query=`) **and** field filters
   (correspondent, type, tags, dates, title, ASN)
 - `get_document` / `get_document_content` (clamped to context budget)
-- `semantic_search_documents` (RAG; only registered when embeddings
-  configured)
+- `semantic_search_documents` (future — parked with document RAG)
 - `find_similar_entities` (RAG entity matching over tag/correspondent/doctype
   names + descriptions — prevents near-duplicate creation)
 - `list_tags` / `list_correspondents` / `list_document_types` (+ doc counts,
@@ -133,8 +132,9 @@ small:
 
 Enabled when `llm.embeddings` is configured.
 
-- **Index 1 — document chunks**: existing paperless `content`, chunked,
-  embedded, stored with doc metadata for filtered kNN.
+- **Index 1 — document chunks** (future — parked with document RAG):
+  existing paperless `content`, chunked, embedded, stored with doc
+  metadata for filtered kNN.
 - **Index 2 — entities**: one embedding per tag/correspondent/doctype
   (name + description + matching rule).
 - **Sync**: periodic incremental indexer polling paperless `modified`
@@ -405,7 +405,7 @@ backend/
     db/                     # SQLAlchemy models, alembic migrations
     paperless/              # API client
     llm/                    # model profile factory, OCR pipeline, timing wrapper
-    rag/                    # (M5) VectorStore iface, sqlite-vec/pgvector, indexer
+    rag/                    # (future) VectorStore iface, chunk indexer
     agents/                 # document, tag, correspondent, doctype agents + shared tools
     proposals/              # schemas, apply engine, journal
     services/               # step engine+workers, campaigns, entity index,
@@ -462,6 +462,12 @@ panel; Playwright e2e deferred to M6.
 Ideas that keep coming up but are beyond the tool's job — getting a
 paperless dataset into shape — and are parked to contain scope:
 
+- **Document RAG** (was M5, deprioritized): document-chunk index +
+  incremental sync, `semantic_search_documents`, optional reranker,
+  PostgreSQL + pgvector as first-class backend. The entity index that
+  shipped with M3 covers the taxonomy use case; chunk-level retrieval
+  only matters for cross-document research, which is out of scope for
+  dataset curation.
 - **Freestyle explorer / "chat with the archive"**: a generic agent with
   the full toolset for open-ended querying and cross-referencing. The
   timeline/chat machinery would carry it, but it is a different product
@@ -524,10 +530,29 @@ scenarios accumulate from M1 on.
    unified pipeline, queue, and timeline into one abstraction.
    A settings/model-profile overview UI was deferred out of M4 (moved
    to M6 packaging polish).
-5. **M5 — document RAG**: document-chunk index + incremental sync,
-   `semantic_search_documents`, optional reranker, PostgreSQL + pgvector
-   as first-class backend. Tests: VectorStore contract suite against
-   both backends, indexer sync integration, retrieval live scenarios.
+5. **M5 — coherence & consolidation** (replaces the RAG milestone;
+   document RAG is parked under future extensions — the system is
+   useful without it): one design language and one set of patterns
+   across the whole API and UI, grown feature-by-feature until now.
+   - **API contract pass**: a single list envelope for app-owned
+     collections; an explicit response schema on every route (OpenAPI
+     becomes the contract); one machine-readable error shape, rendered
+     as humane messages in the UI; dead surface removed (e.g. the
+     approve flow the UI no longer exposes); one name per concept end
+     to end (jobs vs campaigns).
+   - **UI design system**: a small set of owned primitives (Button,
+     Card, Table/List, Badge, Dialog, form fields, EmptyState, loading
+     + error states) that concentrate every color/spacing/typography
+     decision; pages compose primitives instead of hand-rolling
+     Tailwind runs; the SessionDetail/ProposalCard monoliths split
+     into feature modules; a central query-key registry with typed
+     invalidation helpers replaces ad-hoc keys.
+   - **UX pass**: consistent page scaffold (title · actions · filters ·
+     content), consistent list presentation, humane error/empty/
+     loading states, uniform date formatting.
+   - Definition of done: no color literals outside primitives, no
+     unschema'd route, no raw `String(error)` in the UI, tests green
+     throughout.
 6. **M6 — authentication, packaging & docs**: auth modes
    (none/proxy/paperless — see Authentication), security hardening,
    production compose + Containerfile polish, read-only settings /
