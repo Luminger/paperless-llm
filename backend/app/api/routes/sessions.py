@@ -20,6 +20,7 @@ from app.api.schemas import (
     ResolveRequest,
     SessionDetailOut,
     SessionOut,
+    SessionPage,
     StepOut,
 )
 from app.db.models import (
@@ -43,20 +44,45 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
 
 @router.get("")
-async def list_sessions(db: AsyncSession = Depends(get_session)) -> list[SessionOut]:
+async def list_sessions(
+    entity_type: str | None = None,
+    entity_id: int | None = None,
+    archived: bool = False,
+    page: int = 1,
+    page_size: int = 20,
+    db: AsyncSession = Depends(get_session),
+) -> SessionPage:
+    """Paginated session list, filterable by bound entity. Active and
+    archived sessions are separate lists (archived=true for the
+    latter)."""
+    page = max(1, page)
+    page_size = min(100, max(1, page_size))
+    where = [
+        Session.archived_at.is_not(None) if archived else Session.archived_at.is_(None)
+    ]
+    if entity_type is not None:
+        try:
+            where.append(Session.entity_type == EntityType(entity_type))
+        except ValueError as e:
+            raise HTTPException(422, f"unknown entity type {entity_type!r}") from e
+    if entity_id is not None:
+        where.append(Session.entity_id == entity_id)
+    count = await db.scalar(select(func.count()).select_from(Session).where(*where)) or 0
     q = (
         select(Session, func.count(Proposal.id))
         .outerjoin(Proposal, Proposal.session_id == Session.id)
+        .where(*where)
         .group_by(Session.id)
         .order_by(Session.updated_at.desc())
-        .limit(200)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
-    out: list[SessionOut] = []
+    results: list[SessionOut] = []
     for s, n in (await db.execute(q)).all():
         item = SessionOut.model_validate(s)
         item.proposal_count = n
-        out.append(item)
-    return out
+        results.append(item)
+    return SessionPage(count=count, page=page, page_size=page_size, results=results)
 
 
 def _step_out(step: Step, history: list) -> StepOut:
@@ -177,11 +203,53 @@ async def get_ocr_review(
     )
 
 
+async def _require_not_archived(db: AsyncSession, session_id: int) -> Session:
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    if s.archived_at is not None:
+        raise HTTPException(
+            409, "session is archived; unarchive it to continue working with it"
+        )
+    return s
+
+
 async def _load_step(db: AsyncSession, session_id: int, step_id: int) -> Step:
     step = await db.get(Step, step_id)
     if step is None or step.session_id != session_id:
         raise HTTPException(404, "step not found")
+    await _require_not_archived(db, session_id)
     return step
+
+
+@router.post("/{session_id}/archive")
+async def archive_session(
+    session_id: int, db: AsyncSession = Depends(get_session)
+) -> SessionOut:
+    """Archive: leaves the active lists, refuses forward-apply and new
+    steps. The journal keeps working — applied changes stay revertible
+    (you can always go BACK to a state, just not forward-apply)."""
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    from app.db.models import utcnow
+
+    if s.archived_at is None:
+        s.archived_at = utcnow()
+        await db.commit()
+    return SessionOut.model_validate(s)
+
+
+@router.post("/{session_id}/unarchive")
+async def unarchive_session(
+    session_id: int, db: AsyncSession = Depends(get_session)
+) -> SessionOut:
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    s.archived_at = None
+    await db.commit()
+    return SessionOut.model_validate(s)
 
 
 @router.post("/{session_id}/steps/{step_id}/resolve")
@@ -241,9 +309,7 @@ async def send_message(
 ) -> StepOut:
     """Steer a session: append a chat step. Non-blocking — progress
     arrives via the SSE stream."""
-    s = await db.get(Session, session_id)
-    if s is None:
-        raise HTTPException(404, "session not found")
+    s = await _require_not_archived(db, session_id)
     if not body.content.strip():
         raise HTTPException(422, "empty message")
     blocked = await db.scalar(

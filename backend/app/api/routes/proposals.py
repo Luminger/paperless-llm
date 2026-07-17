@@ -116,6 +116,15 @@ async def apply(
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> ProposalOut:
     p = await _load(db, proposal_id)
+    # Archived sessions never forward-apply; their journal only reverts.
+    from app.db.models import Session
+
+    session = await db.get(Session, p.session_id)
+    if session is not None and session.archived_at is not None:
+        raise HTTPException(
+            409, "session is archived: its proposals cannot be applied "
+            "(unarchive the session first); applied changes remain revertible"
+        )
     try:
         await apply_proposal(paperless, db, p)
     except ApplyError as e:

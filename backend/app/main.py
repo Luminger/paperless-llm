@@ -45,6 +45,11 @@ def create_app() -> FastAPI:
     async def health() -> dict:
         return {"status": "ok"}
 
+    @app.get("/api/meta")
+    async def meta() -> dict:
+        p = get_settings().paperless
+        return {"paperless_url": (p.external_url or p.base_url).rstrip("/")}
+
     # Serve the built frontend when present (production container),
     # with an SPA fallback so deep links (/sessions/2) survive reloads.
     dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

@@ -31,11 +31,21 @@ class SessionOut(BaseModel):
     phase: SessionPhase | None
     params: dict[str, Any] = {}
     error: str | None
+    archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     proposal_count: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class SessionPage(BaseModel):
+    """Generic pagination envelope for session lists."""
+
+    count: int
+    page: int
+    page_size: int
+    results: list[SessionOut]
 
 
 class StepOut(BaseModel):

@@ -175,7 +175,6 @@ async def test_manual_retry_revives_failed_step_with_fresh_budget(file_db, monke
     monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, ok)
     sid = await _make_session()
     async with session_scope() as db:
-        session = await db.get(Session, sid)
         step = Step(session_id=sid, kind=StepKind.analysis, state=StepState.failed,
                     attempt_count=3, max_attempts=3, error="old error",
                     attempts=[{"attempt": 1}, {"attempt": 2}, {"attempt": 3}])
@@ -202,7 +201,6 @@ async def test_manual_retry_revives_failed_step_with_fresh_budget(file_db, monke
 async def test_redo_supersedes_and_merges_input(file_db, monkeypatch):
     sid = await _make_session()
     async with session_scope() as db:
-        session = await db.get(Session, sid)
         step = Step(session_id=sid, kind=StepKind.ocr, state=StepState.awaiting_user,
                     input={"dpi": 150})
         db.add(step)

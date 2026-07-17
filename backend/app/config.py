@@ -111,6 +111,9 @@ class LlmConfig(BaseModel):
 
 class PaperlessConfig(BaseModel):
     base_url: str = "http://127.0.0.1:8000"
+    # URL users reach paperless under (deep links in the UI); falls back
+    # to base_url when unset.
+    external_url: str = ""
     # Either a token, or username/password (a token is then fetched
     # lazily via /api/token/ — handy for throwaway instances).
     token: str = ""

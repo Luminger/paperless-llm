@@ -154,8 +154,8 @@ async def test_revert_never_applied_conflicts(client, db):
 async def test_sessions_list_and_detail(client, db):
     p = await _seed_proposal(db)
     r = await client.get("/api/sessions")
-    assert r.status_code == 200 and len(r.json()) == 1
-    assert r.json()[0]["proposal_count"] == 1
+    assert r.status_code == 200 and r.json()["count"] == 1
+    assert r.json()["results"][0]["proposal_count"] == 1
     r = await client.get(f"/api/sessions/{p.session_id}")
     body = r.json()
     assert [x["id"] for x in body["proposals"]] == [p.id]
@@ -649,3 +649,117 @@ async def test_retry_step_skips_backoff(client, db):
     assert (
         await client.post(f"/api/sessions/{s.id}/steps/{done.id}/retry")
     ).status_code == 409
+
+
+async def _mk_sessions(db, n, entity_id=7, archived=0):
+    from app.db.models import EntityType, SessionPhase, utcnow
+
+    out = []
+    for i in range(n):
+        s = Session(
+            agent_kind=AgentKind.document, entity_type=EntityType.document,
+            entity_id=entity_id, phase=SessionPhase.done,
+            archived_at=utcnow() if i < archived else None,
+        )
+        db.add(s)
+        out.append(s)
+    await db.commit()
+    return out
+
+
+async def test_session_list_pagination_and_entity_filter(client, db):
+    await _mk_sessions(db, 7, entity_id=7)
+    await _mk_sessions(db, 2, entity_id=8)
+
+    body = (await client.get("/api/sessions?page_size=5")).json()
+    assert body["count"] == 9
+    assert len(body["results"]) == 5 and body["page"] == 1
+
+    body = (await client.get("/api/sessions?page=2&page_size=5")).json()
+    assert len(body["results"]) == 4
+
+    body = (
+        await client.get("/api/sessions?entity_type=document&entity_id=8&page_size=5")
+    ).json()
+    assert body["count"] == 2
+
+    assert (await client.get("/api/sessions?entity_type=banana")).status_code == 422
+
+
+async def test_archive_lifecycle_blocks_forward_but_not_revert(client, db):
+    """Archived sessions: hidden from the active list, refuse apply and
+    new steps — but applied changes remain revertible."""
+    import respx as _respx
+    from httpx import Response as _Resp
+
+    from app.db.models import Step, StepKind, StepState
+
+    (s,) = await _mk_sessions(db, 1)
+    sid = s.id
+    p = await _seed_proposal(db)
+    p.session_id = sid
+    step = Step(session_id=sid, kind=StepKind.analysis, state=StepState.failed)
+    db.add(step)
+    await db.commit()
+    # Plain ids only from here on: the apply route expires the shared
+    # test session's identity map.
+    p_id, step_id = p.id, step.id
+
+    with _respx.mock:
+        _respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+            return_value=_Resp(200, json=DOC)
+        )
+        _respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+            return_value=_Resp(200, json=DOC | {"title": "Agent title"})
+        )
+        # Apply while active -> ok.
+        assert (await client.post(f"/api/proposals/{p_id}/apply")).status_code == 200
+
+        # Archive.
+        r = await client.post(f"/api/sessions/{sid}/archive")
+        assert r.status_code == 200 and r.json()["archived_at"] is not None
+
+        # Hidden from active list, present in archived list.
+        flt = "entity_type=document&entity_id=7"
+        assert (await client.get(f"/api/sessions?{flt}")).json()["count"] == 0
+        assert (
+            await client.get(f"/api/sessions?archived=true&{flt}")
+        ).json()["count"] == 1
+
+        # Forward actions refused.
+        p2 = await _seed_proposal(db)
+        p2.session_id = sid
+        await db.commit()
+        p2_id = p2.id
+        assert (await client.post(f"/api/proposals/{p2_id}/apply")).status_code == 409
+        assert (
+            await client.post(f"/api/sessions/{sid}/messages", json={"content": "hi"})
+        ).status_code == 409
+        assert (
+            await client.post(f"/api/sessions/{sid}/steps/{step_id}/retry")
+        ).status_code == 409
+
+        # Revert of the earlier applied change still works (journal).
+        assert (await client.post(f"/api/proposals/{p_id}/revert")).status_code == 200
+
+        # Unarchive restores forward actions.
+        assert (await client.post(f"/api/sessions/{sid}/unarchive")).status_code == 200
+        assert (await client.post(f"/api/proposals/{p2_id}/apply")).status_code == 200
+
+
+@respx.mock
+async def test_generic_entity_detail_route(client):
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/8/").mock(
+        return_value=Response(200, json={
+            "id": 8, "name": "Unbekannt", "document_count": 2,
+            "match": "", "matching_algorithm": 0,
+        })
+    )
+    body = (await client.get("/api/entities/correspondent/8")).json()
+    assert body["name"] == "Unbekannt" and body["document_count"] == 2
+    assert (await client.get("/api/entities/banana/1")).status_code == 422
+
+
+async def test_meta_endpoint(client):
+    body = (await client.get("/api/meta")).json()
+    assert "paperless_url" in body

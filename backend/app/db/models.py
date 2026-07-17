@@ -128,6 +128,11 @@ class Session(Base):
     message_history: Mapped[list[Any]] = mapped_column(default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
+    # Archived sessions leave the active lists, refuse forward-apply and
+    # new steps — but their journal can still revert applied changes
+    # ("go back to a state in time"). Kept separate from `status`, which
+    # is derived from steps by the engine.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

@@ -77,3 +77,22 @@ async def get_merge_candidates(
         raise HTTPException(422, f"no merge candidates for {entity_type!r}")
     pairs = await merge_candidates(db, paperless, entity_type)
     return [MergeCandidateOut.model_validate(p) for p in pairs]
+
+
+@router.get("/{entity_type}/{entity_id}")
+async def get_entity(
+    entity_type: str,
+    entity_id: int,
+    paperless: PaperlessClient = Depends(get_paperless),
+):
+    """Generic taxonomy entity detail (documents have their own route)."""
+    if entity_type not in TAXONOMY_TYPES and entity_type != "storage_path":
+        raise HTTPException(422, f"unknown entity type {entity_type!r}")
+    getter = {
+        "tag": paperless.get_tag,
+        "correspondent": paperless.get_correspondent,
+        "document_type": paperless.get_document_type,
+    }.get(entity_type)
+    if getter is None:
+        raise HTTPException(422, f"no detail for {entity_type!r}")
+    return (await getter(entity_id)).model_dump()
