@@ -1,0 +1,38 @@
+# Ad-hoc paperless-ngx for integration tests and manual QA.
+#
+#   podman compose -f deploy/test/compose.yaml up -d
+#   # UI:  http://127.0.0.1:8200  (admin / admin)
+#   # Reset: podman compose -f deploy/test/compose.yaml down -v
+#
+# Seed the corpus (from backend/):
+#   uv run paperless-llm seed --url http://127.0.0.1:8200 --token <token> --wait
+# (integration tests provision a token automatically via /api/token/)
+
+services:
+  broker:
+    image: docker.io/library/redis:7-alpine
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.14.7
+    depends_on:
+      - broker
+    ports:
+      - "127.0.0.1:8200:8000"
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_SECRET_KEY: test-only-not-a-secret
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: admin
+      PAPERLESS_URL: http://127.0.0.1:8200
+      PAPERLESS_OCR_LANGUAGE: deu+eng
+      PAPERLESS_TIME_ZONE: Europe/Berlin
+      # Keep the test instance lean.
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_THREADS_PER_WORKER: "1"
+    volumes:
+      - data:/usr/src/paperless/data
+      - media:/usr/src/paperless/media
+
+volumes:
+  data:
+  media:

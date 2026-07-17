@@ -1,0 +1,33 @@
+# paperless-llm application image (backend + built frontend).
+# Build from the repository root:
+#   podman build -f deploy/Containerfile -t paperless-llm .
+
+# --- frontend build stage ---------------------------------------------
+FROM docker.io/library/node:24-alpine AS frontend
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+# --- backend runtime --------------------------------------------------
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+WORKDIR /app/backend
+
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+
+# Dependency layer (cached until pyproject/lock change).
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Application code + the corpus the seeder uploads.
+COPY backend/app ./app
+COPY backend/tests/fixtures/corpus ./tests/fixtures/corpus
+RUN uv sync --frozen --no-dev
+
+# Built frontend where app.main expects it (../frontend/dist).
+COPY --from=frontend /build/dist /app/frontend/dist
+
+ENV PATH="/app/backend/.venv/bin:$PATH"
+EXPOSE 8100
+CMD ["paperless-llm", "serve", "--host", "0.0.0.0", "--port", "8100"]

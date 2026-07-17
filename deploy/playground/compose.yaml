@@ -1,0 +1,91 @@
+# Playground: full stack in throwaway containers.
+#
+#   cd deploy/playground
+#   cp .env.example .env          # set your LLM endpoint(s)
+#   podman compose up -d --build
+#
+#   paperless-ngx : http://127.0.0.1:8210  (admin / admin)
+#   paperless-llm : http://127.0.0.1:8100
+#
+# The `seeder` runs once: waits for paperless, creates the messy
+# taxonomy, and uploads the corpus (synthetic + real-world sample PDFs).
+# Paperless consumes them with its own tesseract OCR + matching —
+# a bone-stock paperless, exactly what the agents then work against.
+#
+# Tear down (including all data):
+#   podman compose down -v
+
+services:
+  broker:
+    image: docker.io/library/redis:7-alpine
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.14.7
+    depends_on:
+      - broker
+    ports:
+      - "127.0.0.1:8210:8000"
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_SECRET_KEY: playground-only-not-a-secret
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: admin
+      PAPERLESS_URL: http://127.0.0.1:8210
+      PAPERLESS_ALLOWED_HOSTS: "paperless,127.0.0.1,localhost"
+      PAPERLESS_OCR_LANGUAGE: deu+eng
+      PAPERLESS_TIME_ZONE: Europe/Berlin
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_THREADS_PER_WORKER: "1"
+    volumes:
+      - data:/usr/src/paperless/data
+      - media:/usr/src/paperless/media
+
+  # Host networking: self-hosted LLM endpoints are commonly bound to the
+  # host's loopback (as is the reference vLLM), which no container
+  # network can reach. With host networking the app sees them directly;
+  # paperless is reached through its published port.
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/Containerfile
+    depends_on:
+      - paperless
+    network_mode: host
+    command:
+      ["paperless-llm", "serve", "--host", "127.0.0.1", "--port", "8100"]
+    environment:
+      PLLM_PAPERLESS__BASE_URL: http://127.0.0.1:8210
+      PLLM_PAPERLESS__USERNAME: admin
+      PLLM_PAPERLESS__PASSWORD: admin
+      PLLM_LLM__AGENT__BASE_URL: ${PLLM_AGENT_BASE_URL:-http://127.0.0.1:8001/v1}
+      PLLM_LLM__AGENT__MODEL: ${PLLM_AGENT_MODEL:-qwen3.6-27b}
+      PLLM_LLM__AGENT__MAX_CONCURRENT: ${PLLM_AGENT_MAX_CONCURRENT:-2}
+      PLLM_DATABASE_URL: sqlite+aiosqlite:////data/paperless_llm.sqlite3
+      PLLM_DATA_DIR: /data
+    volumes:
+      - appdata:/data
+
+  seeder:
+    build:
+      context: ../..
+      dockerfile: deploy/Containerfile
+    depends_on:
+      - paperless
+    restart: "no"
+    command:
+      - paperless-llm
+      - seed
+      - --url
+      - http://paperless:8000
+      - --username
+      - admin
+      - --password
+      - admin
+      - --wait
+      - --wait-for-paperless
+      - "300"
+
+volumes:
+  data:
+  media:
+  appdata:
