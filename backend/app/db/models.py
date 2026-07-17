@@ -71,7 +71,6 @@ class SessionPhase(enum.StrEnum):
 class ProposalStatus(enum.StrEnum):
     draft = "draft"  # emitted mid-run; run not finished yet
     pending = "pending"  # awaiting review
-    approved = "approved"  # approved, not yet applied
     rejected = "rejected"
     applied = "applied"
     superseded = "superseded"  # replaced by a newer revision
@@ -337,14 +336,14 @@ class Counter(Base):
 
 class AuditLog(Base):
     """Application audit trail: when what happened — applies, reverts,
-    campaign/webhook ingests, archive operations, app starts. One row
+    job/webhook ingests, archive operations, app starts. One row
     per notable event; read-only via the Log view."""
 
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    # Coarse category (proposal, campaign, webhook, session, paperless).
+    # Coarse category (proposal, job, webhook, session, paperless).
     kind: Mapped[str] = mapped_column(String(30))
     # Short action verb (applied, reverted, created, ingested, fetch, write).
     action: Mapped[str] = mapped_column(String(50))

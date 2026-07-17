@@ -456,7 +456,7 @@ export function ProposalCard({
 
   // Archived sessions are read-only going FORWARD (no edits, no apply);
   // reverting applied changes stays available.
-  const editable = !archived && (p.status === "pending" || p.status === "approved");
+  const editable = !archived && p.status === "pending";
   const dirty = pending !== null;
   const Editor = p.kind === "update_document_metadata" ? MetadataEditor : GenericEditor;
 
@@ -522,7 +522,7 @@ export function ProposalCard({
             </button>
           </>
         )}
-        {archived && (p.status === "pending" || p.status === "approved") && (
+        {archived && p.status === "pending" && (
           <span className="text-xs text-zinc-400">
             archived — cannot be applied (unarchive the session first)
           </span>

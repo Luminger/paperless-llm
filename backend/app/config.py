@@ -133,7 +133,7 @@ class WebhookConfig(BaseModel):
 
 class QueueConfig(BaseModel):
     """In-process worker pool over the persistent DB queue. Two lanes:
-    interactive (chat turns, single analyses) and batch (campaigns).
+    interactive (chat turns, single analyses) and batch (bulk jobs).
     Concurrency here multiplies against the LLM semaphores — the model
     endpoint's max_concurrent is the real global cap."""
 

@@ -26,17 +26,18 @@ function scopeLabel(job: Job): string {
   const p = job.params;
   if (p.inbox) return "Inbox";
   if (p.untagged_only) return "Untagged documents";
-  if (p.query) return `Query: “${p.query}”`;
+  if (p.tag_id) return `Tag #${p.tag_id}`;
   if (Array.isArray(p.document_ids)) return `${p.document_ids.length} selected documents`;
   return job.kind;
 }
 
-function NewCampaign({ onDone }: { onDone: () => void }) {
-  const [scope, setScope] = useState<"inbox" | "query" | "untagged">("inbox");
-  const [query, setQuery] = useState("");
+function NewJob({ onDone }: { onDone: () => void }) {
+  const [scope, setScope] = useState<"inbox" | "tag" | "untagged">("inbox");
+  const [tagId, setTagId] = useState<number | undefined>();
   const [redoOcr, setRedoOcr] = useState(false);
   const [auto, setAuto] = useState(false);
   const [instructions, setInstructions] = useState("");
+  const { data: tags } = useQuery({ queryKey: ["tags"], queryFn: api.listTags });
 
   const create = useMutation({
     mutationFn: (body: JobCreate) => api.createJob(body),
@@ -51,20 +52,20 @@ function NewCampaign({ onDone }: { onDone: () => void }) {
         create.mutate({
           inbox: scope === "inbox",
           untagged_only: scope === "untagged",
-          query: scope === "query" ? query : undefined,
+          tag_id: scope === "tag" ? tagId : undefined,
           redo_ocr: redoOcr,
           apply_policy: auto ? "auto" : "review",
           instructions: instructions.trim() || undefined,
         });
       }}
     >
-      <p className="font-medium">New campaign</p>
+      <p className="font-medium">New job</p>
       <div className="flex gap-4 text-sm">
         {(
           [
             ["inbox", "Inbox documents"],
             ["untagged", "Untagged documents"],
-            ["query", "Search query"],
+            ["tag", "Documents with tag"],
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="flex items-center gap-1.5">
@@ -78,14 +79,22 @@ function NewCampaign({ onDone }: { onDone: () => void }) {
           </label>
         ))}
       </div>
-      {scope === "query" && (
-        <input
-          aria-label="campaign query"
+      {scope === "tag" && (
+        <select
+          aria-label="job tag"
           className="w-full rounded border border-zinc-300 p-2 text-sm"
-          placeholder="full-text query, e.g. Rechnung"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+          value={tagId ?? ""}
+          onChange={(e) => setTagId(e.target.value === "" ? undefined : Number(e.target.value))}
+        >
+          <option value="">pick a tag…</option>
+          {(tags ?? [])
+            .filter((t) => !t.is_inbox_tag)
+            .map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+        </select>
       )}
       <div className="flex gap-4 text-sm">
         <label className="flex items-center gap-1.5">
@@ -98,7 +107,7 @@ function NewCampaign({ onDone }: { onDone: () => void }) {
         </label>
       </div>
       <textarea
-        aria-label="campaign instructions"
+        aria-label="job instructions"
         className="w-full rounded border border-zinc-300 p-2 text-sm"
         rows={2}
         placeholder="Optional instructions for the agent…"
@@ -108,9 +117,9 @@ function NewCampaign({ onDone }: { onDone: () => void }) {
       <button
         type="submit"
         className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-        disabled={create.isPending || (scope === "query" && !query.trim())}
+        disabled={create.isPending || (scope === "tag" && !tagId)}
       >
-        Start campaign
+        Start job
       </button>
       {create.error && <p className="text-sm text-red-600">{String(create.error)}</p>}
     </form>
@@ -138,16 +147,16 @@ export default function Jobs() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Campaigns</h1>
+        <h1 className="text-xl font-semibold">Jobs</h1>
         <button
           className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
           onClick={() => setShowNew(!showNew)}
         >
-          {showNew ? "Close" : "New campaign"}
+          {showNew ? "Close" : "New job"}
         </button>
       </div>
       {showNew && (
-        <NewCampaign
+        <NewJob
           onDone={() => {
             setShowNew(false);
             qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -185,7 +194,7 @@ export default function Jobs() {
           </li>
         ))}
         {jobs && jobs.length === 0 && (
-          <p className="text-sm text-zinc-500">No campaigns yet.</p>
+          <p className="text-sm text-zinc-500">No jobs yet.</p>
         )}
       </ul>
     </div>

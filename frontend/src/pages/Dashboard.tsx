@@ -43,7 +43,7 @@ export default function Dashboard() {
             label="queued work"
             value={Object.values(stats.queue_pending).reduce((a, b) => a + b, 0)}
           />
-          <StatCard label="active campaigns" value={stats.active_jobs} />
+          <StatCard label="active jobs" value={stats.active_jobs} />
           <StatCard label="OCR runs (lifetime)" value={fmt(lifetime.ocr_runs)} />
           <StatCard
             label="LLM tokens generated (lifetime)"

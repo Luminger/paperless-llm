@@ -64,7 +64,7 @@ describe("Documents", () => {
     expect(screen.getByRole("option", { name: "Steuern" })).toBeInTheDocument();
   });
 
-  it("multiselect: select-all spans all pages, bulk analyze creates a campaign", async () => {
+  it("multiselect: select-all spans all pages, bulk analyze creates a job", async () => {
     mocked.createJob.mockResolvedValue({ id: 4 } as never);
     renderWithProviders(<Documents />);
     await screen.findByText("Invoice 4-8");
@@ -77,7 +77,7 @@ describe("Documents", () => {
     await userEvent.click(screen.getByRole("button", { name: "Select all" }));
     expect(screen.getByText("3 selected")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /as campaign/ }));
+    await userEvent.click(screen.getByRole("button", { name: /as job/ }));
     await waitFor(() =>
       expect(mocked.createJob).toHaveBeenCalledWith({ document_ids: [7, 12, 99] }),
     );

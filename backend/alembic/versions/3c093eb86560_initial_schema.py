@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: c6337a1e22b3
+Revision ID: 3c093eb86560
 Revises: 
-Create Date: 2026-07-17 17:22:44.927603
+Create Date: 2026-07-17 19:36:04.899705
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = 'c6337a1e22b3'
+revision: str = '3c093eb86560'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -26,12 +26,18 @@ def upgrade() -> None:
     sa.Column('ts', sa.DateTime(timezone=True), nullable=False),
     sa.Column('kind', sa.String(length=30), nullable=False),
     sa.Column('action', sa.String(length=50), nullable=False),
+    sa.Column('actor', sa.String(length=100), nullable=False),
     sa.Column('detail', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('audit_log', schema=None) as batch_op:
         batch_op.create_index('ix_audit_ts', ['ts'], unique=False)
 
+    op.create_table('counters',
+    sa.Column('key', sa.String(length=50), nullable=False),
+    sa.Column('value', sa.BigInteger(), nullable=False),
+    sa.PrimaryKeyConstraint('key')
+    )
     op.create_table('entity_embeddings',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('entity_type', sa.String(length=30), nullable=False),
@@ -43,6 +49,17 @@ def upgrade() -> None:
     )
     with op.batch_alter_table('entity_embeddings', schema=None) as batch_op:
         batch_op.create_index('ix_entity_embeddings_key', ['entity_type', 'entity_id'], unique=True)
+
+    op.create_table('entity_instructions',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('entity_type', sa.String(length=30), nullable=False),
+    sa.Column('entity_id', sa.Integer(), nullable=False),
+    sa.Column('instructions', sa.Text(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
+    with op.batch_alter_table('entity_instructions', schema=None) as batch_op:
+        batch_op.create_index('ix_entity_instructions_key', ['entity_type', 'entity_id'], unique=True)
 
     op.create_table('jobs',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -129,7 +146,7 @@ def upgrade() -> None:
     sa.Column('agent_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('user_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
     sa.Column('base_snapshot', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
-    sa.Column('status', sa.Enum('draft', 'pending', 'approved', 'rejected', 'applied', 'superseded', 'no_change', name='proposalstatus', native_enum=False), nullable=False),
+    sa.Column('status', sa.Enum('draft', 'pending', 'rejected', 'applied', 'superseded', 'no_change', name='proposalstatus', native_enum=False), nullable=False),
     sa.Column('entity_type', sa.Enum('document', 'tag', 'correspondent', 'document_type', 'storage_path', name='entitytype', native_enum=False), nullable=True),
     sa.Column('entity_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
@@ -179,10 +196,15 @@ def downgrade() -> None:
 
     op.drop_table('ocr_results')
     op.drop_table('jobs')
+    with op.batch_alter_table('entity_instructions', schema=None) as batch_op:
+        batch_op.drop_index('ix_entity_instructions_key')
+
+    op.drop_table('entity_instructions')
     with op.batch_alter_table('entity_embeddings', schema=None) as batch_op:
         batch_op.drop_index('ix_entity_embeddings_key')
 
     op.drop_table('entity_embeddings')
+    op.drop_table('counters')
     with op.batch_alter_table('audit_log', schema=None) as batch_op:
         batch_op.drop_index('ix_audit_ts')
 

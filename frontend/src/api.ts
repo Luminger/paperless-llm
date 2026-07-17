@@ -3,7 +3,6 @@
 export type ProposalStatus =
   | "draft"
   | "pending"
-  | "approved"
   | "rejected"
   | "applied"
   | "superseded"
@@ -135,7 +134,7 @@ export interface JobDetail extends Job {
 
 export interface JobCreate {
   document_ids?: number[];
-  query?: string;
+  tag_id?: number;
   inbox?: boolean;
   untagged_only?: boolean;
   redo_ocr?: boolean;
@@ -254,7 +253,7 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ user_payload }),
     }),
-  proposalAction: (id: number, action: "approve" | "reject" | "apply" | "revert") =>
+  proposalAction: (id: number, action: "reject" | "apply" | "revert") =>
     request<Proposal>(`/api/proposals/${id}/${action}`, { method: "POST" }),
   revertCheck: (id: number) =>
     request<{ revert_noop: boolean }>(`/api/proposals/${id}/revert-check`),

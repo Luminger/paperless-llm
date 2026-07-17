@@ -1,4 +1,4 @@
-"""Apply engine: turns approved proposals into paperless API calls,
+"""Apply engine: turns reviewed proposals into paperless API calls,
 journaling before/after snapshots for undo (DESIGN.md "Apply engine").
 
 Applies ``user_payload`` when present, else the ``agent_payload``.
@@ -61,7 +61,7 @@ async def apply_proposal(
     """Apply a proposal. Returns the journal entry — or ``None`` when
     paperless already matches the proposed state: the proposal is then
     marked ``no_change`` instead of pretending a write happened."""
-    if proposal.status not in (ProposalStatus.pending, ProposalStatus.approved):
+    if proposal.status != ProposalStatus.pending:
         raise ApplyError(f"proposal {proposal.id} is {proposal.status}, cannot apply")
 
     payload = proposal.user_payload or proposal.agent_payload

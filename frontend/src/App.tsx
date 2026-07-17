@@ -12,7 +12,7 @@ import AuditLog from "./pages/AuditLog";
 const nav = [
   { to: "/documents", label: "Documents" },
   { to: "/taxonomy", label: "Taxonomy" },
-  { to: "/jobs", label: "Campaigns" },
+  { to: "/jobs", label: "Jobs" },
   { to: "/log", label: "Log" },
 ];
 

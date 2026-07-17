@@ -20,7 +20,7 @@ export default function JobDetail() {
 
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold">Campaign #{job.id}</h1>
+      <h1 className="mb-1 text-xl font-semibold">Job #{job.id}</h1>
       <p className="mb-4 text-sm text-zinc-400">
         {job.done} ok, {job.failed} failed of {job.total} · <StatusBadge status={job.status} />
       </p>

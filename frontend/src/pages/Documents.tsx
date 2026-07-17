@@ -134,7 +134,7 @@ export default function Documents() {
           <MultiSelectBar
             count={ms.selected.size}
             allIds={allIds}
-            actionLabel={`Analyze ${ms.selected.size} document(s) as campaign`}
+            actionLabel={`Analyze ${ms.selected.size} document(s) as job`}
             busy={bulkAnalyze.isPending}
             onAction={() => bulkAnalyze.mutate()}
             onSelectAll={ms.selectAll}

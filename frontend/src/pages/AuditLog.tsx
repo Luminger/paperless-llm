@@ -6,7 +6,7 @@ import { Pager } from "../components/Pager";
 
 const KIND_COLORS: Record<string, string> = {
   proposal: "bg-emerald-100 text-emerald-800",
-  campaign: "bg-purple-100 text-purple-800",
+  job: "bg-purple-100 text-purple-800",
   webhook: "bg-blue-100 text-blue-800",
   session: "bg-zinc-100 text-zinc-600",
   paperless: "bg-sky-100 text-sky-700",
@@ -46,10 +46,10 @@ function summary(e: AuditEntry): React.ReactNode {
           )}
         </>
       );
-    case "campaign/created":
+    case "job/created":
       return (
         <>
-          campaign #{String(d.job_id)} created for {(d.documents as number[])?.length ?? 0} document(s)
+          job #{String(d.job_id)} created for {(d.documents as number[])?.length ?? 0} document(s)
           {d.apply_policy === "auto" ? " · auto-apply" : ""}
         </>
       );

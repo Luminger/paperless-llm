@@ -97,12 +97,14 @@ async def test_patch_replaces_and_validates(client, db):
     assert r.json()["user_payload"] is None
 
 
-async def test_approve_reject_conflicts(client, db):
+async def test_reject_conflicts(client, db):
+    """The lifecycle is propose -> apply|reject; there is no approve."""
     p = await _seed_proposal(db)
-    assert (await client.post(f"/api/proposals/{p.id}/approve")).json()["status"] == "approved"
-    # Approving again conflicts.
-    assert (await client.post(f"/api/proposals/{p.id}/approve")).status_code == 409
+    # The approve flow is gone entirely.
+    assert (await client.post(f"/api/proposals/{p.id}/approve")).status_code in (404, 405)
     assert (await client.post(f"/api/proposals/{p.id}/reject")).json()["status"] == "rejected"
+    # Rejecting again conflicts.
+    assert (await client.post(f"/api/proposals/{p.id}/reject")).status_code == 409
     # Rejected proposals cannot be edited.
     r = await client.patch(f"/api/proposals/{p.id}", json={"user_payload": {"title": "x"}})
     assert r.status_code == 409
@@ -488,8 +490,8 @@ async def test_merge_candidates_route(client):
 
 
 @respx.mock
-async def test_job_campaign_lifecycle(client, db):
-    """Create a campaign from explicit ids -> sessions + queue items;
+async def test_job_lifecycle(client, db):
+    """Create a job from explicit ids -> sessions + queue items;
     cancel -> pending items cancelled."""
     r = await client.post(
         "/api/jobs",
@@ -522,7 +524,7 @@ async def test_job_campaign_lifecycle(client, db):
 
 
 @respx.mock
-async def test_job_inbox_campaign_resolves_inbox_tags(client, db):
+async def test_job_inbox_scope_resolves_inbox_tags(client, db):
     respx.get(f"{PAPERLESS_URL}/api/tags/").mock(
         return_value=_entity_page(
             _tag(1, "Inbox", 2, inbox=True), _tag(2, "Steuern", 5)

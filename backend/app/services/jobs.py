@@ -1,7 +1,7 @@
-"""Bulk campaigns: resolve a document set, create one session per
+"""Bulk jobs: resolve a document set, create one session per
 document, enqueue their pipelines on the batch lane.
 
-Per-campaign ``apply_policy``:
+Per-job ``apply_policy``:
 - ``review`` (default): proposals wait for a human, as always.
 - ``auto``: proposals are applied right after the analysis — still
   validated, still journaled, still revertible. The journal is the
@@ -39,10 +39,12 @@ async def resolve_documents(
     paperless: PaperlessClient,
     *,
     document_ids: list[int] | None = None,
-    query: str | None = None,
+    tag_id: int | None = None,
     inbox: bool = False,
     untagged_only: bool = False,
 ) -> list[int]:
+    """Deliberately deterministic scopes only — explicit ids, a tag, the
+    inbox, or untagged. Jobs are never defined by a full-text search."""
     if document_ids:
         return list(dict.fromkeys(document_ids))
     if inbox:
@@ -50,9 +52,10 @@ async def resolve_documents(
         if not inbox_tags:
             return []
         page = await paperless.search_documents(tag_ids=inbox_tags, page_size=100)
+    elif tag_id:
+        page = await paperless.search_documents(tag_ids=[tag_id], page_size=100)
     else:
         page = await paperless.search_documents(
-            query=query,
             tags_none=True if untagged_only else None,
             page_size=100,
         )
@@ -60,12 +63,12 @@ async def resolve_documents(
     return ids
 
 
-async def create_campaign(
+async def create_job(
     db: AsyncSession,
     paperless: PaperlessClient,
     *,
     document_ids: list[int] | None = None,
-    query: str | None = None,
+    tag_id: int | None = None,
     inbox: bool = False,
     untagged_only: bool = False,
     redo_ocr: bool = False,
@@ -77,7 +80,7 @@ async def create_campaign(
     ids = await resolve_documents(
         paperless,
         document_ids=document_ids,
-        query=query,
+        tag_id=tag_id,
         inbox=inbox,
         untagged_only=untagged_only,
     )
@@ -101,7 +104,7 @@ async def create_campaign(
 
     params: dict[str, Any] = {
         "document_ids": document_ids,
-        "query": query,
+        "tag_id": tag_id,
         "inbox": inbox,
         "untagged_only": untagged_only,
         "redo_ocr": redo_ocr,
@@ -133,10 +136,10 @@ async def create_campaign(
             db, session, StepKind.ocr if redo_ocr else StepKind.analysis
         )
     await record(
-        db, "campaign", "created",
+        db, "job", "created",
         job_id=job.id, documents=ids, skipped_active=skipped,
         apply_policy=apply_policy, redo_ocr=redo_ocr,
-        scope={"inbox": inbox, "query": query, "untagged_only": untagged_only,
+        scope={"inbox": inbox, "tag_id": tag_id, "untagged_only": untagged_only,
                "document_ids": document_ids},
     )
     await db.commit()

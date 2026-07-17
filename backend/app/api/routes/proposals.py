@@ -70,7 +70,7 @@ async def patch_proposal(
     dropped); `kind` is enforced server-side. The agent original stays
     immutable; pass user_payload=null to discard edits."""
     p = await _load(db, proposal_id)
-    if p.status not in (ProposalStatus.pending, ProposalStatus.approved):
+    if p.status != ProposalStatus.pending:
         raise HTTPException(409, f"proposal is {p.status}; cannot edit")
     if body.user_payload is not None:
         candidate = {**body.user_payload, "kind": p.kind}
@@ -85,24 +85,12 @@ async def patch_proposal(
     return _out(p)
 
 
-@router.post("/{proposal_id}/approve")
-async def approve_proposal(
-    proposal_id: int, db: AsyncSession = Depends(get_session)
-) -> ProposalOut:
-    p = await _load(db, proposal_id)
-    if p.status != ProposalStatus.pending:
-        raise HTTPException(409, f"proposal is {p.status}")
-    p.status = ProposalStatus.approved
-    await db.commit()
-    return _out(p)
-
-
 @router.post("/{proposal_id}/reject")
 async def reject_proposal(
     proposal_id: int, db: AsyncSession = Depends(get_session)
 ) -> ProposalOut:
     p = await _load(db, proposal_id)
-    if p.status not in (ProposalStatus.pending, ProposalStatus.approved):
+    if p.status != ProposalStatus.pending:
         raise HTTPException(409, f"proposal is {p.status}")
     p.status = ProposalStatus.rejected
     await db.commit()

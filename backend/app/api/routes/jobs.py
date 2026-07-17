@@ -1,4 +1,4 @@
-"""Bulk campaigns and queue/dashboard stats."""
+"""Bulk jobs and queue/dashboard stats."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
-from app.services.campaigns import create_campaign
+from app.services.jobs import create_job as create_job_service
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -32,13 +32,13 @@ async def create_job(
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> JobOut:
-    if not (body.document_ids or body.query or body.inbox or body.untagged_only):
+    if not (body.document_ids or body.tag_id or body.inbox or body.untagged_only):
         raise HTTPException(422, "empty document selection")
-    job, ids = await create_campaign(
+    job, ids = await create_job_service(
         db,
         paperless,
         document_ids=body.document_ids,
-        query=body.query,
+        tag_id=body.tag_id,
         inbox=body.inbox,
         untagged_only=body.untagged_only,
         redo_ocr=body.redo_ocr,
@@ -86,7 +86,7 @@ async def get_job(job_id: int, db: AsyncSession = Depends(get_session)) -> JobDe
 
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> JobOut:
-    """Cancel all still-pending work of a campaign. Running stages finish."""
+    """Cancel all still-pending work of a job. Running steps finish."""
     job = await db.get(Job, job_id)
     if job is None:
         raise HTTPException(404, "job not found")
@@ -103,13 +103,13 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
 
     for step in pending:
         step.state = StepState.cancelled
-        step.error = "cancelled with its campaign"
+        step.error = "cancelled with its job"
         session = await db.get(Session, step.session_id)
         if session is not None and session.phase != SessionPhase.done:
             await sync_session(db, session)
             if session.status != SessionStatus.failed:
                 session.status = SessionStatus.failed
-                session.error = "cancelled with its campaign"
+                session.error = "cancelled with its job"
     job.status = JobStatus.cancelled
     await db.commit()
     return JobOut.model_validate(job)

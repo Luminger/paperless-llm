@@ -221,7 +221,7 @@ async def redo_step(
             select(Proposal).where(
                 Proposal.step_id.in_([s.id for s in to_supersede]),
                 Proposal.status.in_(
-                    [ProposalStatus.draft, ProposalStatus.pending, ProposalStatus.approved]
+                    [ProposalStatus.draft, ProposalStatus.pending]
                 ),
             )
         )
@@ -346,7 +346,7 @@ EXECUTORS = {
 async def _maybe_auto_apply(
     db: DbSession, paperless: PaperlessClient, session: Session, step: Step
 ) -> None:
-    """apply_policy=auto (campaigns/webhook): apply fresh proposals right
+    """apply_policy=auto (bulk jobs/webhook): apply fresh proposals right
     away — validated, journaled, revertible. Failures stay pending for a
     human instead of failing the step."""
     if session.params.get("apply_policy") != "auto":
@@ -417,7 +417,7 @@ async def _resolve_ocr(
                     if accepted != ocr_text
                     else None
                 ),
-                status=ProposalStatus.approved,
+                status=ProposalStatus.pending,
                 entity_type=session.entity_type,
                 entity_id=session.entity_id,
             )
@@ -576,7 +576,7 @@ _job_update_lock = asyncio.Lock()
 
 
 async def update_job(db: DbSession, job_id: int) -> None:
-    """Campaign counters: a session counts as done when it reached a
+    """Job counters: a session counts as done when it reached a
     terminal, non-blocked position (done/failed)."""
     async with _job_update_lock:
         job = await db.get(Job, job_id)

@@ -115,11 +115,11 @@ class AnalyzeEntityRequest(BaseModel):
 
 
 class JobCreate(BaseModel):
-    """Bulk campaign. Document set: explicit ids, a full-text query,
-    the inbox, or all untagged documents."""
+    """Bulk job. Document set is deterministic: explicit ids, a tag,
+    the inbox, or all untagged documents — never a full-text search."""
 
     document_ids: list[int] | None = None
-    query: str | None = None
+    tag_id: int | None = None
     inbox: bool = False
     untagged_only: bool = False
     redo_ocr: bool = False
