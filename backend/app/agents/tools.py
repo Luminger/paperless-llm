@@ -146,19 +146,47 @@ async def get_document_content(
     return clamp_text(d.content[offset:], ctx.deps.max_chars // 4, note=f", offset={offset}")
 
 
+async def _summaries_with_instructions(
+    ctx: RunContext[AgentDeps], entity_type: str, entities: list[Any]
+) -> list[dict[str, Any]]:
+    """Entity summaries + the user's app-local instructions (which the
+    agent MUST obey when using the entity)."""
+    from app.services.instructions import ensure_inbox_defaults, get_map
+
+    if entity_type == "tag":
+        await ensure_inbox_defaults(ctx.deps.db, entities)
+    instr = await get_map(ctx.deps.db, entity_type)
+    out = []
+    for e in entities:
+        summary = _entity_summary(e)
+        if e.id in instr:
+            summary["user_instructions"] = instr[e.id]
+        out.append(summary)
+    return out
+
+
 async def list_tags(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
-    """List all tags with document counts and matching rules."""
-    return [_entity_summary(t) for t in await ctx.deps.paperless.list_tags()]
+    """List all tags with document counts, matching rules, and any
+    user_instructions attached to them (these are binding)."""
+    return await _summaries_with_instructions(
+        ctx, "tag", await ctx.deps.paperless.list_tags()
+    )
 
 
 async def list_correspondents(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
-    """List all correspondents with document counts and matching rules."""
-    return [_entity_summary(c) for c in await ctx.deps.paperless.list_correspondents()]
+    """List all correspondents with document counts, matching rules, and
+    any user_instructions attached to them (these are binding)."""
+    return await _summaries_with_instructions(
+        ctx, "correspondent", await ctx.deps.paperless.list_correspondents()
+    )
 
 
 async def list_document_types(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
-    """List all document types with document counts and matching rules."""
-    return [_entity_summary(dt) for dt in await ctx.deps.paperless.list_document_types()]
+    """List all document types with document counts, matching rules, and
+    any user_instructions attached to them (these are binding)."""
+    return await _summaries_with_instructions(
+        ctx, "document_type", await ctx.deps.paperless.list_document_types()
+    )
 
 
 async def find_similar_entities(

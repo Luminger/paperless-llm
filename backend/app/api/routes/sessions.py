@@ -164,10 +164,19 @@ async def analyze_entity(
     entity_id: int,
     body: AnalyzeEntityRequest | None = None,
     db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
 ) -> SessionOut:
-    """Start a taxonomy review session (tag/correspondent/document_type)."""
+    """Start a taxonomy review session (tag/correspondent/document_type).
+    The inbox tag is a workflow marker, not a label — analyzing it for
+    applicability is meaningless and refused."""
     if entity_type not in ("tag", "correspondent", "document_type"):
         raise HTTPException(422, f"cannot analyze entity type {entity_type!r}")
+    if entity_type == "tag":
+        tag = await paperless.get_tag(entity_id)
+        if tag.is_inbox_tag:
+            raise HTTPException(
+                422, "the inbox tag is a workflow marker and cannot be analyzed"
+            )
     body = body or AnalyzeEntityRequest()
     s = Session(
         agent_kind=AgentKind(entity_type),

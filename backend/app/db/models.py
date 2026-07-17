@@ -304,6 +304,27 @@ class EntityEmbedding(Base):
     )
 
 
+class EntityInstruction(Base):
+    """App-local, user-written instructions for a taxonomy entity —
+    injected into agent context whenever the entity is listed; the agent
+    must obey them. A row with empty instructions means "user cleared
+    it" (defaults are only seeded when NO row exists)."""
+
+    __tablename__ = "entity_instructions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(30))
+    entity_id: Mapped[int] = mapped_column()
+    instructions: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_entity_instructions_key", "entity_type", "entity_id", unique=True),
+    )
+
+
 class Counter(Base):
     """Lifetime counters (ocr_runs, llm tokens, ...). Incremented
     atomically via UPDATE expressions — no read-modify-write races."""

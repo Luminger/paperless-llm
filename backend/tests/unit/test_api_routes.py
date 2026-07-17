@@ -896,3 +896,54 @@ async def test_paperless_traffic_logged_with_actor(client, db):
     # The changes filter hides paperless traffic.
     body = (await client.get("/api/audit?kind=changes")).json()
     assert all(e["kind"] != "paperless" for e in body["results"])
+
+
+@respx.mock
+async def test_entity_instructions_roundtrip_and_inbox_seed(client, db):
+    """Tags list seeds the inbox default once; instructions are editable
+    and clearing them never re-seeds."""
+    from app.services.instructions import INBOX_DEFAULT
+
+    respx.get(f"{PAPERLESS_URL}/api/tags/").mock(
+        return_value=_entity_page(
+            _tag(1, "Inbox", 2, inbox=True), _tag(2, "Steuern", 5)
+        )
+    )
+    body = (await client.get("/api/entities/tags")).json()
+    inbox = next(t for t in body if t["id"] == 1)
+    assert inbox["instructions"] == INBOX_DEFAULT
+    assert next(t for t in body if t["id"] == 2)["instructions"] == ""
+
+    # Edit + clear.
+    r = await client.put(
+        "/api/entities/tag/2/instructions", json={"instructions": "Nur für Steuerpost."}
+    )
+    assert r.status_code == 200
+    body = (await client.get("/api/entities/tags")).json()
+    assert next(t for t in body if t["id"] == 2)["instructions"] == "Nur für Steuerpost."
+
+    await client.put("/api/entities/tag/1/instructions", json={"instructions": ""})
+    body = (await client.get("/api/entities/tags")).json()
+    assert next(t for t in body if t["id"] == 1)["instructions"] == ""  # stays cleared
+
+
+@respx.mock
+async def test_inbox_tag_cannot_be_analyzed(client, db):
+    respx.get(f"{PAPERLESS_URL}/api/tags/1/").mock(
+        return_value=Response(200, json=_tag(1, "Inbox", 2, inbox=True))
+    )
+    r = await client.post("/api/sessions/analyze/tag/1", json={})
+    assert r.status_code == 422
+    assert "inbox" in r.json()["detail"].lower()
+
+
+@respx.mock
+async def test_documents_list_filters_by_taxonomy(client):
+    route = respx.get(f"{PAPERLESS_URL}/api/documents/").mock(
+        return_value=Response(200, json={"count": 0, "next": None, "results": []})
+    )
+    await client.get("/api/entities/documents?tag_id=3&correspondent_id=8&document_type_id=2")
+    params = dict(route.calls.last.request.url.params)
+    assert params["tags__id__all"] == "3"
+    assert params["correspondent__id"] == "8"
+    assert params["document_type__id"] == "2"

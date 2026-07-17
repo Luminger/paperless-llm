@@ -156,6 +156,10 @@ class StatsOut(BaseModel):
     lifetime: dict[str, int] = {}
 
 
+class InstructionsUpdate(BaseModel):
+    instructions: str = ""
+
+
 class AuditEntryOut(BaseModel):
     id: int
     ts: datetime

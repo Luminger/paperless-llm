@@ -59,6 +59,10 @@ Hard rules:
   entity over creating a near-duplicate (e.g. "Telarko Deutschland GmbH"
   should map to an existing "Telarko").
 - Be economical with tool calls; you have a limited budget per run.
+- Entities (tags/correspondents/document types) may carry
+  `user_instructions` — rules the user attached to that entity. These
+  are BINDING: always follow them when assigning, removing, or
+  otherwise handling the entity.
 - Finish with a short plain-text summary of what you found and proposed.
 """
 
