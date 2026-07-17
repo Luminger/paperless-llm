@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type EntityRef, type PaperlessDocument } from "../api";
 import { SessionList } from "../components/SessionList";
 
@@ -16,15 +16,19 @@ export function entityHref(entityType: string, id: number): string {
 }
 
 function paperlessHref(base: string, entityType: string, id: number): string {
+  // Paperless has no per-entity detail routes; taxonomy links go to its
+  // management pages (documents keep their real detail page).
   switch (entityType) {
     case "document":
       return `${base}/documents/${id}/details`;
     case "tag":
-      return `${base}/documents?tags__id__all=${id}`;
+      return `${base}/tags`;
     case "correspondent":
-      return `${base}/documents?correspondent__id=${id}`;
+      return `${base}/correspondents`;
     case "document_type":
-      return `${base}/documents?document_type__id=${id}`;
+      return `${base}/documenttypes`;
+    case "storage_path":
+      return `${base}/storagepaths`;
     default:
       return base;
   }
@@ -131,6 +135,57 @@ function TaxonomyFacts({ entity }: { entity: EntityRef }) {
   );
 }
 
+/** App-local agent instructions: the agent sees these whenever it works
+ * with the entity and must obey them. */
+function InstructionsEditor({
+  entityType,
+  id,
+  initial,
+}: {
+  entityType: string;
+  id: number;
+  initial: string;
+}) {
+  const qc = useQueryClient();
+  const [text, setText] = useState(initial);
+  const save = useMutation({
+    mutationFn: () => api.setInstructions(entityType, id, text),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["entity", entityType, id] });
+      qc.invalidateQueries({ queryKey: ["taxonomy"] });
+    },
+  });
+  const dirty = text !== initial;
+  return (
+    <div className="mb-8 rounded border border-zinc-200 bg-white p-4">
+      <h2 className="mb-1 text-sm font-medium text-zinc-600">Agent instructions</h2>
+      <p className="mb-2 text-xs text-zinc-400">
+        Local to this application. The agent sees these whenever it works with this{" "}
+        {entityType.replaceAll("_", " ")} and is required to follow them.
+      </p>
+      <textarea
+        aria-label="agent instructions"
+        className="w-full rounded border border-zinc-300 p-2 text-sm"
+        rows={3}
+        placeholder="e.g. Only assign this tag to documents from the tax office…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          className="rounded bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+          disabled={!dirty || save.isPending}
+          onClick={() => save.mutate()}
+        >
+          Save instructions
+        </button>
+        {save.isSuccess && !dirty && <span className="text-xs text-emerald-700">saved</span>}
+        {save.error && <span className="text-xs text-red-600">{String(save.error)}</span>}
+      </div>
+    </div>
+  );
+}
+
 function AnalyzeButton({ entityType, id }: { entityType: string; id: number }) {
   const navigate = useNavigate();
   const [redoOcr, setRedoOcr] = useState(false);
@@ -200,7 +255,16 @@ export default function EntityPage() {
           <p className="text-xs text-zinc-400 capitalize">{entityType.replaceAll("_", " ")}</p>
           <h1 className="text-xl font-semibold">{title}</h1>
         </div>
-        <AnalyzeButton entityType={entityType} id={id} />
+        {!(entityType === "tag" && entityQuery.data?.is_inbox_tag) ? (
+          <AnalyzeButton entityType={entityType} id={id} />
+        ) : (
+          <span
+            className="text-xs text-zinc-400"
+            title="The inbox tag is a workflow marker — there is nothing to analyze about it."
+          >
+            not analyzable (inbox)
+          </span>
+        )}
         {meta && (
           <a
             className="text-sm text-zinc-500 hover:text-zinc-800 hover:underline"
@@ -220,6 +284,15 @@ export default function EntityPage() {
           <TaxonomyFacts entity={entityQuery.data!} />
         )}
       </div>
+
+      {entityType !== "document" && entityQuery.data && (
+        <InstructionsEditor
+          key={`${entityType}-${id}-${entityQuery.data.instructions ?? ""}`}
+          entityType={entityType}
+          id={id}
+          initial={entityQuery.data.instructions ?? ""}
+        />
+      )}
 
       <h2 className="mb-2 text-sm font-medium text-zinc-600">Sessions</h2>
       <SessionList entityType={entityType} entityId={id} pageSize={5} showEntity={false} />

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type EntityRef, type MergeCandidate } from "../api";
 import { FetchStatus } from "../components/FetchStatus";
+import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
 
 const TYPES = [
   { key: "tag", label: "Tags" },
@@ -37,7 +38,9 @@ function CandidateRow({ c, onReview }: { c: MergeCandidate; onReview: () => void
 
 export default function Taxonomy() {
   const [type, setType] = useState<TypeKey>("tag");
+  const [filter, setFilter] = useState("");
   const navigate = useNavigate();
+  const ms = useMultiSelect();
 
   const { data: entities, isFetching, refetch } = useQuery({
     queryKey: ["taxonomy", type],
@@ -48,32 +51,54 @@ export default function Taxonomy() {
           ? api.listCorrespondents()
           : api.listDocumentTypes(),
   });
-  const resource = type === "tag" ? "tags" : type === "correspondent" ? "correspondents" : "document_types";
+  const resource =
+    type === "tag" ? "tags" : type === "correspondent" ? "correspondents" : "document_types";
   const { data: candidates } = useQuery({
     queryKey: ["merge-candidates", type],
     queryFn: () => api.mergeCandidates(type),
   });
 
-  const analyze = useMutation({
-    mutationFn: ({ id, instructions }: { id: number; instructions?: string }) =>
-      api.analyzeEntity(type, id, instructions),
+  const reviewCandidate = useMutation({
+    mutationFn: (c: MergeCandidate) =>
+      api.analyzeEntity(
+        type,
+        c.source.id,
+        `This ${type.replaceAll("_", " ")} may be a duplicate of "${c.target.name}" (id=${c.target.id}). Verify and merge if appropriate.`,
+      ),
     onSuccess: (s) => navigate(`/sessions/${s.id}`),
   });
 
-  const reviewCandidate = (c: MergeCandidate) =>
-    analyze.mutate({
-      id: c.source.id,
-      instructions: `This ${type.replace("_", " ")} may be a duplicate of "${c.target.name}" (id=${c.target.id}). Verify and merge if appropriate.`,
-    });
+  const bulkAnalyze = useMutation({
+    mutationFn: async () => {
+      for (const id of ms.selected) {
+        await api.analyzeEntity(type, id);
+      }
+    },
+    onSuccess: () => {
+      ms.cancel();
+      navigate("/");
+    },
+  });
+
+  const visible = (entities ?? []).filter(
+    (e) => !filter || e.name.toLowerCase().includes(filter.toLowerCase()),
+  );
+  // The inbox tag is a workflow marker — never analyzable.
+  const selectable = visible.filter((e) => !e.is_inbox_tag).map((e) => e.id);
+
+  const switchType = (t: TypeKey) => {
+    setType(t);
+    ms.cancel();
+  };
 
   return (
     <div>
       <h1 className="mb-4 text-xl font-semibold">Taxonomy</h1>
-      <div className="mb-4 flex gap-2">
+      <div className="mb-3 flex items-center gap-2">
         {TYPES.map((t) => (
           <button
             key={t.key}
-            onClick={() => setType(t.key)}
+            onClick={() => switchType(t.key)}
             className={`rounded px-3 py-1.5 text-sm ${
               type === t.key ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600"
             }`}
@@ -81,11 +106,45 @@ export default function Taxonomy() {
             {t.label}
           </button>
         ))}
+        <input
+          aria-label="filter entities"
+          className="ml-2 rounded border border-zinc-200 px-2 py-1 text-sm"
+          placeholder="filter by name…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <span className="flex-1" />
+        {!ms.active && (
+          <button
+            className="rounded bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-200"
+            onClick={() => ms.setActive(true)}
+          >
+            Select…
+          </button>
+        )}
       </div>
 
       <div className="mb-3">
         <FetchStatus resource={resource} isFetching={isFetching} onRefresh={() => refetch()} />
       </div>
+
+      {ms.active && (
+        <div className="mb-3">
+          <MultiSelectBar
+            count={ms.selected.size}
+            allIds={selectable}
+            actionLabel={`Analyze ${ms.selected.size} ${type.replaceAll("_", " ")}(s)`}
+            busy={bulkAnalyze.isPending}
+            onAction={() => bulkAnalyze.mutate()}
+            onSelectAll={ms.selectAll}
+            onUnselectAll={ms.unselectAll}
+            onCancel={ms.cancel}
+          />
+          {bulkAnalyze.error && (
+            <p className="mt-1 text-xs text-red-600">{String(bulkAnalyze.error)}</p>
+          )}
+        </div>
+      )}
 
       {candidates && candidates.length > 0 && (
         <div className="mb-6">
@@ -94,7 +153,7 @@ export default function Taxonomy() {
           </h2>
           <ul className="space-y-2">
             {candidates.map((c, i) => (
-              <CandidateRow key={i} c={c} onReview={() => reviewCandidate(c)} />
+              <CandidateRow key={i} c={c} onReview={() => reviewCandidate.mutate(c)} />
             ))}
           </ul>
         </div>
@@ -103,15 +162,28 @@ export default function Taxonomy() {
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="border-b border-zinc-300 text-left text-zinc-500">
+            {ms.active && <th className="w-8 py-2" />}
             <th className="py-2 pr-4 font-medium">Name</th>
             <th className="py-2 pr-4 font-medium">Documents</th>
             <th className="py-2 pr-4 font-medium">Matching rule</th>
-            <th className="py-2" />
+            <th className="py-2 pr-4 font-medium">Instructions</th>
           </tr>
         </thead>
         <tbody>
-          {(entities ?? []).map((e: EntityRef) => (
+          {visible.map((e: EntityRef) => (
             <tr key={e.id} className="border-b border-zinc-100 hover:bg-zinc-50">
+              {ms.active && (
+                <td className="py-2">
+                  <input
+                    type="checkbox"
+                    aria-label={`select ${e.name}`}
+                    checked={ms.selected.has(e.id)}
+                    disabled={e.is_inbox_tag}
+                    title={e.is_inbox_tag ? "The inbox tag cannot be analyzed" : undefined}
+                    onChange={() => ms.toggle(e.id)}
+                  />
+                </td>
+              )}
               <td className="py-2 pr-4">
                 <Link
                   className="hover:text-emerald-700 hover:underline"
@@ -126,23 +198,17 @@ export default function Taxonomy() {
                 )}
               </td>
               <td className="py-2 pr-4 text-zinc-500">{e.document_count ?? 0}</td>
-              <td className="py-2 pr-4 text-zinc-400">
-                {e.match ? `${e.match}` : "—"}
-              </td>
-              <td className="py-2 text-right">
-                <button
-                  className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50"
-                  disabled={analyze.isPending}
-                  onClick={() => analyze.mutate({ id: e.id })}
-                >
-                  Analyze
-                </button>
+              <td className="py-2 pr-4 text-zinc-400">{e.match ? `${e.match}` : "—"}</td>
+              <td className="max-w-64 truncate py-2 pr-4 text-xs text-zinc-400">
+                {e.instructions || "—"}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {analyze.error && <p className="mt-2 text-sm text-red-600">{String(analyze.error)}</p>}
+      {reviewCandidate.error && (
+        <p className="mt-2 text-sm text-red-600">{String(reviewCandidate.error)}</p>
+      )}
     </div>
   );
 }

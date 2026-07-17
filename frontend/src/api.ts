@@ -104,6 +104,8 @@ export interface EntityRef {
   match?: string;
   matching_algorithm?: number;
   is_inbox_tag?: boolean;
+  // App-local agent instructions (binding for the agent).
+  instructions?: string;
 }
 
 export interface MergeCandidate {
@@ -277,6 +279,11 @@ export const api = {
     request<Session>(`/api/sessions/${id}/unarchive`, { method: "POST" }),
   getEntity: (entityType: string, id: number) =>
     request<EntityRef>(`/api/entities/${entityType}/${id}`),
+  setInstructions: (entityType: string, id: number, instructions: string) =>
+    request<{ instructions: string }>(`/api/entities/${entityType}/${id}/instructions`, {
+      method: "PUT",
+      body: JSON.stringify({ instructions }),
+    }),
   getSession: (id: number) => request<SessionDetail>(`/api/sessions/${id}`),
   sendMessage: (id: number, content: string) =>
     request<Step>(`/api/sessions/${id}/messages`, {
@@ -320,10 +327,24 @@ export const api = {
       body: JSON.stringify({ input: input ?? null }),
     }),
 
-  listDocuments: (query?: string, page = 1) =>
-    request<{ count: number; results: PaperlessDocument[] }>(
-      `/api/entities/documents?page=${page}${query ? `&query=${encodeURIComponent(query)}` : ""}`,
-    ),
+  listDocuments: (
+    opts: {
+      query?: string;
+      tag_id?: number;
+      correspondent_id?: number;
+      document_type_id?: number;
+      page?: number;
+    } = {},
+  ) => {
+    const params = new URLSearchParams({ page: String(opts.page ?? 1) });
+    if (opts.query) params.set("query", opts.query);
+    if (opts.tag_id) params.set("tag_id", String(opts.tag_id));
+    if (opts.correspondent_id) params.set("correspondent_id", String(opts.correspondent_id));
+    if (opts.document_type_id) params.set("document_type_id", String(opts.document_type_id));
+    return request<{ count: number; all?: number[]; results: PaperlessDocument[] }>(
+      `/api/entities/documents?${params}`,
+    );
+  },
   getDocument: (id: number) =>
     request<PaperlessDocument>(`/api/entities/documents/${id}`),
   listTags: () => request<EntityRef[]>("/api/entities/tags"),

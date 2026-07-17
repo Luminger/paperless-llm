@@ -6,71 +6,80 @@ import { renderWithProviders } from "../test/utils";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
-  api: { listDocuments: vi.fn(), analyzeDocument: vi.fn() },
+  api: {
+    listDocuments: vi.fn(),
+    listTags: vi.fn(),
+    listCorrespondents: vi.fn(),
+    listDocumentTypes: vi.fn(),
+    createJob: vi.fn(),
+    getSyncStatus: vi.fn(),
+  },
 }));
-const listDocuments = vi.mocked(api.listDocuments);
-const analyzeDocument = vi.mocked(api.analyzeDocument);
+const mocked = vi.mocked(api);
 
-const doc = {
-  id: 17,
-  title: "scan_0001",
-  correspondent: 2,
-  document_type: null,
-  storage_path: null,
-  tags: [6],
-  created: "2024-04-17",
-  added: "2026-07-17",
-  archive_serial_number: null,
+const DOCS = {
+  count: 2,
+  all: [7, 12, 99],
+  results: [
+    { id: 7, title: "scan_0001", correspondent: null, document_type: null,
+      storage_path: null, tags: [], created: "2024-04-17", added: null,
+      archive_serial_number: null },
+    { id: 12, title: "Invoice 4-8", correspondent: 1, document_type: 2,
+      storage_path: null, tags: [3], created: "1958-05-02", added: null,
+      archive_serial_number: null },
+  ],
 };
 
 describe("Documents", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.clear();
+    mocked.getSyncStatus.mockResolvedValue({ resources: {} });
+    mocked.listDocuments.mockResolvedValue(DOCS);
+    mocked.listTags.mockResolvedValue([{ id: 3, name: "Steuern" }]);
+    mocked.listCorrespondents.mockResolvedValue([{ id: 1, name: "Kraxi" }]);
+    mocked.listDocumentTypes.mockResolvedValue([{ id: 2, name: "Rechnung" }]);
   });
 
-  it("lists documents and searches", async () => {
-    listDocuments.mockResolvedValue({ count: 1, results: [doc] });
+  it("rows link to the document page; no Analyze button", async () => {
     renderWithProviders(<Documents />);
+    const link = await screen.findByRole("link", { name: "Invoice 4-8" });
+    expect(link.getAttribute("href")).toBe("/documents/12");
+    expect(screen.queryByRole("button", { name: "Analyze" })).not.toBeInTheDocument();
+  });
 
-    expect(await screen.findByText("scan_0001")).toBeInTheDocument();
-    await userEvent.type(screen.getByPlaceholderText(/Full-text search/), "Rechnung");
-    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+  it("filters by tag/correspondent/type names", async () => {
+    renderWithProviders(<Documents />);
+    await screen.findByText("Invoice 4-8");
+
+    await userEvent.selectOptions(screen.getByLabelText("filter by tag"), "3");
+    await userEvent.selectOptions(
+      screen.getByLabelText("filter by correspondent"), "1",
+    );
     await waitFor(() =>
-      expect(listDocuments).toHaveBeenLastCalledWith("Rechnung"),
+      expect(mocked.listDocuments).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tag_id: 3, correspondent_id: 1 }),
+      ),
     );
+    // Options are names, not ids.
+    expect(screen.getByRole("option", { name: "Steuern" })).toBeInTheDocument();
   });
 
-  it("analyze opens the dialog; the OCR flag and instructions are passed", async () => {
-    listDocuments.mockResolvedValue({ count: 1, results: [doc] });
-    analyzeDocument.mockResolvedValue({ id: 9 } as never);
+  it("multiselect: select-all spans all pages, bulk analyze creates a campaign", async () => {
+    mocked.createJob.mockResolvedValue({ id: 4 } as never);
     renderWithProviders(<Documents />);
-    await screen.findByText("scan_0001");
+    await screen.findByText("Invoice 4-8");
 
-    await userEvent.click(screen.getByRole("button", { name: "Analyze" }));
-    await userEvent.click(screen.getByRole("checkbox")); // enable re-do OCR
-    await userEvent.type(
-      screen.getByPlaceholderText(/Optional instructions/),
-      "focus on the date",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+    await userEvent.click(screen.getByRole("button", { name: "Select…" }));
+    await userEvent.click(screen.getByLabelText("select document 7"));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
 
+    // Select all uses the cross-page id list from paperless (3 ids).
+    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByText("3 selected")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /as campaign/ }));
     await waitFor(() =>
-      expect(analyzeDocument).toHaveBeenCalledWith(17, {
-        redo_ocr: true,
-        instructions: "focus on the date",
-      }),
+      expect(mocked.createJob).toHaveBeenCalledWith({ document_ids: [7, 12, 99] }),
     );
-  });
-
-  it("surfaces analyze errors", async () => {
-    listDocuments.mockResolvedValue({ count: 1, results: [doc] });
-    analyzeDocument.mockRejectedValue(new Error("503: llm endpoint down"));
-    renderWithProviders(<Documents />);
-    await screen.findByText("scan_0001");
-
-    await userEvent.click(screen.getByRole("button", { name: "Analyze" }));
-    await userEvent.click(screen.getByRole("button", { name: "Start analysis" }));
-    expect(await screen.findByText(/llm endpoint down/)).toBeInTheDocument();
   });
 });

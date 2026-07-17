@@ -12,6 +12,7 @@ vi.mock("../api", () => ({
     listDocumentTypes: vi.fn(),
     mergeCandidates: vi.fn(),
     analyzeEntity: vi.fn(),
+    getSyncStatus: vi.fn(),
   },
 }));
 const mocked = vi.mocked(api);
@@ -19,52 +20,58 @@ const mocked = vi.mocked(api);
 describe("Taxonomy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocked.getSyncStatus.mockResolvedValue({ resources: {} });
     mocked.listTags.mockResolvedValue([
-      { id: 1, name: "Steuern", document_count: 4, match: "", is_inbox_tag: false },
-      { id: 2, name: "Inbox", document_count: 2, match: "", is_inbox_tag: true },
-    ]);
-    mocked.listCorrespondents.mockResolvedValue([
-      { id: 4, name: "Kraxi GmbH", document_count: 1 },
-      { id: 8, name: "Kraxi", document_count: 5 },
+      { id: 1, name: "Steuern", document_count: 4, match: "", is_inbox_tag: false,
+        instructions: "Nur Steuerpost." },
+      { id: 2, name: "Inbox", document_count: 2, match: "", is_inbox_tag: true,
+        instructions: "This is the inbox tag…" },
+      { id: 3, name: "Versicherung", document_count: 1, match: "", is_inbox_tag: false },
     ]);
     mocked.mergeCandidates.mockResolvedValue([]);
   });
 
-  it("lists entities with counts and inbox badge; analyze starts a session", async () => {
-    mocked.analyzeEntity.mockResolvedValue({ id: 42 } as never);
+  it("rows link to detail pages, show instructions, no Analyze button", async () => {
     renderWithProviders(<Taxonomy />);
 
-    expect(await screen.findByText("Steuern")).toBeInTheDocument();
-    expect(screen.getByText("inbox")).toBeInTheDocument();
-
-    await userEvent.click(screen.getAllByRole("button", { name: "Analyze" })[0]);
-    await waitFor(() =>
-      expect(mocked.analyzeEntity).toHaveBeenCalledWith("tag", 1, undefined),
-    );
+    const link = await screen.findByRole("link", { name: "Steuern" });
+    expect(link.getAttribute("href")).toBe("/taxonomy/tag/1");
+    expect(screen.getByText("Nur Steuerpost.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Analyze" })).not.toBeInTheDocument();
   });
 
-  it("shows merge candidates and reviews them with target context", async () => {
-    mocked.mergeCandidates.mockResolvedValue([
-      {
-        entity_type: "correspondent",
-        source: { id: 4, name: "Kraxi GmbH", document_count: 1 },
-        target: { id: 8, name: "Kraxi", document_count: 5 },
-        string_score: 0.9,
-        semantic_score: null,
-      },
-    ]);
-    mocked.analyzeEntity.mockResolvedValue({ id: 43 } as never);
+  it("filters by name", async () => {
     renderWithProviders(<Taxonomy />);
+    await screen.findByText("Steuern");
+    await userEvent.type(screen.getByLabelText("filter entities"), "vers");
+    expect(screen.queryByText("Steuern")).not.toBeInTheDocument();
+    expect(screen.getByText("Versicherung")).toBeInTheDocument();
+  });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Correspondents" }));
-    expect(await screen.findByText(/Possible duplicates \(1\)/)).toBeInTheDocument();
-    expect(screen.getByText(/90% similar/)).toBeInTheDocument();
+  it("multiselect: select all skips inbox, bulk analyze fires per entity", async () => {
+    mocked.analyzeEntity.mockResolvedValue({ id: 9 } as never);
+    renderWithProviders(<Taxonomy />);
+    await screen.findByText("Steuern");
 
-    await userEvent.click(screen.getByRole("button", { name: "Review with agent" }));
-    await waitFor(() => expect(mocked.analyzeEntity).toHaveBeenCalled());
-    const [type, id, instructions] = mocked.analyzeEntity.mock.calls[0];
-    expect(type).toBe("correspondent");
-    expect(id).toBe(4); // the source (worse) entity is reviewed
-    expect(instructions).toContain('"Kraxi" (id=8)');
+    await userEvent.click(screen.getByRole("button", { name: "Select…" }));
+    // Inbox checkbox disabled.
+    expect(screen.getByLabelText("select Inbox")).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument(); // inbox skipped
+
+    await userEvent.click(screen.getByRole("button", { name: /Analyze 2 tag/ }));
+    await waitFor(() => expect(mocked.analyzeEntity).toHaveBeenCalledTimes(2));
+    expect(mocked.analyzeEntity).toHaveBeenCalledWith("tag", 1);
+    expect(mocked.analyzeEntity).toHaveBeenCalledWith("tag", 3);
+  });
+
+  it("multiselect can be cancelled", async () => {
+    renderWithProviders(<Taxonomy />);
+    await screen.findByText("Steuern");
+    await userEvent.click(screen.getByRole("button", { name: "Select…" }));
+    await userEvent.click(screen.getByLabelText("select Steuern"));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/selected/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("select Steuern")).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import EntityPage from "./EntityPage";
 import { renderWithProviders } from "../test/utils";
@@ -15,6 +16,7 @@ vi.mock("../api", () => ({
     listDocumentTypes: vi.fn(),
     listStoragePaths: vi.fn(),
     analyzeDocument: vi.fn(),
+    setInstructions: vi.fn(),
     analyzeEntity: vi.fn(),
     archiveSession: vi.fn(),
     unarchiveSession: vi.fn(),
@@ -75,6 +77,7 @@ describe("EntityPage (generic entity overview)", () => {
       document_count: 5,
       match: "kraxi",
       matching_algorithm: 1,
+      instructions: "",
     });
     renderWithProviders(<EntityPage />, {
       route: "/taxonomy/correspondent/8",
@@ -86,7 +89,50 @@ describe("EntityPage (generic entity overview)", () => {
     expect(screen.getByText("kraxi")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /open in paperless/ }).getAttribute("href"),
-    ).toBe("http://paperless.example/documents?correspondent__id=8");
+    ).toBe("http://paperless.example/correspondents");
     expect(screen.getByRole("button", { name: "Analyze" })).toBeInTheDocument();
+    // Taxonomy entities get the instructions editor.
+    expect(screen.getByLabelText("agent instructions")).toBeInTheDocument();
+  });
+});
+
+describe("EntityPage — instructions & inbox", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.getMeta.mockResolvedValue({ paperless_url: "http://paperless.example" });
+    mocked.listSessions.mockResolvedValue({ count: 0, page: 1, page_size: 5, results: [] });
+  });
+
+  it("saves agent instructions", async () => {
+    mocked.getEntity.mockResolvedValue({
+      id: 3, name: "Steuern", document_count: 4, match: "", instructions: "old rule",
+    });
+    mocked.setInstructions.mockResolvedValue({ instructions: "Nur Steuerpost." });
+    renderWithProviders(<EntityPage />, {
+      route: "/taxonomy/tag/3",
+      path: "/taxonomy/:type/:id",
+    });
+
+    const ta = await screen.findByLabelText("agent instructions");
+    expect(ta).toHaveValue("old rule");
+    await userEvent.clear(ta);
+    await userEvent.type(ta, "Nur Steuerpost.");
+    await userEvent.click(screen.getByRole("button", { name: "Save instructions" }));
+    await waitFor(() =>
+      expect(mocked.setInstructions).toHaveBeenCalledWith("tag", 3, "Nur Steuerpost."),
+    );
+  });
+
+  it("inbox tag is not analyzable", async () => {
+    mocked.getEntity.mockResolvedValue({
+      id: 1, name: "Inbox", document_count: 2, match: "", is_inbox_tag: true,
+      instructions: "This is the inbox tag…",
+    });
+    renderWithProviders(<EntityPage />, {
+      route: "/taxonomy/tag/1",
+      path: "/taxonomy/:type/:id",
+    });
+    expect(await screen.findByText(/not analyzable \(inbox\)/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Analyze" })).not.toBeInTheDocument();
   });
 });
