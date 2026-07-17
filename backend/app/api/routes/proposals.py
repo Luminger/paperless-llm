@@ -136,6 +136,27 @@ async def apply(
     return _out(await _load(db, proposal_id))
 
 
+@router.get("/{proposal_id}/revert-check")
+async def revert_check(
+    proposal_id: int,
+    db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> dict:
+    """Would reverting this applied proposal change anything? Drives the
+    greyed-out Revert button (noop reverts are refused server-side too)."""
+    p = await _load(db, proposal_id)
+    change = await db.scalar(
+        select(AppliedChange)
+        .where(AppliedChange.proposal_id == p.id)
+        .options(selectinload(AppliedChange.proposal))
+    )
+    if change is None or change.reverted_at is not None:
+        raise HTTPException(409, "proposal has no revertible change")
+    from app.proposals.apply import revert_is_noop
+
+    return {"revert_noop": await revert_is_noop(paperless, p, change)}
+
+
 @router.post("/{proposal_id}/revert")
 async def revert(
     proposal_id: int,

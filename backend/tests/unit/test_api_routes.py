@@ -127,12 +127,19 @@ async def test_apply_reports_applied_flag(client, db):
 
 @respx.mock
 async def test_apply_then_revert_roundtrip(client, db):
-    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    get_route = respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
     patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
         return_value=Response(200, json=DOC | {"title": "Agent title"})
     )
     p = await _seed_proposal(db)
     assert (await client.post(f"/api/proposals/{p.id}/apply")).status_code == 200
+    # Paperless now holds the applied state.
+    get_route.mock(return_value=Response(200, json=DOC | {"title": "Agent title"}))
+    # revert-check: a real revert (values differ from the snapshot).
+    rc = await client.get(f"/api/proposals/{p.id}/revert-check")
+    assert rc.status_code == 200 and rc.json()["revert_noop"] is False
     r = await client.post(f"/api/proposals/{p.id}/revert")
     assert r.status_code == 200
     assert r.json()["reverted"] is True
@@ -706,7 +713,7 @@ async def test_archive_lifecycle_blocks_forward_but_not_revert(client, db):
     p_id, step_id = p.id, step.id
 
     with _respx.mock:
-        _respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        get_route = _respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
             return_value=_Resp(200, json=DOC)
         )
         _respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
@@ -714,6 +721,8 @@ async def test_archive_lifecycle_blocks_forward_but_not_revert(client, db):
         )
         # Apply while active -> ok.
         assert (await client.post(f"/api/proposals/{p_id}/apply")).status_code == 200
+        # Paperless now holds the applied state (so revert is real).
+        get_route.mock(return_value=_Resp(200, json=DOC | {"title": "Agent title"}))
 
         # Archive.
         r = await client.post(f"/api/sessions/{sid}/archive")
@@ -767,13 +776,16 @@ async def test_meta_endpoint(client):
 
 @respx.mock
 async def test_audit_records_apply_and_revert(client, db):
-    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    get_route = respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
     respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
         return_value=Response(200, json=DOC | {"title": "Agent title"})
     )
     p = await _seed_proposal(db)
     p_id = p.id
     assert (await client.post(f"/api/proposals/{p_id}/apply")).status_code == 200
+    get_route.mock(return_value=Response(200, json=DOC | {"title": "Agent title"}))
     assert (await client.post(f"/api/proposals/{p_id}/revert")).status_code == 200
 
     body = (await client.get("/api/audit")).json()

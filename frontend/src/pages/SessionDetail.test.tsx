@@ -21,6 +21,7 @@ vi.mock("../api", () => ({
     unarchiveSession: vi.fn(),
     // ProposalCard dependencies:
     patchProposal: vi.fn(),
+    revertCheck: vi.fn(),
     proposalAction: vi.fn(),
     getDocument: vi.fn(),
     listTags: vi.fn(),
@@ -30,6 +31,10 @@ vi.mock("../api", () => ({
   },
 }));
 const mocked = vi.mocked(api);
+
+beforeEach(() => {
+  mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+});
 
 function mkItem(overrides: Partial<TranscriptItem>): TranscriptItem {
   return {

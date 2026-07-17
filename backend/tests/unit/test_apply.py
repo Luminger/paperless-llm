@@ -323,3 +323,75 @@ async def test_delete_conflicts_when_documents_appeared(db, paperless_client):
 
     with pytest.raises(ApplyError, match="document count was 0, now 4"):
         await apply_proposal(paperless_client, db, p)
+
+
+@respx.mock
+async def test_revert_noop_detection_and_guard(db, paperless_client):
+    """When paperless already matches the pre-apply snapshot, the revert
+    is a noop: detected by revert_is_noop and refused by revert_change."""
+    from app.db.models import AppliedChange
+    from app.proposals.apply import revert_change, revert_is_noop
+
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "reason": "r",
+            "title": "Agent title",
+        },
+        status=ProposalStatus.applied,
+    )
+    change = AppliedChange(
+        proposal_id=p.id,
+        paperless_before={"document": {"id": 7, "title": "scan_0001"}},
+        paperless_after={"document": {"id": 7, "title": "Agent title"}},
+    )
+    db.add(change)
+    await db.commit()
+    await db.refresh(change, ["proposal"])
+
+    # Someone already renamed it back -> noop.
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "scan_0001"})
+    )
+    assert await revert_is_noop(paperless_client, p, change) is True
+    with pytest.raises(ApplyError, match="nothing to undo"):
+        await revert_change(paperless_client, db, change)
+    assert change.reverted_at is None  # untouched
+
+    # Still holding the applied title -> a real revert.
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Agent title"})
+    )
+    assert await revert_is_noop(paperless_client, p, change) is False
+
+
+@respx.mock
+async def test_revert_noop_for_deleted_created_entity(db, paperless_client):
+    from app.db.models import AppliedChange
+    from app.proposals.apply import revert_is_noop
+
+    p = await _make_proposal(
+        db,
+        {"kind": "create_entity", "entity_type": "tag", "name": "Neu", "reason": "r"},
+        status=ProposalStatus.applied,
+    )
+    change = AppliedChange(
+        proposal_id=p.id,
+        paperless_before={"entity": None, "entity_type": "tag"},
+        paperless_after={"entity": {"id": 55, "name": "Neu"}, "assigned_documents": []},
+    )
+    db.add(change)
+    await db.commit()
+    await db.refresh(change, ["proposal"])
+
+    # Entity already deleted again -> reverting (deleting) is a noop.
+    respx.get(f"{PAPERLESS_URL}/api/tags/55/").mock(return_value=Response(404, json={}))
+    assert await revert_is_noop(paperless_client, p, change) is True
+    # Entity still there -> real revert.
+    respx.get(f"{PAPERLESS_URL}/api/tags/55/").mock(
+        return_value=Response(200, json={"id": 55, "name": "Neu", "document_count": 0,
+                                          "match": "", "matching_algorithm": 0})
+    )
+    assert await revert_is_noop(paperless_client, p, change) is False

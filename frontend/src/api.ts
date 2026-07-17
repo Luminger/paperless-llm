@@ -253,6 +253,8 @@ export const api = {
     }),
   proposalAction: (id: number, action: "approve" | "reject" | "apply" | "revert") =>
     request<Proposal>(`/api/proposals/${id}/${action}`, { method: "POST" }),
+  revertCheck: (id: number) =>
+    request<{ revert_noop: boolean }>(`/api/proposals/${id}/revert-check`),
 
   getMeta: () => request<Meta>("/api/meta"),
   getSyncStatus: () => request<SyncStatus>("/api/sync/status"),

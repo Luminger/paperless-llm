@@ -8,6 +8,7 @@ import { api } from "../api";
 vi.mock("../api", () => ({
   api: {
     patchProposal: vi.fn(),
+    revertCheck: vi.fn(),
     proposalAction: vi.fn(),
     getDocument: vi.fn(),
     listTags: vi.fn(),
@@ -17,6 +18,10 @@ vi.mock("../api", () => ({
   },
 }));
 const mocked = vi.mocked(api);
+
+beforeEach(() => {
+  mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+});
 
 const DOC = {
   id: 7,
@@ -205,5 +210,30 @@ describe("ProposalCard — generic editor (other kinds)", () => {
     expect(screen.getByDisplayValue("Internal Revenue Service")).toBeInTheDocument();
     const table = screen.getByRole("table");
     expect(within(table).queryByText("entity_id")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — revert noop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupTaxonomy();
+  });
+
+  it("greys out Revert with a tooltip when reverting would change nothing", async () => {
+    mocked.revertCheck.mockResolvedValue({ revert_noop: true });
+    renderCard(makeProposal({ status: "applied", applied: true }));
+
+    const btn = await screen.findByRole("button", { name: "Revert" });
+    await waitFor(() => expect(btn).toBeDisabled());
+    expect(btn.getAttribute("title")).toMatch(/nothing to undo/);
+  });
+
+  it("keeps Revert active when the revert is real", async () => {
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+    renderCard(makeProposal({ status: "applied", applied: true }));
+    const btn = await screen.findByRole("button", { name: "Revert" });
+    await waitFor(() => expect(mocked.revertCheck).toHaveBeenCalled());
+    expect(btn).toBeEnabled();
+    expect(btn.getAttribute("title")).toMatch(/Restore the pre-apply state/);
   });
 });

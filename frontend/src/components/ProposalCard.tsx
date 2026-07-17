@@ -436,6 +436,15 @@ export function ProposalCard({
     mutationFn: (a: "reject" | "apply" | "revert") => api.proposalAction(p.id, a),
     onSuccess: invalidate,
   });
+  // Would reverting change anything? Greys out the Revert button when
+  // paperless already matches the pre-apply state.
+  const revertCheck = useQuery({
+    queryKey: ["revert-check", p.id],
+    queryFn: () => api.revertCheck(p.id),
+    enabled: p.applied && !p.reverted,
+    staleTime: 10_000,
+  });
+    const revertNoop = revertCheck.data?.revert_noop === true;
   const save = useMutation({
     mutationFn: (payload: Record<string, unknown> | null) =>
       api.patchProposal(p.id, payload),
@@ -520,8 +529,14 @@ export function ProposalCard({
         )}
         {p.applied && !p.reverted && (
           <button
-            className="rounded bg-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-300"
+            className="rounded bg-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-40"
             onClick={() => action.mutate("revert")}
+            disabled={revertNoop}
+            title={
+              revertNoop
+                ? "Paperless already matches the state this would restore — there is nothing to undo."
+                : "Restore the pre-apply state from the journal"
+            }
           >
             Revert
           </button>

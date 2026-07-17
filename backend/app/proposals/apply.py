@@ -438,6 +438,76 @@ async def _apply_delete_entity(
 # ----- revert ---------------------------------------------------------
 
 
+async def revert_is_noop(
+    paperless: PaperlessClient, proposal: Proposal, change: AppliedChange
+) -> bool:  # noqa: C901
+    """True when paperless already matches the state this revert would
+    restore — reverting would write nothing (e.g. someone already
+    changed it back, manually or via another revert)."""
+    typed = validate_payload(proposal.user_payload or proposal.agent_payload)
+    before = change.paperless_before
+
+    match typed:
+        case UpdateDocumentMetadata() | ReplaceContent():
+            doc = await paperless.get_document(typed.document_id)
+            saved = dict(before.get("document") or {})
+            saved.pop("id", None)
+            for k, v in saved.items():
+                cur = getattr(doc, k, None)
+                if k == "tags":
+                    if sorted(cur or []) != sorted(v or []):
+                        return False
+                elif k == "created":
+                    if (cur or "")[:10] != (v or "")[:10]:
+                        return False
+                elif k == "content":
+                    if (cur or "").strip() != (v or "").strip():
+                        return False
+                elif k == "custom_fields":
+                    cur_cf = [cf.model_dump() for cf in doc.custom_fields]
+                    if cur_cf != v:
+                        return False
+                elif cur != v:
+                    return False
+            return True
+        case CreateEntity():
+            created_id = (change.paperless_after.get("entity") or {}).get("id")
+            if created_id is None:
+                return False
+            get, _, _, _, _ = _ENTITY_OPS[typed.entity_type]
+            try:
+                await getattr(paperless, get)(created_id)
+            except PaperlessError as e:
+                if e.status_code == 404:
+                    return True  # already deleted — nothing to revert
+                raise
+            return False
+        case UpdateEntity():
+            get, _, _, _, _ = _ENTITY_OPS[typed.entity_type]
+            current = await getattr(paperless, get)(typed.entity_id)
+            ent = before.get("entity") or {}
+            return all(
+                getattr(current, k, None) == ent[k]
+                for k in ("name", "match", "matching_algorithm", "is_insensitive")
+                if k in ent
+            )
+        case MergeEntities():
+            src = before.get("source_entity") or {}
+            return (
+                src.get("name") is not None
+                and await _find_existing_entity(paperless, typed.entity_type, src["name"])
+                is not None
+            )
+        case DeleteEntity():
+            ent = before.get("entity") or {}
+            return (
+                ent.get("name") is not None
+                and await _find_existing_entity(paperless, typed.entity_type, ent["name"])
+                is not None
+            )
+    return False
+
+
 async def revert_change(
     paperless: PaperlessClient, db: AsyncSession, change: AppliedChange
 ) -> None:
@@ -445,6 +515,11 @@ async def revert_change(
     if change.reverted_at is not None:
         raise ApplyError("change already reverted")
     proposal = change.proposal
+    if await revert_is_noop(paperless, proposal, change):
+        raise ApplyError(
+            "paperless already matches the state this revert would restore — "
+            "there is nothing to undo"
+        )
     typed = validate_payload(proposal.user_payload or proposal.agent_payload)
     before = change.paperless_before
 
