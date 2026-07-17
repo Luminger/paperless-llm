@@ -18,6 +18,7 @@ vi.mock("../api", () => ({
     retryStep: vi.fn(),
     redoStep: vi.fn(),
     sendMessage: vi.fn(),
+    unarchiveSession: vi.fn(),
     // ProposalCard dependencies:
     patchProposal: vi.fn(),
     proposalAction: vi.fn(),
@@ -79,6 +80,7 @@ function makeDetail(overrides: Partial<SessionDetailT> = {}): SessionDetailT {
     phase: "done",
     params: { redo_ocr: false },
     error: null,
+    archived_at: null,
     created_at: "2026-07-17T10:00:00Z",
     updated_at: "2026-07-17T10:01:00Z",
     proposal_count: 0,
@@ -340,5 +342,59 @@ describe("SessionDetail step feed", () => {
     await waitFor(() =>
       expect(mocked.redoStep).toHaveBeenCalledWith(9, detail.steps[0].id),
     );
+  });
+});
+
+describe("SessionDetail — archive & breadcrumb", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.listTags.mockResolvedValue([]);
+    mocked.listCorrespondents.mockResolvedValue([]);
+    mocked.listDocumentTypes.mockResolvedValue([]);
+    mocked.listStoragePaths.mockResolvedValue([]);
+    mocked.getDocument.mockResolvedValue({
+      id: 7, title: "scan_0001", correspondent: null, document_type: null,
+      storage_path: null, tags: [], created: null, added: null,
+      archive_serial_number: null,
+    });
+  });
+
+  it("has a breadcrumb to the entity page", async () => {
+    mocked.getSession.mockResolvedValue(makeDetail({}));
+    renderDetail();
+    const crumb = await screen.findByRole("link", { name: /← Document #7/ });
+    expect(crumb.getAttribute("href")).toBe("/documents/7");
+  });
+
+  it("archived sessions: banner, no apply, revert still offered", async () => {
+    mocked.getSession.mockResolvedValue(
+      makeDetail({
+        archived_at: "2026-07-17T12:00:00Z",
+        steps: [
+          mkStep({
+            kind: "analysis",
+            state: "succeeded",
+            result: { message_range: [0, 1], proposal_ids: [1, 2] },
+            transcript: [mkItem({ role: "agent", content: "Summary." })],
+          }),
+        ],
+        proposals: [
+          makeProposal({ id: 1 }),
+          makeProposal({ id: 2, status: "applied", applied: true }),
+        ],
+      }),
+    );
+    renderDetail();
+
+    expect(await screen.findByText(/going back in time is/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unarchive" })).toBeInTheDocument();
+    // Pending proposal: no Apply, explanatory note instead.
+    expect(screen.queryByRole("button", { name: "Apply to paperless" })).not.toBeInTheDocument();
+    expect(screen.getByText(/unarchive the session first/)).toBeInTheDocument();
+    // Applied proposal: revert remains available (back in time is fine).
+    expect(screen.getByRole("button", { name: "Revert" })).toBeInTheDocument();
+    // Composer blocked with hint.
+    expect(screen.getByLabelText("steer the agent")).toBeDisabled();
+    expect(screen.getByText(/unarchive it to continue/)).toBeInTheDocument();
   });
 });

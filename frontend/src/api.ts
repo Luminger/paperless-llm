@@ -37,9 +37,29 @@ export interface Session {
   phase: string | null;
   params: Record<string, unknown>;
   error: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
   proposal_count: number;
+}
+
+export interface SessionPage {
+  count: number;
+  page: number;
+  page_size: number;
+  results: Session[];
+}
+
+export interface SessionFilter {
+  entity_type?: string;
+  entity_id?: number;
+  archived?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+export interface Meta {
+  paperless_url: string;
 }
 
 export interface OcrReview {
@@ -207,7 +227,21 @@ export const api = {
   proposalAction: (id: number, action: "approve" | "reject" | "apply" | "revert") =>
     request<Proposal>(`/api/proposals/${id}/${action}`, { method: "POST" }),
 
-  listSessions: () => request<Session[]>("/api/sessions"),
+  getMeta: () => request<Meta>("/api/meta"),
+  listSessions: (filter: SessionFilter = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(filter)) {
+      if (v !== undefined) params.set(k, String(v));
+    }
+    const qs = params.toString();
+    return request<SessionPage>(`/api/sessions${qs ? `?${qs}` : ""}`);
+  },
+  archiveSession: (id: number) =>
+    request<Session>(`/api/sessions/${id}/archive`, { method: "POST" }),
+  unarchiveSession: (id: number) =>
+    request<Session>(`/api/sessions/${id}/unarchive`, { method: "POST" }),
+  getEntity: (entityType: string, id: number) =>
+    request<EntityRef>(`/api/entities/${entityType}/${id}`),
   getSession: (id: number) => request<SessionDetail>(`/api/sessions/${id}`),
   sendMessage: (id: number, content: string) =>
     request<Step>(`/api/sessions/${id}/messages`, {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type EntityRef, type MergeCandidate } from "../api";
 
@@ -107,7 +107,12 @@ export default function Taxonomy() {
           {(entities ?? []).map((e: EntityRef) => (
             <tr key={e.id} className="border-b border-zinc-100 hover:bg-zinc-50">
               <td className="py-2 pr-4">
-                {e.name}
+                <Link
+                  className="hover:text-emerald-700 hover:underline"
+                  to={`/taxonomy/${type}/${e.id}`}
+                >
+                  {e.name}
+                </Link>
                 {e.is_inbox_tag && (
                   <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
                     inbox

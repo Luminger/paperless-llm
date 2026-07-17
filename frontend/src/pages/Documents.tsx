@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 
 export default function Documents() {
@@ -67,7 +67,12 @@ export default function Documents() {
           <li key={d.id}>
             <div className="flex items-center gap-3 p-3">
               <span className="font-mono text-xs text-zinc-400">#{d.id}</span>
-              <span className="font-medium">{d.title || "(untitled)"}</span>
+              <Link
+                className="font-medium hover:text-emerald-700 hover:underline"
+                to={`/documents/${d.id}`}
+              >
+                {d.title || "(untitled)"}
+              </Link>
               <span className="text-xs text-zinc-400">{d.created ?? ""}</span>
               <button
                 onClick={() => setDialogDoc(dialogDoc === d.id ? null : d.id)}

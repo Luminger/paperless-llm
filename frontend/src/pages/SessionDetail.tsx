@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -11,6 +11,7 @@ import {
 import { DiffView } from "../components/DiffView";
 import { ProposalCard } from "../components/ProposalCard";
 import { useSessionEvents, type LiveActivity } from "../hooks/useSessionEvents";
+import { entityHref } from "./EntityPage";
 
 // ---------------------------------------------------------------------
 // Generic pieces shared by every step kind: state dot, timing chips,
@@ -328,7 +329,15 @@ function OcrBody({ step }: { step: Step }) {
   );
 }
 
-function ProposalList({ ids, proposals }: { ids: number[]; proposals: Proposal[] }) {
+function ProposalList({
+  ids,
+  proposals,
+  archived,
+}: {
+  ids: number[];
+  proposals: Proposal[];
+  archived: boolean;
+}) {
   const byId = new Map(proposals.map((p) => [p.id, p]));
   const mine = ids
     .map((id) => byId.get(id))
@@ -343,12 +352,12 @@ function ProposalList({ ids, proposals }: { ids: number[]; proposals: Proposal[]
               Proposal #{p.id} rev {p.revision} — superseded by a newer revision
             </summary>
             <div className="mt-2 opacity-70">
-              <ProposalCard proposal={p} />
+              <ProposalCard proposal={p} archived={archived} />
             </div>
           </details>
         ) : (
           <div key={p.id} className="rounded border border-zinc-200 bg-zinc-50 p-4">
-            <ProposalCard proposal={p} />
+            <ProposalCard proposal={p} archived={archived} />
           </div>
         ),
       )}
@@ -356,12 +365,20 @@ function ProposalList({ ids, proposals }: { ids: number[]; proposals: Proposal[]
   );
 }
 
-function TurnBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
+function TurnBody({
+  step,
+  proposals,
+  archived,
+}: {
+  step: Step;
+  proposals: Proposal[];
+  archived: boolean;
+}) {
   const ids = (step.result.proposal_ids as number[] | undefined) ?? [];
   return (
     <div className="space-y-3">
       <Transcript items={step.transcript} />
-      <ProposalList ids={ids} proposals={proposals} />
+      <ProposalList ids={ids} proposals={proposals} archived={archived} />
       {step.state === "succeeded" && step.kind === "analysis" && ids.length === 0 && (
         <p className="text-sm text-zinc-500">No changes proposed.</p>
       )}
@@ -402,11 +419,13 @@ function StepCard({
   proposals,
   live,
   onChanged,
+  archived,
 }: {
   step: Step;
   proposals: Proposal[];
   live: LiveActivity | undefined;
   onChanged: () => void;
+  archived: boolean;
 }) {
   const collapsed = step.state === "superseded";
   return (
@@ -431,17 +450,40 @@ function StepCard({
           {step.kind === "ocr" ? (
             <OcrBody step={step} />
           ) : (
-            <TurnBody step={step} proposals={proposals} />
+            <TurnBody step={step} proposals={proposals} archived={archived} />
           )}
           {step.state === "running" && <LiveTrace live={live} />}
           <AttemptHistory step={step} />
           {step.error && step.state === "failed" && (
             <p className="rounded bg-red-50 p-2 font-mono text-xs text-red-700">{step.error}</p>
           )}
-          <StepControls step={step} onChanged={onChanged} />
+          {!archived && <StepControls step={step} onChanged={onChanged} />}
         </div>
       )}
     </li>
+  );
+}
+
+function ArchivedBanner({ sessionId, onChanged }: { sessionId: number; onChanged: () => void }) {
+  const unarchive = useMutation({
+    mutationFn: () => api.unarchiveSession(sessionId),
+    onSuccess: onChanged,
+  });
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded border border-zinc-300 bg-zinc-100 p-3 text-sm text-zinc-600">
+      <span className="flex-1">
+        This session is <strong>archived</strong>: its proposals cannot be applied
+        anymore, but applied changes can still be reverted (going back in time is
+        always allowed).
+      </span>
+      <button
+        className="rounded bg-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-800"
+        onClick={() => unarchive.mutate()}
+        disabled={unarchive.isPending}
+      >
+        Unarchive
+      </button>
+    </div>
   );
 }
 
@@ -501,25 +543,41 @@ export default function SessionDetail() {
   if (!s) return <p className="text-zinc-500">Loading…</p>;
 
   const onChanged = () => qc.invalidateQueries({ queryKey: ["session", sessionId] });
+  const archived = s.archived_at != null;
   const busyStep = s.steps.find(
     (st) => st.state === "pending" || st.state === "running" || st.state === "awaiting_user",
   );
-  const composerHint = busyStep
-    ? busyStep.state === "awaiting_user"
-      ? "Resolve the step above first."
-      : "A step is still running — you can steer once it finishes."
-    : null;
+  const composerHint = archived
+    ? "This session is archived — unarchive it to continue."
+    : busyStep
+      ? busyStep.state === "awaiting_user"
+        ? "Resolve the step above first."
+        : "A step is still running — you can steer once it finishes."
+      : null;
 
   return (
     <div>
+      {s.entity_type != null && s.entity_id != null && (
+        <nav className="mb-2 text-sm">
+          <Link
+            className="text-emerald-700 hover:underline"
+            to={entityHref(s.entity_type, s.entity_id)}
+          >
+            ← {s.entity_type === "document" ? "Document" : s.entity_type.replaceAll("_", " ")}{" "}
+            #{s.entity_id}
+          </Link>
+        </nav>
+      )}
       <h1 className="mb-1 text-xl font-semibold">
         {s.entity_type === "document" ? `Document #${s.entity_id} — analysis` : s.title}
       </h1>
-      <p className="mb-6 text-sm text-zinc-400">
+      <p className="mb-2 text-sm text-zinc-400">
         Session #{s.id} · started {new Date(s.created_at).toLocaleString()}
         {s.params.redo_ocr === true && " · with OCR review"}
         {typeof s.params.instructions === "string" && ` · “${s.params.instructions}”`}
       </p>
+      {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
+      <div className="mb-4" />
 
       <ol>
         {s.steps.map((step) => (
@@ -529,11 +587,16 @@ export default function SessionDetail() {
             proposals={s.proposals}
             live={live[step.id]}
             onChanged={onChanged}
+            archived={archived}
           />
         ))}
       </ol>
 
-      <Composer sessionId={s.id} disabled={busyStep != null} hint={composerHint} />
+      <Composer
+        sessionId={s.id}
+        disabled={busyStep != null || archived}
+        hint={composerHint}
+      />
     </div>
   );
 }

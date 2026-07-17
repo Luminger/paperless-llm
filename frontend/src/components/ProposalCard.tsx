@@ -410,7 +410,13 @@ function GenericEditor({
 // the session timeline and on the standalone proposal page.
 // ---------------------------------------------------------------------
 
-export function ProposalCard({ proposal: p }: { proposal: Proposal }) {
+export function ProposalCard({
+  proposal: p,
+  archived = false,
+}: {
+  proposal: Proposal;
+  archived?: boolean;
+}) {
   const qc = useQueryClient();
   const [pending, setPending] = useState<Record<string, unknown> | null>(null);
   const [editorKey, setEditorKey] = useState(0);
@@ -439,7 +445,9 @@ export function ProposalCard({ proposal: p }: { proposal: Proposal }) {
     },
   });
 
-  const editable = p.status === "pending" || p.status === "approved";
+  // Archived sessions are read-only going FORWARD (no edits, no apply);
+  // reverting applied changes stays available.
+  const editable = !archived && (p.status === "pending" || p.status === "approved");
   const dirty = pending !== null;
   const Editor = p.kind === "update_document_metadata" ? MetadataEditor : GenericEditor;
 
@@ -504,6 +512,11 @@ export function ProposalCard({ proposal: p }: { proposal: Proposal }) {
               Reject
             </button>
           </>
+        )}
+        {archived && (p.status === "pending" || p.status === "approved") && (
+          <span className="text-xs text-zinc-400">
+            archived — cannot be applied (unarchive the session first)
+          </span>
         )}
         {p.applied && !p.reverted && (
           <button
