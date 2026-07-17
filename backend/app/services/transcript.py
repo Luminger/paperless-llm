@@ -2,10 +2,12 @@
 pydantic-ai message history.
 
 The history JSON stays the single source of truth; this is a read-time
-projection: user prompts, agent prose, and a summarized tool-call trace.
-Thinking blocks and system prompts never surface. Steering preambles
-travel as run-time ``instructions`` (see runner) and therefore don't
-pollute user messages here.
+projection where EVERY part of the model exchange is a first-class,
+explorable item: user prompts, thinking blocks, tool calls (full
+arguments and full return values), and agent prose. Only system
+prompts stay internal — they are configuration, not conversation.
+Steering preambles travel as run-time ``instructions`` (see runner)
+and therefore don't pollute user messages here.
 """
 
 from __future__ import annotations
@@ -36,14 +38,19 @@ class CallTiming(BaseModel):
 
 
 class TranscriptItem(BaseModel):
-    role: Literal["user", "agent", "tool"]
+    role: Literal["user", "agent", "tool", "thinking"]
     content: str = ""
     # "pipeline" marks synthetic prompts the pipeline sent, so the UI can
     # render them muted instead of as a human utterance.
     origin: Literal["chat", "pipeline"] = "chat"
     tool_name: str | None = None
     tool_args: dict[str, Any] | None = None
+    # Short form for the collapsed row …
     tool_result: str | None = None
+    # … and the COMPLETE return value for the expanded view. The user
+    # can audit exactly what the model got back.
+    tool_result_full: Any = None
+    tool_rejected: bool = False
     # Per-LLM-call metrics. Every item derived from the same model
     # response shares that call's timing — a response with several tool
     # calls is still one LLM call.
@@ -145,10 +152,22 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
                 item = calls.get(str(part.get("tool_call_id")))
                 if item is not None:
                     item.tool_result = _summarize(part.get("content"))
+                    item.tool_result_full = part.get("content")
             elif kind == "retry-prompt":
                 item = calls.get(str(part.get("tool_call_id")))
                 if item is not None:
                     item.tool_result = f"rejected: {_summarize(part.get('content'))}"
-            # system-prompt, thinking: never surfaced.
+                    item.tool_result_full = part.get("content")
+                    item.tool_rejected = True
+            elif kind == "thinking":
+                text = str(part.get("content") or "").strip()
+                if text:
+                    items.append(
+                        TranscriptItem(
+                            role="thinking", content=text, timing=timing, ts=ts
+                        )
+                    )
+            # system-prompt: never surfaced (configuration, not
+            # conversation).
 
     return items

@@ -1,9 +1,15 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { MessageSquareText } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ErrorNotice } from "@/components/app/states";
 import { api, type EntityRef, type PaperlessDocument, type Proposal } from "../api";
+import { keys as qk } from "../lib/keys";
 import { StatusBadge } from "./StatusBadge";
 import { errorMessage } from "../lib/errors";
-
 
 // ---------------------------------------------------------------------
 // Metadata proposal editor: shows EVERY document field — current value
@@ -27,7 +33,10 @@ function deriveDesired(doc: PaperlessDocument, payload: Record<string, unknown>)
     key in payload ? (payload[key] as T) : fallback;
   const removed = new Set((payload.remove_tags as number[] | undefined) ?? []);
   const added = (payload.add_tags as number[] | undefined) ?? [];
-  const tags = [...doc.tags.filter((t) => !removed.has(t)), ...added.filter((t) => !doc.tags.includes(t))];
+  const tags = [
+    ...doc.tags.filter((t) => !removed.has(t)),
+    ...added.filter((t) => !doc.tags.includes(t)),
+  ];
   return {
     title: scalar("title", doc.title),
     correspondent: scalar("correspondent", doc.correspondent ?? null),
@@ -49,11 +58,14 @@ function buildPayload(
     reason: agent.reason ?? "",
   };
   if (desired.title !== doc.title) payload.title = desired.title;
-  if (desired.correspondent !== doc.correspondent) payload.correspondent = desired.correspondent;
-  if (desired.document_type !== doc.document_type) payload.document_type = desired.document_type;
-  if (desired.storage_path !== doc.storage_path) payload.storage_path = desired.storage_path;
+  if (desired.correspondent !== (doc.correspondent ?? null))
+    payload.correspondent = desired.correspondent;
+  if (desired.document_type !== (doc.document_type ?? null))
+    payload.document_type = desired.document_type;
+  if (desired.storage_path !== (doc.storage_path ?? null))
+    payload.storage_path = desired.storage_path;
   if (desired.created !== (doc.created?.slice(0, 10) ?? null)) payload.created = desired.created;
-  if (desired.archive_serial_number !== doc.archive_serial_number)
+  if (desired.archive_serial_number !== (doc.archive_serial_number ?? null))
     payload.archive_serial_number = desired.archive_serial_number;
   const add = desired.tags.filter((t) => !doc.tags.includes(t));
   const remove = doc.tags.filter((t) => !desired.tags.includes(t));
@@ -79,15 +91,19 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[10rem_1fr_1.4fr] items-center gap-3 border-b border-zinc-100 py-2">
-      <div className="text-sm text-zinc-500">
+    <div className="grid grid-cols-[10rem_1fr_1.4fr] items-center gap-3 border-b border-border/50 py-2">
+      <div className="text-sm text-muted-foreground">
         {label}
         {agentProposed && (
-          <span className="ml-1 rounded bg-blue-50 px-1 py-0.5 text-[10px] text-blue-700">agent</span>
+          <Badge variant="secondary" className="ml-1 px-1 py-0 text-[10px] text-blue-700 dark:text-blue-300">
+            agent
+          </Badge>
         )}
       </div>
-      <div className="truncate text-sm text-zinc-600">{current}</div>
-      <div className={changed ? "rounded bg-amber-50 p-1" : "p-1"}>{children}</div>
+      <div className="truncate text-sm text-muted-foreground">{current}</div>
+      <div className={changed ? "rounded-md bg-amber-50 p-1 dark:bg-amber-950/40" : "p-1"}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -105,7 +121,7 @@ function EntitySelect({
 }) {
   return (
     <select
-      className="w-full rounded border border-zinc-200 px-2 py-1 text-sm disabled:bg-zinc-50 disabled:text-zinc-400"
+      className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
       value={value ?? ""}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
@@ -135,26 +151,23 @@ function TagsEditor({
   return (
     <div className="flex flex-wrap items-center gap-1">
       {value.map((id) => (
-        <span
-          key={id}
-          className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800"
-        >
+        <Badge key={id} variant="secondary" className="gap-1 text-primary">
           {name(options, id)}
           {!disabled && (
             <button
               aria-label={`remove tag ${name(options, id)}`}
-              className="text-emerald-600 hover:text-emerald-900"
+              className="opacity-60 hover:opacity-100"
               onClick={() => onChange(value.filter((v) => v !== id))}
             >
               ×
             </button>
           )}
-        </span>
+        </Badge>
       ))}
       {!disabled && remaining.length > 0 && (
         <select
           aria-label="add tag"
-          className="rounded border border-dashed border-zinc-300 px-1 py-0.5 text-xs text-zinc-500"
+          className="rounded-md border border-dashed border-input px-1 py-0.5 text-xs text-muted-foreground dark:bg-input/30"
           value=""
           onChange={(e) => e.target.value && onChange([...value, Number(e.target.value)])}
         >
@@ -182,20 +195,20 @@ function MetadataEditor({
   const effective = proposal.user_payload ?? proposal.agent_payload;
   const docId = effective.document_id as number;
   const { data: doc } = useQuery({
-    queryKey: ["document", docId],
+    queryKey: qk.document(docId),
     queryFn: () => api.getDocument(docId),
   });
-  const { data: tags } = useQuery({ queryKey: ["tags"], queryFn: api.listTags });
+  const { data: tags } = useQuery({ queryKey: qk.entities("tag"), queryFn: api.listTags });
   const { data: correspondents } = useQuery({
-    queryKey: ["correspondents"],
+    queryKey: qk.entities("correspondent"),
     queryFn: api.listCorrespondents,
   });
   const { data: docTypes } = useQuery({
-    queryKey: ["document_types"],
+    queryKey: qk.entities("document_type"),
     queryFn: api.listDocumentTypes,
   });
   const { data: storagePaths } = useQuery({
-    queryKey: ["storage_paths"],
+    queryKey: qk.entities("storage_path"),
     queryFn: api.listStoragePaths,
   });
   const [edited, setEdited] = useState<Desired | null>(null);
@@ -204,7 +217,8 @@ function MetadataEditor({
     () => (doc ? deriveDesired(doc, effective) : null),
     [doc, effective],
   );
-  if (!doc || !initial) return <p className="text-zinc-500">Loading document…</p>;
+  if (!doc || !initial)
+    return <p className="text-sm text-muted-foreground">Loading document…</p>;
 
   const desired = edited ?? initial;
   const update = (patch: Partial<Desired>) => {
@@ -216,15 +230,20 @@ function MetadataEditor({
   const currentCreated = doc.created?.slice(0, 10) ?? null;
 
   return (
-    <div className="rounded border border-zinc-200 bg-white p-4">
-      <div className="grid grid-cols-[10rem_1fr_1.4fr] gap-3 border-b border-zinc-200 pb-1 text-xs uppercase tracking-wide text-zinc-400">
+    <div className="rounded-lg border bg-card p-4">
+      <div className="grid grid-cols-[10rem_1fr_1.4fr] gap-3 border-b pb-1 text-xs tracking-wide text-muted-foreground/70 uppercase">
         <div>Field</div>
         <div>Currently in paperless</div>
         <div>Proposed</div>
       </div>
-      <Row label="Title" current={doc.title || "—"} changed={desired.title !== doc.title} agentProposed={inAgent("title")}>
-        <input
-          className="w-full rounded border border-zinc-200 px-2 py-1 text-sm disabled:bg-zinc-50 disabled:text-zinc-400"
+      <Row
+        label="Title"
+        current={doc.title || "—"}
+        changed={desired.title !== doc.title}
+        agentProposed={inAgent("title")}
+      >
+        <Input
+          className="h-8"
           value={desired.title}
           disabled={!editable}
           onChange={(e) => update({ title: e.target.value })}
@@ -233,39 +252,67 @@ function MetadataEditor({
       <Row
         label="Correspondent"
         current={name(correspondents, doc.correspondent)}
-        changed={desired.correspondent !== doc.correspondent}
+        changed={desired.correspondent !== (doc.correspondent ?? null)}
         agentProposed={inAgent("correspondent")}
       >
-        <EntitySelect value={desired.correspondent} options={correspondents} disabled={!editable} onChange={(v) => update({ correspondent: v })} />
+        <EntitySelect
+          value={desired.correspondent}
+          options={correspondents}
+          disabled={!editable}
+          onChange={(v) => update({ correspondent: v })}
+        />
       </Row>
       <Row
         label="Document type"
         current={name(docTypes, doc.document_type)}
-        changed={desired.document_type !== doc.document_type}
+        changed={desired.document_type !== (doc.document_type ?? null)}
         agentProposed={inAgent("document_type")}
       >
-        <EntitySelect value={desired.document_type} options={docTypes} disabled={!editable} onChange={(v) => update({ document_type: v })} />
+        <EntitySelect
+          value={desired.document_type}
+          options={docTypes}
+          disabled={!editable}
+          onChange={(v) => update({ document_type: v })}
+        />
       </Row>
       <Row
         label="Storage path"
         current={name(storagePaths, doc.storage_path)}
-        changed={desired.storage_path !== doc.storage_path}
+        changed={desired.storage_path !== (doc.storage_path ?? null)}
         agentProposed={inAgent("storage_path")}
       >
-        <EntitySelect value={desired.storage_path} options={storagePaths} disabled={!editable} onChange={(v) => update({ storage_path: v })} />
+        <EntitySelect
+          value={desired.storage_path}
+          options={storagePaths}
+          disabled={!editable}
+          onChange={(v) => update({ storage_path: v })}
+        />
       </Row>
       <Row
         label="Tags"
         current={doc.tags.map((t) => name(tags, t)).join(", ") || "—"}
-        changed={JSON.stringify([...desired.tags].sort()) !== JSON.stringify([...doc.tags].sort())}
+        changed={
+          JSON.stringify([...desired.tags].sort()) !==
+          JSON.stringify([...doc.tags].sort())
+        }
         agentProposed={inAgent("add_tags") || inAgent("remove_tags")}
       >
-        <TagsEditor value={desired.tags} options={tags} disabled={!editable} onChange={(v) => update({ tags: v })} />
+        <TagsEditor
+          value={desired.tags}
+          options={tags}
+          disabled={!editable}
+          onChange={(v) => update({ tags: v })}
+        />
       </Row>
-      <Row label="Created" current={currentCreated ?? "—"} changed={desired.created !== currentCreated} agentProposed={inAgent("created")}>
-        <input
+      <Row
+        label="Created"
+        current={currentCreated ?? "—"}
+        changed={desired.created !== currentCreated}
+        agentProposed={inAgent("created")}
+      >
+        <Input
           type="date"
-          className="rounded border border-zinc-200 px-2 py-1 text-sm disabled:bg-zinc-50 disabled:text-zinc-400"
+          className="h-8 w-44"
           value={desired.created ?? ""}
           disabled={!editable}
           onChange={(e) => update({ created: e.target.value || null })}
@@ -297,16 +344,19 @@ const HIDDEN = new Set([
 
 function MergeContext({ p }: { p: Proposal }) {
   const snap = p.base_snapshot as
-    | { source?: { name?: string; document_count?: number }; target?: { name?: string; document_count?: number } }
+    | {
+        source?: { name?: string; document_count?: number };
+        target?: { name?: string; document_count?: number };
+      }
     | null;
   if (p.kind !== "merge_entities" || !snap?.source || !snap?.target) return null;
   return (
-    <p className="mb-2 text-sm text-zinc-700">
+    <p className="mb-2 text-sm">
       Merge <strong>{snap.source.name}</strong>
-      <span className="text-zinc-400"> ({snap.source.document_count ?? 0} docs)</span> into{" "}
-      <strong>{snap.target.name}</strong>
-      <span className="text-zinc-400"> ({snap.target.document_count ?? 0} docs)</span> — the
-      target survives, the source is deleted.
+      <span className="text-muted-foreground/70"> ({snap.source.document_count ?? 0} docs)</span>{" "}
+      into <strong>{snap.target.name}</strong>
+      <span className="text-muted-foreground/70"> ({snap.target.document_count ?? 0} docs)</span>{" "}
+      — the target survives, the source is deleted.
     </p>
   );
 }
@@ -341,37 +391,37 @@ function GenericEditor({
   const [working, setWorking] = useState<Record<string, unknown> | null>(null);
   const current = working ?? effective;
   const snapshot = proposal.base_snapshot ?? {};
-  const keys = [
+  const fieldKeys = [
     ...new Set([...Object.keys(proposal.agent_payload), ...Object.keys(current)]),
   ].filter((k) => !HIDDEN.has(k));
 
   return (
-    <div className="rounded border border-zinc-200 bg-white p-4">
+    <div className="rounded-lg border bg-card p-4">
       <MergeContext p={proposal} />
-      {keys.length > 0 && (
+      {fieldKeys.length > 0 && (
         <table className="w-full table-fixed text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-400">
+            <tr className="border-b text-left text-xs tracking-wide text-muted-foreground/70 uppercase">
               <th className="w-40 py-1 pr-2">Field</th>
               <th className="w-1/3 py-1 pr-2">In paperless (at proposal time)</th>
               <th className="py-1">Proposed</th>
             </tr>
           </thead>
           <tbody>
-            {keys.map((k) => {
+            {fieldKeys.map((k) => {
               const orig = proposal.agent_payload[k];
               const was = snapshot[k];
               const cur = current[k];
               const editedByUser = JSON.stringify(orig) !== JSON.stringify(cur);
               return (
-                <tr key={k} className="border-b border-zinc-100 align-top">
-                  <td className="py-2 pr-2 font-mono text-xs text-zinc-500">{k}</td>
-                  <td className="py-2 pr-2 break-words whitespace-pre-wrap text-zinc-600">
+                <tr key={k} className="border-b border-border/50 align-top">
+                  <td className="py-2 pr-2 font-mono text-xs text-muted-foreground">{k}</td>
+                  <td className="py-2 pr-2 break-words whitespace-pre-wrap text-muted-foreground">
                     {was !== undefined ? displayValue(was) || "—" : "—"}
                   </td>
-                  <td className={`py-2 ${editedByUser ? "bg-amber-50" : ""}`}>
+                  <td className={`py-2 ${editedByUser ? "rounded-md bg-amber-50 dark:bg-amber-950/40" : ""}`}>
                     <input
-                      className="w-full rounded border border-zinc-200 px-2 py-1 font-mono text-xs disabled:bg-zinc-50 disabled:text-zinc-400"
+                      className="w-full rounded-md border border-input bg-transparent px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
                       disabled={!editable}
                       value={displayValue(cur)}
                       onChange={(e) => {
@@ -383,9 +433,15 @@ function GenericEditor({
                         // Identity fields always travel from the agent
                         // payload — they are never editable.
                         const identity: Record<string, unknown> = {};
-                        for (const f of ["document_id", "entity_type", "entity_id",
-                                         "source_id", "target_id"]) {
-                          if (f in proposal.agent_payload) identity[f] = proposal.agent_payload[f];
+                        for (const f of [
+                          "document_id",
+                          "entity_type",
+                          "entity_id",
+                          "source_id",
+                          "target_id",
+                        ]) {
+                          if (f in proposal.agent_payload)
+                            identity[f] = proposal.agent_payload[f];
                         }
                         onChange({
                           ...next,
@@ -405,10 +461,65 @@ function GenericEditor({
   );
 }
 
+// ---------------------------------------------------------------------
+// Contextual steering: "ask the agent to revise" lives ON the proposal
+// being reviewed — the reply arrives as a new turn on the timeline.
+// ---------------------------------------------------------------------
+
+function ReviseBox({ proposal: p, onSent }: { proposal: Proposal; onSent: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const send = useMutation({
+    mutationFn: (text: string) =>
+      api.sendMessage(
+        p.session_id,
+        `About proposal #${p.id} (${p.kind.replaceAll("_", " ")}): ${text}`,
+      ),
+    onSuccess: () => {
+      setDraft("");
+      setOpen(false);
+      onSent();
+    },
+  });
+  if (!open) {
+    return (
+      <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
+        <MessageSquareText className="size-4" />
+        Ask the agent to revise…
+      </Button>
+    );
+  }
+  return (
+    <form
+      className="w-full space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (draft.trim()) send.mutate(draft.trim());
+      }}
+    >
+      <Textarea
+        aria-label={`revise proposal ${p.id}`}
+        autoFocus
+        rows={2}
+        placeholder="e.g. use the German title from the letterhead, and don't add the 'scan' tag"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={!draft.trim() || send.isPending}>
+          Send to agent
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+      <ErrorNotice error={send.error} />
+    </form>
+  );
+}
 
 // ---------------------------------------------------------------------
-// ProposalCard: the complete review unit (editor + actions). Used on
-// the session timeline and on the standalone proposal page.
+// ProposalCard: the complete review unit (editor + actions + steering).
 // ---------------------------------------------------------------------
 
 export function ProposalCard({
@@ -424,7 +535,7 @@ export function ProposalCard({
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["proposal"] });
-    qc.invalidateQueries({ queryKey: ["proposals"] });
+    qc.invalidateQueries({ queryKey: qk.proposals() });
     qc.invalidateQueries({ queryKey: ["session"] });
     qc.invalidateQueries({ queryKey: ["document"] });
   };
@@ -440,12 +551,12 @@ export function ProposalCard({
   // Would reverting change anything? Greys out the Revert button when
   // paperless already matches the pre-apply state.
   const revertCheck = useQuery({
-    queryKey: ["revert-check", p.id],
+    queryKey: qk.revertCheck(p.id),
     queryFn: () => api.revertCheck(p.id),
     enabled: p.applied && !p.reverted,
     staleTime: 10_000,
   });
-    const revertNoop = revertCheck.data?.revert_noop === true;
+  const revertNoop = revertCheck.data?.revert_noop === true;
   const save = useMutation({
     mutationFn: (payload: Record<string, unknown> | null) =>
       api.patchProposal(p.id, payload),
@@ -466,71 +577,65 @@ export function ProposalCard({
       <div className="flex items-center gap-3">
         <span className="font-medium">
           Proposal #{p.id}{" "}
-          <span className="text-zinc-400">{p.kind.replaceAll("_", " ")}</span>
+          <span className="text-muted-foreground/70">{p.kind.replaceAll("_", " ")}</span>
         </span>
         <StatusBadge status={p.status} />
         {p.revision > 1 && (
-          <span className="text-sm text-zinc-400">
+          <span className="text-sm text-muted-foreground/70">
             rev {p.revision} (supersedes #{p.supersedes_id})
           </span>
         )}
       </div>
 
       {typeof p.agent_payload.reason === "string" && p.agent_payload.reason && (
-        <p className="rounded bg-white p-3 text-sm text-zinc-600 shadow-sm">
-          <span className="font-medium text-zinc-800">Agent's reasoning: </span>
+        <p className="rounded-lg bg-card p-3 text-sm text-muted-foreground shadow-xs">
+          <span className="font-medium text-foreground">Agent's reasoning: </span>
           {p.agent_payload.reason}
         </p>
       )}
       {p.user_payload && !dirty && (
-        <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">
+        <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
           This proposal has saved user edits — they are what gets applied.
         </p>
       )}
 
       <Editor key={editorKey} proposal={p} editable={editable} onChange={setPending} />
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {dirty && (
           <>
-            <button
-              className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-700"
+            <Button
+              size="sm"
+              className="bg-amber-600 text-white hover:bg-amber-700"
               onClick={() => save.mutate(pending)}
             >
               Save edits
-            </button>
-            <button
-              className="rounded bg-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-300"
-              onClick={resetEditor}
-            >
+            </Button>
+            <Button size="sm" variant="secondary" onClick={resetEditor}>
               Discard
-            </button>
+            </Button>
           </>
         )}
         {editable && !dirty && (
           <>
-            <button
-              className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
-              onClick={() => action.mutate("apply")}
-            >
+            <Button size="sm" onClick={() => action.mutate("apply")}>
               Apply to paperless
-            </button>
-            <button
-              className="rounded bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700"
-              onClick={() => action.mutate("reject")}
-            >
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => action.mutate("reject")}>
               Reject
-            </button>
+            </Button>
+            <ReviseBox proposal={p} onSent={invalidate} />
           </>
         )}
         {archived && p.status === "pending" && (
-          <span className="text-xs text-zinc-400">
+          <span className="text-xs text-muted-foreground/70">
             archived — cannot be applied (unarchive the session first)
           </span>
         )}
         {p.applied && !p.reverted && (
-          <button
-            className="rounded bg-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-300 disabled:cursor-not-allowed disabled:opacity-40"
+          <Button
+            size="sm"
+            variant="secondary"
             onClick={() => action.mutate("revert")}
             disabled={revertNoop}
             title={
@@ -540,11 +645,13 @@ export function ProposalCard({
             }
           >
             Revert
-          </button>
+          </Button>
         )}
       </div>
-      {action.error && <p className="text-sm text-red-600">{errorMessage(action.error)}</p>}
-      {save.error && <p className="text-sm text-red-600">{errorMessage(save.error)}</p>}
+      {action.error && (
+        <p className="text-sm text-destructive">{errorMessage(action.error)}</p>
+      )}
+      {save.error && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
     </div>
   );
 }

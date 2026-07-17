@@ -1458,7 +1458,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "user" | "agent" | "tool";
+            role: "user" | "agent" | "tool" | "thinking";
             timing?: components["schemas"]["CallTiming"] | null;
             /** Tool Args */
             tool_args?: {
@@ -1466,8 +1466,15 @@ export interface components {
             } | null;
             /** Tool Name */
             tool_name?: string | null;
+            /**
+             * Tool Rejected
+             * @default false
+             */
+            tool_rejected: boolean;
             /** Tool Result */
             tool_result?: string | null;
+            /** Tool Result Full */
+            tool_result_full?: unknown;
             /** Ts */
             ts?: string | null;
         };

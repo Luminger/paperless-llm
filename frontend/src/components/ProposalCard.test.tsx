@@ -10,6 +10,7 @@ vi.mock("../api", () => ({
     patchProposal: vi.fn(),
     revertCheck: vi.fn(),
     proposalAction: vi.fn(),
+    sendMessage: vi.fn(),
     getDocument: vi.fn(),
     listTags: vi.fn(),
     listCorrespondents: vi.fn(),
@@ -234,5 +235,32 @@ describe("ProposalCard — revert noop", () => {
     await waitFor(() => expect(mocked.revertCheck).toHaveBeenCalled());
     expect(btn).toBeEnabled();
     expect(btn.getAttribute("title")).toMatch(/Restore the pre-apply state/);
+  });
+});
+
+describe("ProposalCard — contextual steering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupTaxonomy();
+  });
+
+  it("Ask the agent to revise sends a proposal-scoped message", async () => {
+    mocked.sendMessage.mockResolvedValue({ id: 1 } as never);
+    renderWithProviders(<ProposalCard proposal={makeProposal({ id: 5, session_id: 9 })} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Ask the agent to revise/ }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("revise proposal 5"),
+      "use the German title",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send to agent" }));
+    await waitFor(() =>
+      expect(mocked.sendMessage).toHaveBeenCalledWith(
+        9,
+        expect.stringMatching(/^About proposal #5 .*use the German title$/),
+      ),
+    );
   });
 });

@@ -289,13 +289,17 @@ describe("SessionDetail step feed", () => {
     expect(screen.getByRole("button", { name: "Retry now" })).toBeInTheDocument();
   });
 
-  it("chat: composer sends and is blocked while a step is active", async () => {
+  it("chat: the continue affordance appears once work is settled and sends", async () => {
     mocked.getSession.mockResolvedValue(makeDetail({}));
     mocked.sendMessage.mockResolvedValue(mkStep({ kind: "chat", state: "pending" }));
     renderDetail();
 
+    // Contextual, not a fixed chat box: opens on demand.
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Continue this session/ }),
+    );
     await userEvent.type(
-      await screen.findByLabelText("steer the agent"),
+      screen.getByLabelText("steer the agent"),
       "also add the invoice tag",
     );
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -304,7 +308,7 @@ describe("SessionDetail step feed", () => {
     );
   });
 
-  it("composer is disabled while a step runs", async () => {
+  it("no continue affordance while a step runs", async () => {
     mocked.getSession.mockResolvedValue(
       makeDetail({
         status: "running",
@@ -313,8 +317,9 @@ describe("SessionDetail step feed", () => {
     );
     renderDetail();
     expect(await screen.findByText(/Analysis — running…/)).toBeInTheDocument();
-    expect(screen.getByLabelText("steer the agent")).toBeDisabled();
-    expect(screen.getByText(/A step is still running/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Continue this session/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("chat turns render user bubble, tool trace and reply with metrics", async () => {
@@ -344,7 +349,10 @@ describe("SessionDetail step feed", () => {
     expect(await screen.findByText("Please use the German title")).toBeInTheDocument();
     expect(screen.getByText("Done — revised the proposal.")).toBeInTheDocument();
     expect(screen.getAllByText(/5\.0s · 41 tok\/s · ttft 0\.42s/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/1 tool call/).length).toBeGreaterThan(0);
+    // The tool call is a first-class collapsed row.
+    expect(
+      screen.getByText("propose_update_document_metadata"),
+    ).toBeInTheDocument();
   });
 
   it("Redo asks how the redo should run and warns about superseding", async () => {
@@ -417,8 +425,91 @@ describe("SessionDetail — archive & breadcrumb", () => {
     expect(screen.getByText(/unarchive the session first/)).toBeInTheDocument();
     // Applied proposal: revert remains available (back in time is fine).
     expect(screen.getByRole("button", { name: "Revert" })).toBeInTheDocument();
-    // Composer blocked with hint.
-    expect(screen.getByLabelText("steer the agent")).toBeDisabled();
-    expect(screen.getByText(/unarchive it to continue/)).toBeInTheDocument();
+    // No continue affordance on archived sessions.
+    expect(
+      screen.queryByRole("button", { name: /Continue this session/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Transcript — first-class model exchange", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.listTags.mockResolvedValue([]);
+    mocked.listCorrespondents.mockResolvedValue([]);
+    mocked.listDocumentTypes.mockResolvedValue([]);
+    mocked.listStoragePaths.mockResolvedValue([]);
+  });
+
+  it("thinking blocks are shown collapsed and expandable", async () => {
+    const chat = mkStep({
+      kind: "chat",
+      state: "succeeded",
+      result: { proposal_ids: [] },
+      transcript: [
+        mkItem({ role: "thinking", content: "Let me check the correspondent list first." }),
+        mkItem({ role: "agent", content: "Here is my answer." }),
+      ],
+    });
+    mocked.getSession.mockResolvedValue(makeDetail({ steps: [chat] }));
+    renderDetail();
+
+    const trigger = await screen.findByText("Reasoning");
+    // Collapsed: only the one-line teaser, no expanded body yet.
+    await userEvent.click(trigger);
+    expect(
+      screen.getAllByText(/Let me check the correspondent list first\./).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("tool calls expand to full arguments and the complete return value", async () => {
+    const chat = mkStep({
+      kind: "chat",
+      state: "succeeded",
+      result: { proposal_ids: [] },
+      transcript: [
+        mkItem({
+          role: "tool",
+          tool_name: "get_document",
+          tool_args: { document_id: 7 },
+          tool_result: '{"id": 7} …[truncated]',
+          tool_result_full: { id: 7, title: "Kraxi Rechnung", content: "Sehr geehrte…" },
+        } as never),
+      ],
+    });
+    mocked.getSession.mockResolvedValue(makeDetail({ steps: [chat] }));
+    renderDetail();
+
+    await userEvent.click(await screen.findByText("get_document"));
+    expect(screen.getByText("Arguments")).toBeInTheDocument();
+    expect(screen.getByText(/"document_id": 7/)).toBeInTheDocument();
+    expect(screen.getByText("Returned")).toBeInTheDocument();
+    // The COMPLETE value, not the truncated summary.
+    expect(screen.getByText(/Kraxi Rechnung/)).toBeInTheDocument();
+  });
+
+  it("rejected tool calls are marked and show the rejection reason", async () => {
+    const chat = mkStep({
+      kind: "chat",
+      state: "succeeded",
+      result: { proposal_ids: [] },
+      transcript: [
+        mkItem({
+          role: "tool",
+          tool_name: "propose_update_document_metadata",
+          tool_args: {},
+          tool_result: "rejected: no-op proposal",
+          tool_result_full: "no-op proposal",
+          tool_rejected: true,
+        } as never),
+      ],
+    });
+    mocked.getSession.mockResolvedValue(makeDetail({ steps: [chat] }));
+    renderDetail();
+
+    expect(await screen.findByText("rejected")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("propose_update_document_metadata"));
+    expect(screen.getByText("Rejected with")).toBeInTheDocument();
+    expect(screen.getByText(/no-op proposal/)).toBeInTheDocument();
   });
 });

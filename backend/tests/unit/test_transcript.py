@@ -73,7 +73,10 @@ def test_tool_calls_paired_with_results_and_retries():
     assert tools[1].tool_result.startswith("rejected: ")
 
 
-def test_thinking_skipped_and_results_truncated():
+def test_thinking_surfaced_and_full_results_kept():
+    """Thinking blocks are first-class transcript items; tool results
+    keep a truncated summary for the collapsed row AND the complete
+    value for the expanded view."""
     history = [
         _request({"part_kind": "user-prompt", "content": "go"}),
         _response(
@@ -90,10 +93,22 @@ def test_thinking_skipped_and_results_truncated():
         ),
     ]
     t = derive_transcript(history)
-    assert all("chain of thought" not in (i.content or "") for i in t)
+    thinking = next(i for i in t if i.role == "thinking")
+    assert thinking.content == "internal chain of thought"
     tool = next(i for i in t if i.role == "tool")
     assert len(tool.tool_result) < 600
     assert tool.tool_result.endswith("…[truncated]")
+    assert tool.tool_result_full == "x" * 2000  # nothing lost
+    assert tool.tool_rejected is False
+
+
+def test_system_prompt_stays_internal():
+    history = [
+        _request({"part_kind": "system-prompt", "content": "secret sauce"}),
+        _request({"part_kind": "user-prompt", "content": "go"}),
+    ]
+    t = derive_transcript(history)
+    assert all("secret sauce" not in (i.content or "") for i in t)
 
 
 def test_multimodal_user_content_and_garbage_tolerated():
