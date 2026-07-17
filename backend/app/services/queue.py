@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -33,6 +34,7 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.services import pipeline
+from app.services.events import bus
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +60,12 @@ async def enqueue(
     if stage not in STAGES:
         raise ValueError(f"unknown stage {stage!r}")
     item = QueueItem(
-        lane=lane, stage=stage, args=args or {}, session_id=session_id, job_id=job_id
+        lane=lane,
+        stage=stage,
+        args=args or {},
+        session_id=session_id,
+        job_id=job_id,
+        max_attempts=1 + max(0, get_settings().queue.retry_attempts),
     )
     db.add(item)
     if commit:
@@ -125,7 +132,12 @@ class QueueWorkers:
             async with session_scope() as db:
                 item = await db.scalar(
                     select(QueueItem)
-                    .where(QueueItem.state == QueueState.pending, QueueItem.lane == lane)
+                    .where(
+                        QueueItem.state == QueueState.pending,
+                        QueueItem.lane == lane,
+                        (QueueItem.scheduled_at.is_(None))
+                        | (QueueItem.scheduled_at <= utcnow()),
+                    )
                     .order_by(QueueItem.id)
                     .limit(1)
                 )
@@ -160,36 +172,53 @@ class QueueWorkers:
             item = await db.get(QueueItem, item_id)
             if item is None:
                 return
-            if error is not None and attempts < max_attempts:
-                item.state = QueueState.pending  # retry
-                item.error = error
+            # A stage may also have recorded a session-level failure
+            # (LLM/network errors are caught inside stages) — both kinds
+            # go through the same retry policy.
+            session = await db.get(Session, session_id) if session_id else None
+            stage_failed = session is not None and session.status == SessionStatus.failed
+            failure = error or (session.error if stage_failed else None)
+
+            if (error is not None or stage_failed) and attempts < max_attempts:
+                delay = get_settings().queue.retry_delay_seconds
+                item.state = QueueState.pending  # delayed retry
+                item.error = failure
+                item.scheduled_at = utcnow() + timedelta(seconds=delay)
                 await db.commit()
-                self.wake(item.lane)
-                return
-            if error is not None:
-                item.state = QueueState.failed
-                item.error = error
                 if session_id is not None:
-                    session = await db.get(Session, session_id)
-                    if session is not None and session.status != SessionStatus.failed:
-                        session.status = SessionStatus.failed
-                        session.error = error
+                    bus.publish(session_id, "retry_scheduled",
+                                attempts=attempts, max_attempts=max_attempts)
+                return
+            if error is not None or stage_failed:
+                item.state = QueueState.failed
+                item.error = failure
+                if session is not None and session.status != SessionStatus.failed:
+                    session.status = SessionStatus.failed
+                    session.error = failure
             else:
-                # The stage may still have recorded a session failure.
-                session = await db.get(Session, session_id) if session_id else None
-                failed = session is not None and session.status == SessionStatus.failed
-                item.state = QueueState.failed if failed else QueueState.done
-                item.error = session.error if failed and session is not None else None
+                item.state = QueueState.done
+                item.error = None
             item.finished_at = utcnow()
             await db.commit()
             if job_id is not None:
                 await _update_job(db, job_id)
 
 
+# Serializes job-counter updates: two workers finishing items of the
+# same job concurrently would otherwise race recompute-and-write (the
+# stale "running" write can land after the "completed" one).
+_job_update_lock = asyncio.Lock()
+
+
 async def _update_job(db: AsyncSession, job_id: int) -> None:
     """Recompute campaign counters from its queue items. A document's
     pipeline may enqueue follow-up items (gate -> analysis); a session
     counts as finished when it has no unfinished items left."""
+    async with _job_update_lock:
+        await _update_job_locked(db, job_id)
+
+
+async def _update_job_locked(db: AsyncSession, job_id: int) -> None:
     job = await db.get(Job, job_id)
     if job is None:
         return
@@ -231,6 +260,7 @@ async def recover() -> dict[str, int]:
         for item in running_items:
             if item.attempts < item.max_attempts:
                 item.state = QueueState.pending
+                item.scheduled_at = None
                 retried += 1
             else:
                 item.state = QueueState.failed

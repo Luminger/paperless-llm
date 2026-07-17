@@ -227,6 +227,8 @@ class QueueItem(Base):
     session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), nullable=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Retry backoff: pending items are not claimed before this instant.
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -267,6 +269,8 @@ class OcrResult(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     # Similarity vs. the paperless `content` at OCR time (0..1).
     similarity: Mapped[float | None] = mapped_column(nullable=True)
+    # Per-batch LLM call metrics (duration, tokens, tps, ...).
+    timings: Mapped[list[Any]] = mapped_column(default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (

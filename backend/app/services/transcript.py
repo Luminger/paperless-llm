@@ -30,6 +30,9 @@ class TranscriptItem(BaseModel):
     tool_name: str | None = None
     tool_args: dict[str, Any] | None = None
     tool_result: str | None = None
+    # Per-LLM-call metrics (duration_s, ttft_s, tps, tokens, start/end),
+    # attached to the first item of each model response.
+    timing: dict[str, Any] | None = None
 
 
 def _text_of(content: Any) -> str:
@@ -73,6 +76,11 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
     for message in history:
         if not isinstance(message, dict):
             continue
+        timing = None
+        details = message.get("provider_details")
+        if isinstance(details, dict):
+            timing = details.get("pllm_timing")
+        first_of_message = True
         for part in message.get("parts") or []:
             if not isinstance(part, dict):
                 continue
@@ -94,13 +102,22 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
             elif kind == "text":
                 text = str(part.get("content") or "").strip()
                 if text:
-                    items.append(TranscriptItem(role="agent", content=text))
+                    items.append(
+                        TranscriptItem(
+                            role="agent",
+                            content=text,
+                            timing=timing if first_of_message else None,
+                        )
+                    )
+                    first_of_message = False
             elif kind == "tool-call":
                 item = TranscriptItem(
                     role="tool",
                     tool_name=str(part.get("tool_name") or ""),
                     tool_args=_parse_args(part.get("args")),
+                    timing=timing if first_of_message else None,
                 )
+                first_of_message = False
                 items.append(item)
                 if part.get("tool_call_id"):
                     calls[str(part["tool_call_id"])] = item

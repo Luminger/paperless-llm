@@ -9,11 +9,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from app.config import AgentProfile, OcrProfile, SamplingOverrides, get_settings
+from app.llm.timing import TimedModel
 
 # One semaphore per endpoint URL, shared by every consumer in this
 # process (agent runs, OCR, interactive chat). Sized via config
@@ -47,11 +49,15 @@ def _settings_from(sampling: SamplingOverrides, thinking: str = "server_default"
     return ModelSettings(**settings)  # type: ignore[typeddict-item]
 
 
-def _build_model(base_url: str, model: str, api_key: str) -> OpenAIChatModel:
-    return OpenAIChatModel(model, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
+def _build_model(base_url: str, model: str, api_key: str) -> Model:
+    # TimedModel stamps per-call metrics (duration, tokens, tps, ttft
+    # when streaming) into each response's provider_details.
+    return TimedModel(
+        OpenAIChatModel(model, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
+    )
 
 
-def agent_model(profile: AgentProfile | None = None) -> OpenAIChatModel:
+def agent_model(profile: AgentProfile | None = None) -> Model:
     p = profile or get_settings().llm.agent
     return _build_model(p.base_url, p.model, p.api_key)
 
@@ -76,7 +82,7 @@ def resolved_ocr_profile() -> tuple[str, str, str, OcrProfile]:
     )
 
 
-def ocr_model() -> tuple[OpenAIChatModel, ModelSettings, OcrProfile, asyncio.Semaphore]:
+def ocr_model() -> tuple[Model, ModelSettings, OcrProfile, asyncio.Semaphore]:
     base_url, model, api_key, ocr = resolved_ocr_profile()
     sem = llm_semaphore(base_url, get_settings().llm.agent.max_concurrent)
     # OCR is a plain completion; thinking adds latency for no benefit.

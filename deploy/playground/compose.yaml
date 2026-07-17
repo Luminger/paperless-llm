@@ -60,6 +60,11 @@ services:
       PLLM_LLM__AGENT__BASE_URL: ${PLLM_AGENT_BASE_URL:-http://127.0.0.1:8001/v1}
       PLLM_LLM__AGENT__MODEL: ${PLLM_AGENT_MODEL:-qwen3.6-27b}
       PLLM_LLM__AGENT__MAX_CONCURRENT: ${PLLM_AGENT_MAX_CONCURRENT:-2}
+      # Optional local embeddings endpoint (entity index / merge candidates).
+      PLLM_LLM__EMBEDDINGS__BASE_URL: ${PLLM_EMBEDDINGS_BASE_URL:-}
+      PLLM_LLM__EMBEDDINGS__MODEL: ${PLLM_EMBEDDINGS_MODEL:-}
+      # Webhook ingress shared secret (empty disables the endpoint).
+      PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
       PLLM_DATABASE_URL: sqlite+aiosqlite:////data/paperless_llm.sqlite3
       PLLM_DATA_DIR: /data
     volumes:

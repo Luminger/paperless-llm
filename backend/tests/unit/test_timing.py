@@ -1,0 +1,61 @@
+"""TimedModel: per-call metrics stamped into provider_details, surfaced
+in the transcript."""
+
+from __future__ import annotations
+
+from pydantic_ai import Agent
+from pydantic_ai.models.test import TestModel
+
+from app.llm.timing import TimedModel
+from app.services.transcript import derive_transcript
+
+
+async def test_non_streaming_request_gets_timing():
+    agent = Agent(TimedModel(TestModel(custom_output_text="hello world")))
+    result = await agent.run("hi")
+    response = result.all_messages()[-1]
+    timing = response.provider_details["pllm_timing"]
+    assert timing["duration_s"] >= 0
+    assert timing["ttft_s"] is None  # not measurable without streaming
+    assert timing["output_tokens"] > 0
+    assert "started_at" in timing and "finished_at" in timing
+
+
+async def test_streaming_request_measures_ttft():
+    agent = Agent(TimedModel(TestModel(custom_output_text="hello world")))
+
+    async def handler(ctx, events):
+        async for _ in events:
+            pass
+
+    result = await agent.run("hi", event_stream_handler=handler)
+    response = result.all_messages()[-1]
+    timing = response.provider_details["pllm_timing"]
+    assert timing["ttft_s"] is not None
+    assert 0 <= timing["ttft_s"] <= timing["duration_s"] + 0.001
+
+
+def test_transcript_attaches_timing_to_first_item_of_response():
+    timing = {"duration_s": 2.5, "tps": 40.0, "ttft_s": 0.3}
+    history = [
+        {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "go"}]},
+        {
+            "kind": "response",
+            "provider_details": {"pllm_timing": timing},
+            "parts": [
+                {"part_kind": "tool-call", "tool_name": "a", "args": {}, "tool_call_id": "1"},
+                {"part_kind": "tool-call", "tool_name": "b", "args": {}, "tool_call_id": "2"},
+            ],
+        },
+        {
+            "kind": "response",
+            "provider_details": {"pllm_timing": timing | {"duration_s": 1.0}},
+            "parts": [{"part_kind": "text", "content": "done"}],
+        },
+    ]
+    t = derive_transcript(history)
+    tools = [i for i in t if i.role == "tool"]
+    assert tools[0].timing == timing  # first item of the response
+    assert tools[1].timing is None  # same LLM call -> no duplicate
+    agent_item = next(i for i in t if i.role == "agent")
+    assert agent_item.timing["duration_s"] == 1.0

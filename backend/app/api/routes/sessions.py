@@ -18,6 +18,7 @@ from app.api.schemas import (
     OcrGateRequest,
     OcrRerunRequest,
     OcrReviewOut,
+    RetryInfo,
     SessionDetailOut,
     SessionOut,
 )
@@ -26,7 +27,9 @@ from app.db.models import (
     EntityType,
     OcrResult,
     Proposal,
+    QueueItem,
     QueueLane,
+    QueueState,
     Session,
     SessionPhase,
     SessionStatus,
@@ -80,6 +83,19 @@ async def get_session_detail(
         )
     ).all()
     out.proposals = [proposal_out(p) for p in proposals]
+    item = await db.scalar(
+        select(QueueItem)
+        .where(QueueItem.session_id == s.id)
+        .order_by(QueueItem.id.desc())
+        .limit(1)
+    )
+    if item is not None:
+        out.retry = RetryInfo(
+            state=item.state.value,
+            attempts=item.attempts,
+            max_attempts=item.max_attempts,
+            next_attempt_at=item.scheduled_at,
+        )
     return out
 
 
@@ -171,6 +187,7 @@ async def get_ocr_review(
         previous_content=doc.content,
         ocr_text=latest.text,
         pages=len(latest.pages),
+        timings=list(latest.timings or []),
     )
 
 
@@ -269,6 +286,55 @@ async def send_message(
         session_id=s.id,
     )
     bus.publish(s.id, "message_appended")
+    return SessionOut.model_validate(s)
+
+
+@router.post("/{session_id}/retry")
+async def retry_session(
+    session_id: int, db: AsyncSession = Depends(get_session)
+) -> SessionOut:
+    """Retry now: run a scheduled retry immediately, or revive an
+    exhausted (failed) stage with a fresh attempt budget."""
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    item = await db.scalar(
+        select(QueueItem)
+        .where(QueueItem.session_id == session_id)
+        .order_by(QueueItem.id.desc())
+        .limit(1)
+    )
+    if item is not None and item.state == QueueState.running:
+        raise HTTPException(409, "stage is currently running")
+    if item is not None and item.state == QueueState.pending:
+        item.scheduled_at = None  # skip the backoff
+        await db.commit()
+    elif item is not None and item.state in (QueueState.failed, QueueState.cancelled):
+        item.state = QueueState.pending
+        item.attempts = 0  # fresh budget for a manual retry
+        item.scheduled_at = None
+        item.error = None
+        item.finished_at = None
+        await db.commit()
+        if item.job_id is not None:
+            from app.services.queue import _update_job
+
+            await _update_job(db, item.job_id)
+    elif s.status == SessionStatus.failed and s.phase in (
+        SessionPhase.queued, SessionPhase.ocr_running, SessionPhase.analyzing
+    ):
+        # Orphan (no queue item, e.g. pre-queue session): re-enqueue by phase.
+        stage = "analysis" if s.phase == SessionPhase.analyzing else "start"
+        await enqueue(
+            db, stage, {"session_id": s.id},
+            lane=QueueLane.interactive, session_id=s.id, job_id=s.job_id,
+        )
+    else:
+        raise HTTPException(409, "nothing to retry for this session")
+    from app.services.queue import workers
+
+    workers.wake(item.lane if item is not None else QueueLane.interactive)
+    bus.publish(session_id, "retry_scheduled", attempts=0, max_attempts=0)
     return SessionOut.model_validate(s)
 
 

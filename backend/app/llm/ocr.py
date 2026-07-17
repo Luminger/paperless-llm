@@ -47,6 +47,7 @@ class OcrOutcome:
     text: str
     similarity: float | None  # vs. paperless `content` at run time; None if no content
     from_cache: bool
+    timings: list[dict] | None = None  # per-batch LLM call metrics
 
 
 def render_pages(data: bytes, content_type: str, dpi: int, max_pages: int = 0) -> list[bytes]:
@@ -117,6 +118,7 @@ async def run_ocr(
                 text=cached.text,
                 similarity=cached.similarity,
                 from_cache=True,
+                timings=list(cached.timings or []),
             )
 
     images = render_pages(data, content_type, dpi or profile.render_dpi, profile.max_pages)
@@ -127,6 +129,7 @@ async def run_ocr(
     agent: Agent[None, str] = Agent(model, system_prompt=prompt, model_settings=model_settings)
     batch = max(1, profile.max_images_per_request)
     pages: list[str] = []
+    timings: list[dict] = []
     for i in range(0, len(images), batch):
         chunk = images[i : i + batch]
         parts: list[str | BinaryContent] = [
@@ -135,6 +138,12 @@ async def run_ocr(
         parts += [BinaryContent(data=png, media_type="image/png") for png in chunk]
         async with semaphore:
             result = await agent.run(parts)
+        for message in result.new_messages():
+            details = getattr(message, "provider_details", None)
+            if isinstance(details, dict) and "pllm_timing" in details:
+                timings.append(
+                    {"pages": f"{i + 1}-{i + len(chunk)}", **details["pllm_timing"]}
+                )
         out = result.output.strip()
         if len(chunk) > 1:
             split = re.split(r"\n-{3,}\n", out)
@@ -153,6 +162,7 @@ async def run_ocr(
         cached.pages = pages
         cached.text = text
         cached.similarity = similarity
+        cached.timings = timings
     else:
         db.add(
             OcrResult(
@@ -163,6 +173,7 @@ async def run_ocr(
                 pages=pages,
                 text=text,
                 similarity=similarity,
+                timings=timings,
             )
         )
     await db.commit()
@@ -175,4 +186,5 @@ async def run_ocr(
         text=text,
         similarity=similarity,
         from_cache=False,
+        timings=timings,
     )

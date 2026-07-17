@@ -35,9 +35,19 @@ class SessionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RetryInfo(BaseModel):
+    """State of the session's latest queue item — drives the retry UI."""
+
+    state: str
+    attempts: int
+    max_attempts: int
+    next_attempt_at: datetime | None
+
+
 class SessionDetailOut(SessionOut):
     transcript: list[TranscriptItem] = []
     proposals: list[ProposalOut] = []
+    retry: RetryInfo | None = None
 
 
 class ProposalOut(BaseModel):
@@ -127,6 +137,8 @@ class OcrReviewOut(BaseModel):
     previous_content: str
     ocr_text: str
     pages: int
+    # Per-batch LLM call metrics of the OCR run.
+    timings: list[dict[str, Any]] = []
 
 
 class OcrGateRequest(BaseModel):

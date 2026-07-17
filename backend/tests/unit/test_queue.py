@@ -31,6 +31,8 @@ from app.services.queue import QueueWorkers, enqueue, recover
 async def file_db(tmp_path, monkeypatch):
     monkeypatch.setenv("PLLM_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/q.sqlite3")
     monkeypatch.setenv("PLLM_QUEUE__POLL_INTERVAL_SECONDS", "0.05")
+    monkeypatch.setenv("PLLM_QUEUE__RETRY_ATTEMPTS", "2")  # 3 attempts total
+    monkeypatch.setenv("PLLM_QUEUE__RETRY_DELAY_SECONDS", "0.1")
     reset_settings_cache()
     await dispose_engine()
     await init_db()
@@ -39,7 +41,7 @@ async def file_db(tmp_path, monkeypatch):
     reset_settings_cache()
 
 
-async def _wait_for(predicate, limit=5.0):
+async def _wait_for(predicate, limit=15.0):
     async def check():
         while True:
             if await predicate():
@@ -124,10 +126,10 @@ def _is_final(item_id: int):
     return check
 
 
-async def test_stage_recorded_session_failure_marks_item_failed(file_db, monkeypatch):
-    """Stages swallow their own errors and mark the session failed; the
-    queue must reflect that as a failed item (no retry — the failure is
-    already recorded)."""
+async def test_stage_recorded_session_failure_retries_then_fails(file_db, monkeypatch):
+    """Stages swallow their own errors (LLM/network hiccups) and mark
+    the session failed; the retry policy re-runs them with the
+    configured delay before the item finally fails."""
 
     async def stage_marks_failed(session_id: int):
         async with session_scope() as db:
@@ -156,7 +158,7 @@ async def test_stage_recorded_session_failure_marks_item_failed(file_db, monkeyp
     async with session_scope() as db:
         item = await db.get(QueueItem, item_id)
         assert item.state == QueueState.failed
-        assert item.attempts == 1  # no retry
+        assert item.attempts == item.max_attempts == 3  # retried per policy
         assert item.error == "recorded by stage"
 
 
@@ -194,6 +196,33 @@ def _job_status_is(job_id: int, status: JobStatus):
             return (await db.get(Job, job_id)).status == status
 
     return check
+
+
+async def test_scheduled_items_wait_for_their_time(file_db):
+    """Pending items with a future scheduled_at are not claimed."""
+    from datetime import timedelta
+
+    from app.db.models import utcnow
+
+    async with session_scope() as db:
+        db.add(
+            QueueItem(
+                stage="start", args={}, state=QueueState.pending,
+                lane=QueueLane.batch, scheduled_at=utcnow() + timedelta(hours=1),
+            )
+        )
+        await db.commit()
+
+    workers = QueueWorkers()
+    await workers.start()
+    try:
+        await asyncio.sleep(0.3)  # several poll cycles
+        async with session_scope() as db:
+            item = await db.scalar(select(QueueItem))
+            assert item.state == QueueState.pending  # untouched
+            assert item.attempts == 0
+    finally:
+        await workers.stop()
 
 
 async def test_recover_retries_running_and_fails_orphans(file_db):

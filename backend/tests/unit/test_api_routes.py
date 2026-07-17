@@ -537,3 +537,69 @@ async def test_stats_endpoint(client, db):
     body = r.json()
     assert body["pending_proposals"] == 1
     assert body["active_sessions"] == 0
+
+
+async def test_retry_now_revives_failed_stage(client, db):
+    from app.db.models import (
+        QueueItem,
+        QueueLane,
+        QueueState,
+        SessionPhase,
+        SessionStatus,
+    )
+
+    s = Session(
+        agent_kind=AgentKind.document,
+        phase=SessionPhase.analyzing,
+        status=SessionStatus.failed,
+        error="ConnectError: LLM down",
+    )
+    db.add(s)
+    await db.flush()
+    item = QueueItem(
+        stage="analysis", args={"session_id": s.id}, state=QueueState.failed,
+        attempts=3, max_attempts=3, lane=QueueLane.interactive,
+        session_id=s.id, error="ConnectError: LLM down",
+    )
+    db.add(item)
+    await db.commit()
+
+    r = await client.post(f"/api/sessions/{s.id}/retry")
+    assert r.status_code == 200
+    await db.refresh(item)
+    assert item.state == QueueState.pending
+    assert item.attempts == 0  # fresh budget
+    assert item.scheduled_at is None and item.error is None
+
+
+async def test_retry_now_skips_backoff_of_scheduled_retry(client, db):
+    from datetime import timedelta
+
+    from app.db.models import QueueItem, QueueState, SessionPhase, utcnow
+
+    s = Session(agent_kind=AgentKind.document, phase=SessionPhase.analyzing)
+    db.add(s)
+    await db.flush()
+    item = QueueItem(
+        stage="analysis", args={"session_id": s.id}, state=QueueState.pending,
+        attempts=1, max_attempts=3, session_id=s.id,
+        scheduled_at=utcnow() + timedelta(minutes=5),
+    )
+    db.add(item)
+    await db.commit()
+
+    # Retry info is exposed on the detail for the UI.
+    detail = (await client.get(f"/api/sessions/{s.id}")).json()
+    assert detail["retry"]["state"] == "pending"
+    assert detail["retry"]["next_attempt_at"] is not None
+
+    r = await client.post(f"/api/sessions/{s.id}/retry")
+    assert r.status_code == 200
+    await db.refresh(item)
+    assert item.scheduled_at is None
+
+    # Nothing to retry -> 409.
+    s2 = Session(agent_kind=AgentKind.document, phase=SessionPhase.done)
+    db.add(s2)
+    await db.commit()
+    assert (await client.post(f"/api/sessions/{s2.id}/retry")).status_code == 409

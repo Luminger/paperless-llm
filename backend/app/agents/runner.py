@@ -6,6 +6,7 @@ older open revisions for the same target).
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from pydantic_ai import Agent
@@ -38,6 +39,29 @@ def _load_history(session: Session) -> list[ModelMessage]:
 
 def _dump_history(messages: list[ModelMessage]) -> list:
     return ModelMessagesTypeAdapter.dump_python(messages, mode="json")
+
+
+def _progress_handler(session_id: int):
+    """Event-stream consumer for streaming runs: publishes a throttled
+    'generating' SSE signal (with rough output size) so the UI can show
+    live progress instead of an opaque spinner. Passing a handler is
+    also what switches pydantic-ai to streamed model requests — only
+    used when the profile declares supports_streaming."""
+
+    async def handler(ctx, events) -> None:
+        chars = 0
+        last_publish = 0.0
+        async for ev in events:
+            delta = getattr(ev, "delta", None)
+            content = getattr(delta, "content_delta", None)
+            if isinstance(content, str):
+                chars += len(content)
+            now = time.monotonic()
+            if chars and now - last_publish >= 1.0:
+                bus.publish(session_id, "generating", chars=chars)
+                last_publish = now
+
+    return handler
 
 
 def _steering_preamble(session: Session, db_proposals: list[Proposal]) -> str | None:
@@ -97,6 +121,9 @@ async def run_agent_turn(
                 instructions=preamble,
                 message_history=_load_history(session),
                 usage_limits=UsageLimits(request_limit=profile.max_tool_iterations),
+                event_stream_handler=(
+                    _progress_handler(session.id) if profile.supports_streaming else None
+                ),
             )
     except Exception as e:
         session.status = SessionStatus.failed
