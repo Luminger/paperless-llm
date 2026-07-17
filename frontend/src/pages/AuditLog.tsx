@@ -187,7 +187,7 @@ export default function AuditLog() {
             <li key={e.id}>
               <details>
                 <summary className="flex cursor-pointer items-center gap-3 p-2.5 text-sm select-none hover:bg-muted/50">
-                  <span className="w-44 shrink-0 font-mono text-xs text-muted-foreground/70">
+                  <span className="w-40 shrink-0 font-mono text-xs whitespace-nowrap text-muted-foreground/70">
                     {formatDateTime(e.ts)}
                   </span>
                   <Badge

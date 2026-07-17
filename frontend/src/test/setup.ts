@@ -19,8 +19,8 @@ class ResizeObserverStub {
   disconnect() {}
 }
 if (!("ResizeObserver" in globalThis)) {
-  // @ts-expect-error jsdom lacks ResizeObserver
-  globalThis.ResizeObserver = ResizeObserverStub;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).ResizeObserver = ResizeObserverStub;
 }
 if (!Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false;

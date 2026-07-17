@@ -9,6 +9,7 @@ const timeFmt = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
+  hourCycle: "h23",
 });
 
 /** "Mar 7, 2026" — for dates without meaningful time (paperless dates). */
