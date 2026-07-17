@@ -7,10 +7,9 @@ import { useMutation } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { ErrorNotice } from "@/components/app/states";
 import { cn } from "@/lib/utils";
-import { api, type Proposal, type Step } from "../../api";
+import { api, type Proposal, type Step, type TranscriptItem } from "../../api";
 import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard } from "../../components/ProposalCard";
@@ -193,47 +192,41 @@ function OcrBody({ step }: { step: Step }) {
   return <p className="text-xs leading-5 text-muted-foreground">{bits.join(" · ")}</p>;
 }
 
-function ProposalList({
-  ids,
-  proposals,
-  archived,
-}: {
-  ids: number[];
-  proposals: Proposal[];
-  archived: boolean;
-}) {
+function stepProposals(step: Step, proposals: Proposal[]): Proposal[] {
+  const ids = (step.result.proposal_ids as number[] | undefined) ?? [];
   const byId = new Map(proposals.map((p) => [p.id, p]));
-  const mine = ids
+  return ids
     .map((id) => byId.get(id))
     .filter((p): p is Proposal => p != null && p.kind !== "replace_content");
-  if (mine.length === 0) return null;
+}
+
+function WorkFold({ items }: { items: TranscriptItem[] }) {
+  const toolCount = items.filter((it) => it.role === "tool").length;
+  const thinkingCount = items.filter((it) => it.role === "thinking").length;
+  const label =
+    [
+      toolCount > 0 && `${toolCount} tool call${toolCount !== 1 ? "s" : ""}`,
+      thinkingCount > 0 &&
+        `${thinkingCount} reasoning step${thinkingCount !== 1 ? "s" : ""}`,
+    ]
+      .filter(Boolean)
+      .join(" · ") || `${items.length} steps`;
   return (
-    <div className="space-y-3">
-      {mine.map((p) =>
-        p.status === "superseded" ? (
-          <details key={p.id} className="rounded-md border border-dashed px-3 py-2">
-            <summary className="cursor-pointer text-xs text-muted-foreground select-none">
-              Proposal #{p.id} rev {p.revision} — superseded by a newer revision
-            </summary>
-            <div className="mt-3 opacity-70">
-              <ProposalCard proposal={p} archived={archived} />
-            </div>
-          </details>
-        ) : (
-          <div key={p.id}>
-            <Separator className="mb-3" />
-            <ProposalCard proposal={p} archived={archived} />
-          </div>
-        ),
-      )}
-    </div>
+    <details className="rounded-md border border-dashed px-3 py-2">
+      <summary className="cursor-pointer text-xs text-muted-foreground select-none">
+        The agent's work — {label}, expand to inspect
+      </summary>
+      <div className="mt-2">
+        <Transcript items={items} />
+      </div>
+    </details>
   );
 }
 
-/** A finished turn folds its WORK (reasoning + tool calls +
- * intermediate prose) into one collapsed section — the same pattern as
- * superseded proposals. The final summary stays fixed and visible,
- * just like the proposals. */
+/** A finished turn preserves the ACTUAL timeline of what the agent
+ * emitted: work (reasoning, exploratory tool calls) folds into dashed
+ * sections, while proposals render IN PLACE of their propose_* calls
+ * and the final summary stays fixed — in chronological order. */
 function TurnBody({
   step,
   proposals,
@@ -243,7 +236,7 @@ function TurnBody({
   proposals: Proposal[];
   archived: boolean;
 }) {
-  const ids = (step.result.proposal_ids as number[] | undefined) ?? [];
+  const mine = stepProposals(step, proposals);
   const items = step.transcript;
 
   // The summary is the LAST agent prose of the turn.
@@ -254,39 +247,75 @@ function TurnBody({
       break;
     }
   }
-  const userMessages = items.filter(
-    (it) => it.role === "user" && it.origin !== "pipeline",
-  );
-  const trace = items.filter(
-    (it, idx) => idx !== summaryIdx && it.role !== "user",
-  );
-  const toolCount = trace.filter((it) => it.role === "tool").length;
-  const thinkingCount = trace.filter((it) => it.role === "thinking").length;
-  const traceLabel = [
-    toolCount > 0 && `${toolCount} tool call${toolCount !== 1 ? "s" : ""}`,
-    thinkingCount > 0 && `${thinkingCount} reasoning step${thinkingCount !== 1 ? "s" : ""}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+
+  // Walk chronologically; successful propose_* calls become their
+  // proposal (matched by the id in the tool result, order fallback).
+  const out: React.ReactNode[] = [];
+  let fold: typeof items = [];
+  let cursor = 0;
+  const consumed = new Set<number>();
+  const flush = () => {
+    if (fold.length > 0) {
+      out.push(<WorkFold key={`fold-${out.length}`} items={fold} />);
+      fold = [];
+    }
+  };
+  const renderProposal = (p: Proposal) =>
+    p.status === "superseded" ? (
+      <details key={`p-${p.id}`} className="rounded-md border border-dashed px-3 py-2">
+        <summary className="cursor-pointer text-xs text-muted-foreground select-none">
+          Proposal #{p.id} rev {p.revision} — superseded by a newer revision
+        </summary>
+        <div className="mt-3 opacity-70">
+          <ProposalCard proposal={p} archived={archived} />
+        </div>
+      </details>
+    ) : (
+      <div key={`p-${p.id}`} className="rounded-lg border bg-muted/20 p-4">
+        <ProposalCard proposal={p} archived={archived} />
+      </div>
+    );
+
+  items.forEach((item, idx) => {
+    if (item.role === "user") {
+      if (item.origin === "pipeline") return;
+      flush();
+      out.push(<UserMessage key={`u-${idx}`} item={item} />);
+      return;
+    }
+    if (idx === summaryIdx) {
+      flush();
+      out.push(<SummaryProse key="summary" item={item} />);
+      return;
+    }
+    if (
+      item.role === "tool" &&
+      item.tool_name?.startsWith("propose_") &&
+      !item.tool_rejected
+    ) {
+      const m = /Proposal #(\d+)/.exec(String(item.tool_result ?? ""));
+      const p =
+        (m && mine.find((x) => x.id === Number(m[1]))) || mine[cursor] || null;
+      if (p && !consumed.has(p.id)) {
+        consumed.add(p.id);
+        cursor = mine.indexOf(p) + 1;
+        flush();
+        out.push(renderProposal(p));
+        return;
+      }
+    }
+    fold.push(item);
+  });
+  flush();
+  // Safety net: proposals not matched to a tool call still render.
+  for (const p of mine) {
+    if (!consumed.has(p.id)) out.push(renderProposal(p));
+  }
 
   return (
     <div className="space-y-3">
-      {userMessages.map((it, i) => (
-        <UserMessage key={i} item={it} />
-      ))}
-      {trace.length > 0 && (
-        <details className="rounded-md border border-dashed px-3 py-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground select-none">
-            The agent's work — {traceLabel || `${trace.length} steps`}, expand to inspect
-          </summary>
-          <div className="mt-2">
-            <Transcript items={trace} />
-          </div>
-        </details>
-      )}
-      {summaryIdx >= 0 && <SummaryProse item={items[summaryIdx]} />}
-      <ProposalList ids={ids} proposals={proposals} archived={archived} />
-      {step.state === "succeeded" && step.kind === "analysis" && ids.length === 0 && (
+      {out}
+      {step.state === "succeeded" && step.kind === "analysis" && mine.length === 0 && (
         <p className="px-2 text-sm text-muted-foreground">No changes proposed.</p>
       )}
     </div>
@@ -304,14 +333,23 @@ function paramsSummary(step: Step): string {
   return parts.length ? parts.join(" · ") : "default parameters";
 }
 
-/** Superseded steps stay fully inspectable — collapsed by default. */
-function SupersededBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
+/** Superseded / outdated steps stay fully inspectable — collapsed by
+ * default. */
+function SupersededBody({
+  step,
+  proposals,
+  label,
+}: {
+  step: Step;
+  proposals: Proposal[];
+  label?: string;
+}) {
   const text = step.result.text as string | undefined;
   const prev = step.result.previous_content as string | undefined;
   return (
     <details>
       <summary className="cursor-pointer text-xs text-muted-foreground/70 select-none">
-        {paramsSummary(step)} — expand to inspect
+        {label ?? paramsSummary(step)} — expand to inspect
       </summary>
       <div className="mt-3 space-y-3 opacity-80">
         {step.kind === "ocr" ? (
@@ -345,13 +383,28 @@ export function StepCard({
   archived: boolean;
 }) {
   const superseded = step.state === "superseded";
-  const suffix = stateSuffix(step);
+  // A finished turn whose proposals were ALL revised away is history —
+  // the whole block folds, exactly like a redo-superseded step.
+  const mine = stepProposals(step, proposals);
+  const outdated =
+    !superseded &&
+    step.state === "succeeded" &&
+    step.kind !== "ocr" &&
+    mine.length > 0 &&
+    mine.every((p) => p.status === "superseded");
+  const collapsed = superseded || outdated;
+  const suffix = outdated ? "superseded by a later revision" : stateSuffix(step);
   return (
-    <Card className={cn("gap-0 overflow-hidden py-0", superseded && "border-dashed")}>
+    <Card className={cn("gap-0 overflow-hidden py-0", collapsed && "border-dashed")}>
       {/* Uniform header strip. */}
       <div className="flex h-10 items-center gap-2.5 border-b bg-muted/30 px-4">
-        <span className={cn("size-2 shrink-0 rounded-full", STATE_DOT[step.state])} />
-        <span className={cn("text-sm font-medium", superseded && "text-muted-foreground/70")}>
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            outdated ? STATE_DOT.superseded : STATE_DOT[step.state],
+          )}
+        />
+        <span className={cn("text-sm font-medium", collapsed && "text-muted-foreground/70")}>
           {KIND_LABEL[step.kind]}
         </span>
         {suffix && (
@@ -360,15 +413,19 @@ export function StepCard({
           </Badge>
         )}
         <span className="flex-1" />
-        {!archived && !superseded && <StepControls step={step} onChanged={onChanged} />}
+        {!archived && !collapsed && <StepControls step={step} onChanged={onChanged} />}
         <span className="font-mono text-[11px] text-muted-foreground/60">
           {formatDateTime(step.started_at ?? step.created_at)}
         </span>
       </div>
 
       <div className="space-y-3 px-4 py-3">
-        {superseded ? (
-          <SupersededBody step={step} proposals={proposals} />
+        {collapsed ? (
+          <SupersededBody
+            step={step}
+            proposals={proposals}
+            label={outdated ? "its proposals were revised in a later turn" : undefined}
+          />
         ) : (
           <>
             {step.kind === "ocr" ? (

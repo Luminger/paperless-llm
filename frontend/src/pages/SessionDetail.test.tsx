@@ -546,3 +546,81 @@ describe("Finished turns fold their work", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("Chronological turn rendering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.listTags.mockResolvedValue([]);
+    mocked.listCorrespondents.mockResolvedValue([]);
+    mocked.listDocumentTypes.mockResolvedValue([]);
+    mocked.listStoragePaths.mockResolvedValue([]);
+    mocked.getDocument.mockResolvedValue({
+      id: 7, title: "scan_0001", correspondent: null, document_type: null,
+      storage_path: null, tags: [], created: "2024-04-17", added: null,
+      archive_serial_number: null,
+    });
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+  });
+
+  it("the proposal renders in place of its propose_* tool call", async () => {
+    const step = mkStep({
+      kind: "analysis",
+      state: "succeeded",
+      result: { proposal_ids: [5] },
+      transcript: [
+        mkItem({ role: "thinking", content: "check the doc" }),
+        mkItem({ role: "tool", tool_name: "get_document", tool_args: { document_id: 7 } }),
+        mkItem({
+          role: "tool",
+          tool_name: "propose_update_document_metadata",
+          tool_args: { document_id: 7, title: "Better" },
+          tool_result: "Proposal #5 (update_document_metadata) recorded for human review.",
+        }),
+        mkItem({ role: "agent", content: "Proposed a better title." }),
+      ],
+    });
+    mocked.getSession.mockResolvedValue(
+      makeDetail({
+        steps: [step],
+        proposals: [makeProposal({ id: 5 })],
+      }),
+    );
+    renderDetail();
+
+    // The propose call is NOT a trace row — the proposal stands in
+    // its place; the fold only counts the exploratory work.
+    expect(await screen.findByText(/Proposal #5/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/The agent's work — 1 tool call · 1 reasoning step/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Proposed a better title.")).toBeInTheDocument();
+  });
+
+  it("a turn whose proposals were all revised away folds entirely", async () => {
+    const analysis = mkStep({
+      kind: "analysis",
+      state: "succeeded",
+      result: { proposal_ids: [1] },
+      transcript: [mkItem({ role: "agent", content: "Old summary." })],
+    });
+    mocked.getSession.mockResolvedValue(
+      makeDetail({
+        steps: [analysis],
+        proposals: [makeProposal({ id: 1, status: "superseded" })],
+      }),
+    );
+    renderDetail();
+
+    expect(
+      await screen.findByText("superseded by a later revision"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/its proposals were revised in a later turn — expand to inspect/),
+    ).toBeInTheDocument();
+    // The old summary is folded away until expanded.
+    await userEvent.click(
+      screen.getByText(/its proposals were revised in a later turn/),
+    );
+    expect(screen.getByText("Old summary.")).toBeInTheDocument();
+  });
+});
