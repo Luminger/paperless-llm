@@ -39,8 +39,8 @@ network.
 ```
 paperless-ngx  <── REST ──  backend (FastAPI)  ── REST/SSE ──>  frontend (React SPA)
                              │        │
-                             │        ├── celery workers (batch + interactive lanes)
-                             │        └── celery beat (schedules, RAG index sync)
+                             │        └── in-process async workers over a
+                             │            persistent DB queue (two lanes)
                              │
               OpenAI-compatible endpoints (all local):
                 ├── llm.agent       e.g. vLLM / Qwen3.6-27B on ares:8001
@@ -50,7 +50,7 @@ paperless-ngx  <── REST ──  backend (FastAPI)  ── REST/SSE ──>  
 ```
 
 App state lives in **SQLite or PostgreSQL** (both supported via SQLAlchemy;
-vectors via `sqlite-vec` or `pgvector` respectively). Redis backs Celery.
+vectors via `sqlite-vec` or `pgvector` respectively).
 
 ## Model profiles (portability layer)
 
@@ -139,7 +139,7 @@ Enabled when `llm.embeddings` is configured.
   embedded, stored with doc metadata for filtered kNN.
 - **Index 2 — entities**: one embedding per tag/correspondent/doctype
   (name + description + matching rule).
-- **Sync**: celery-beat incremental indexer polling paperless `modified`
+- **Sync**: periodic incremental indexer polling paperless `modified`
   timestamps; full reindex job available from the UI.
 - **Reranker**: optional second stage over kNN candidates
   (Cohere-compatible `/v1/rerank`); skipped when unconfigured.
@@ -215,15 +215,25 @@ Proposal kinds (v1): `update_document_metadata`, `replace_content`,
 
 ## Queueing & triggers
 
-**Celery + Redis**, two queues:
+**Persistent DB-backed queue (`queue_items`) with in-process async
+workers** — deliberately NOT celery/redis: this is a single-node tool
+whose true concurrency cap is the LLM endpoint itself, the SSE event
+bus is in-process, and a DB queue gives strictly better restart
+behavior (queued work survives; interrupted work is retried). The
+stage functions stay queue-agnostic, so a distributed queue remains a
+contained swap if multi-node ever becomes real. Two lanes:
 
-- `interactive` — chat turns, single manual analyses; high priority,
-  dedicated worker slot so bulk jobs never starve the UI.
-- `batch` — backfills, webhook-ingested docs, RAG indexing, schedules
-  (celery beat).
+- `interactive` — chat turns, single manual analyses; own worker slots
+  so bulk jobs never starve the UI.
+- `batch` — campaigns, webhook-ingested docs, (M5) RAG indexing.
 
-Worker concurrency and the per-endpoint `max_concurrent` semaphore are
-settings; defaults sized for the reference setup (1 batch + 1 interactive).
+**Failure policy**: a failed stage (crash or stage-recorded error) is
+retried `queue.retry_attempts` times with `queue.retry_delay_seconds`
+between attempts; every attempt is appended to the item's attempt log
+(never shadowed) and shown in the timeline. "Retry now" in the UI
+skips the backoff or revives exhausted stages — manual retries are
+never limited. Worker concurrency per lane and the per-endpoint
+`max_concurrent` semaphore are settings.
 
 **Triggers**:
 1. Manual — per entity from the UI.
@@ -298,7 +308,7 @@ per-user ownership of sessions/proposals (deferred until needed).
 
 - Dev: `uv run` backend + `npm run dev` frontend against local services.
 - Prod: OCI containers — `Containerfile`s, `compose.yaml` under `deploy/`
-  (app, worker, beat, redis; optional postgres). Podman-first; no
+  (single app container; optional postgres). Podman-first; no
   docker-specific features.
 
 ## Repository layout
@@ -320,10 +330,9 @@ backend/
     agents/                 # document, tag, correspondent, doctype, explorer, shared tools
     proposals/              # schemas, apply engine, journal
     api/                    # FastAPI routers
-    worker/                 # celery app, tasks
 frontend/                   # Vite + React + TS
 deploy/                     # Containerfile(s), compose.yaml
-  test/compose.yaml         # ad-hoc paperless-ngx + redis for tests & manual QA
+  test/compose.yaml         # ad-hoc paperless-ngx for tests & manual QA
 DESIGN.md
 ```
 

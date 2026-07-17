@@ -6,9 +6,8 @@ export interface LiveToolCall {
   args: string;
 }
 
-/** What's happening in the current agent run, assembled from SSE events
- * before anything is persisted: tool calls so far, streamed token count,
- * and a tail preview of the visible output text. */
+/** Live activity of one running step, assembled from step_progress
+ * events before anything is persisted. */
 export interface LiveActivity {
   tokens: number;
   textTail: string;
@@ -17,47 +16,57 @@ export interface LiveActivity {
 
 const EMPTY: LiveActivity = { tokens: 0, textTail: "", tools: [] };
 
-/** Subscribe to a session's SSE stream. Most events are invalidation
- * signals (refetch over REST); high-frequency progress events build the
- * live-activity state instead of triggering refetch storms. EventSource
- * auto-reconnects; the hello event on reconnect refetches, so missed
+/** SSE subscription: step_changed events invalidate (REST refetch),
+ * step_progress events build per-step live state. EventSource
+ * auto-reconnects; the hello event triggers a refetch, so missed
  * events self-heal. */
 export function useSessionEvents(sessionId: number) {
   const qc = useQueryClient();
-  const [live, setLive] = useState<LiveActivity | null>(null);
+  const [live, setLive] = useState<Record<number, LiveActivity>>({});
   useEffect(() => {
     if (!Number.isFinite(sessionId)) return;
     const es = new EventSource(`/api/sessions/${sessionId}/events`);
     es.onmessage = (raw) => {
-      let ev: { type?: string; tokens?: number; text_tail?: string; tool?: string; args?: string } =
-        {};
+      let ev: {
+        type?: string;
+        step_id?: number;
+        state?: string;
+        tokens?: number;
+        text_tail?: string;
+        tool?: string;
+        args?: string;
+      } = {};
       try {
         ev = JSON.parse(raw.data);
       } catch {
         return;
       }
-      switch (ev.type) {
-        case "generating":
-          setLive((prev) => ({
-            ...(prev ?? EMPTY),
-            tokens: ev.tokens ?? 0,
-            textTail: ev.text_tail ?? "",
-          }));
-          return; // progress only — no refetch
-        case "tool_called":
-          setLive((prev) => ({
-            ...(prev ?? EMPTY),
-            textTail: "", // a new model turn begins after a tool call
-            tools: [...(prev?.tools ?? []), { tool: ev.tool ?? "?", args: ev.args ?? "" }],
-          }));
-          return;
-        case "run_started":
-          setLive(EMPTY);
-          break;
-        case "run_finished":
-        case "failed":
-          setLive(null);
-          break;
+      if (ev.type === "step_progress" && ev.step_id != null) {
+        const id = ev.step_id;
+        setLive((prev) => {
+          const cur = prev[id] ?? EMPTY;
+          if (ev.tool) {
+            return {
+              ...prev,
+              [id]: { ...cur, textTail: "", tools: [...cur.tools, { tool: ev.tool, args: ev.args ?? "" }] },
+            };
+          }
+          return {
+            ...prev,
+            [id]: { ...cur, tokens: ev.tokens ?? cur.tokens, textTail: ev.text_tail ?? cur.textTail },
+          };
+        });
+        return; // progress only — no refetch
+      }
+      if (ev.type === "step_changed" && ev.step_id != null) {
+        const id = ev.step_id;
+        if (ev.state !== "running") {
+          setLive((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }
       }
       qc.invalidateQueries({ queryKey: ["session", sessionId] });
       qc.invalidateQueries({ queryKey: ["session-ocr", sessionId] });

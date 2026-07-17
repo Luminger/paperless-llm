@@ -119,27 +119,50 @@ export interface TranscriptItem {
   tool_args: Record<string, unknown> | null;
   tool_result: string | null;
   timing: CallTiming | null;
+  ts: string | null;
 }
 
 export interface AttemptRecord {
-  attempt: number;
-  started_at: string | null;
-  finished_at: string | null;
-  error: string | null;
+  attempt?: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  manual_retry_at?: string;
 }
 
-export interface RetryInfo {
-  state: string;
-  attempts: number;
+export type StepKind = "ocr" | "analysis" | "chat";
+export type StepState =
+  | "pending"
+  | "running"
+  | "awaiting_user"
+  | "succeeded"
+  | "failed"
+  | "superseded"
+  | "cancelled";
+
+export interface Step {
+  id: number;
+  session_id: number;
+  kind: StepKind;
+  state: StepState;
+  lane: string;
+  input: Record<string, unknown>;
+  result: Record<string, unknown>;
+  error: string | null;
+  attempts: AttemptRecord[];
+  attempt_count: number;
   max_attempts: number;
-  next_attempt_at: string | null;
-  history: AttemptRecord[];
+  scheduled_at: string | null;
+  supersedes_id: number | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  transcript: TranscriptItem[];
 }
 
 export interface SessionDetail extends Session {
-  transcript: TranscriptItem[];
+  steps: Step[];
   proposals: Proposal[];
-  retry: RetryInfo | null;
 }
 
 export interface SessionEvent {
@@ -187,7 +210,7 @@ export const api = {
   listSessions: () => request<Session[]>("/api/sessions"),
   getSession: (id: number) => request<SessionDetail>(`/api/sessions/${id}`),
   sendMessage: (id: number, content: string) =>
-    request<Session>(`/api/sessions/${id}/messages`, {
+    request<Step>(`/api/sessions/${id}/messages`, {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
@@ -213,18 +236,20 @@ export const api = {
   getStats: () => request<Stats>("/api/stats"),
   getOcrReview: (sessionId: number) =>
     request<OcrReview>(`/api/sessions/${sessionId}/ocr`),
-  resolveOcrGate: (sessionId: number, content: string | null) =>
-    request<Session>(`/api/sessions/${sessionId}/ocr/gate`, {
+  resolveStep: (sessionId: number, stepId: number, content: string | null) =>
+    request<Step>(`/api/sessions/${sessionId}/steps/${stepId}/resolve`, {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
-  rerunOcr: (sessionId: number, instructions: string | null) =>
-    request<Session>(`/api/sessions/${sessionId}/ocr/rerun`, {
+  retryStep: (sessionId: number, stepId: number) =>
+    request<Step>(`/api/sessions/${sessionId}/steps/${stepId}/retry`, {
       method: "POST",
-      body: JSON.stringify({ instructions }),
     }),
-  retrySession: (sessionId: number) =>
-    request<Session>(`/api/sessions/${sessionId}/retry`, { method: "POST" }),
+  redoStep: (sessionId: number, stepId: number, input?: Record<string, unknown>) =>
+    request<Step>(`/api/sessions/${sessionId}/steps/${stepId}/redo`, {
+      method: "POST",
+      body: JSON.stringify({ input: input ?? null }),
+    }),
 
   listDocuments: (query?: string, page = 1) =>
     request<{ count: number; results: PaperlessDocument[] }>(
