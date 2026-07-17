@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { ErrorNotice } from "@/components/app/states";
 import { cn } from "@/lib/utils";
 import { api, type Proposal, type Step } from "../../api";
-import { formatClock } from "../../lib/format";
+import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard } from "../../components/ProposalCard";
 import { DiffView } from "../../components/DiffView";
@@ -362,7 +362,7 @@ export function StepCard({
         <span className="flex-1" />
         {!archived && !superseded && <StepControls step={step} onChanged={onChanged} />}
         <span className="font-mono text-[11px] text-muted-foreground/60">
-          {formatClock(step.started_at ?? step.created_at)}
+          {formatDateTime(step.started_at ?? step.created_at)}
         </span>
       </div>
 

@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
 import { keys } from "../lib/keys";
-import { formatDateTime } from "../lib/format";
 import { useSessionEvents } from "../hooks/useSessionEvents";
 import { entityHref } from "./EntityPage";
 import { StepCard } from "../features/session/StepCard";
@@ -75,14 +74,9 @@ export default function SessionDetail() {
           </Link>
         </nav>
       )}
-      <h1 className="mb-1 text-xl font-semibold tracking-tight">
+      <h1 className="mb-4 text-xl font-semibold tracking-tight">
         {s.entity_type === "document" ? `Document #${s.entity_id} — analysis` : s.title}
       </h1>
-      <p className="mb-4 text-sm text-muted-foreground/70">
-        Session #{s.id} · started {formatDateTime(s.created_at)}
-        {s.params.redo_ocr === true && " · with OCR review"}
-        {typeof s.params.instructions === "string" && ` · “${s.params.instructions}”`}
-      </p>
       {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
 
       <div className="space-y-3">

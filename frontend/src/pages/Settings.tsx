@@ -1,10 +1,22 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/app/NativeSelect";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
 import { keys } from "../lib/keys";
+import {
+  DATE_PREFS,
+  TIME_PREFS,
+  formatDateTime,
+  getDateTimePrefs,
+  setDateTimePrefs,
+  type DatePref,
+  type TimePref,
+} from "../lib/format";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -26,6 +38,61 @@ function OnOff({ on, labels = ["enabled", "disabled"] }: { on: boolean; labels?:
   );
 }
 
+/** Client-side preference (stored locally, like the theme): how dates
+ * and times render everywhere in the app. */
+function DateTimePrefs() {
+  const [prefs, setPrefs] = useState(getDateTimePrefs);
+  const update = (date: DatePref, time: TimePref) => {
+    setDateTimePrefs(date, time);
+    setPrefs({ date, time });
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Date &amp; time</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-[11rem_1fr] items-center gap-3">
+          <Label htmlFor="pref-date" className="font-normal text-muted-foreground">
+            Date format
+          </Label>
+          <NativeSelect
+            id="pref-date"
+            aria-label="date format"
+            value={prefs.date}
+            onChange={(e) => update(e.target.value as DatePref, prefs.time)}
+          >
+            {DATE_PREFS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </NativeSelect>
+          <Label htmlFor="pref-time" className="font-normal text-muted-foreground">
+            Time format
+          </Label>
+          <NativeSelect
+            id="pref-time"
+            aria-label="time format"
+            value={prefs.time}
+            onChange={(e) => update(prefs.date, e.target.value as TimePref)}
+          >
+            {TIME_PREFS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <p className="text-xs text-muted-foreground/70">
+          Preview: {formatDateTime(new Date().toISOString())} — stored in this
+          browser, applies everywhere in the app.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data: s, error, isLoading } = useQuery({
     queryKey: keys.settings(),
@@ -39,11 +106,13 @@ export default function Settings() {
     <div>
       <PageHeader title="Settings" />
       <p className="-mt-2 mb-4 text-sm text-muted-foreground">
-        The effective configuration, read-only — settings live in the config file
-        and environment. Secrets stay on the server.
+        Display preferences are yours to change; the server configuration below
+        is read-only — it lives in the config file and environment. Secrets stay
+        on the server.
       </p>
 
       <div className="grid gap-4 md:grid-cols-2">
+        <DateTimePrefs />
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Agent model</CardTitle>
