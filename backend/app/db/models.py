@@ -66,6 +66,10 @@ class ProposalStatus(enum.StrEnum):
     rejected = "rejected"
     applied = "applied"
     superseded = "superseded"  # replaced by a newer revision
+    # Apply-time verdict: paperless already matches the proposal (state
+    # moved between emit and apply — concurrent session, retry, manual
+    # edit). Nothing was written, nothing journaled.
+    no_change = "no_change"
 
 
 class JobStatus(enum.StrEnum):

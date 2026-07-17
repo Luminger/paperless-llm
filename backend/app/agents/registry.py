@@ -28,7 +28,15 @@ def _instrumented(fn: Callable) -> Callable:
 
     @functools.wraps(fn)
     async def wrapper(ctx: RunContext[AgentDeps], *args, **kwargs):
-        bus.publish(ctx.deps.session_id, "tool_called", tool=fn.__name__)
+        import json
+
+        try:
+            args_preview = json.dumps(kwargs, default=str)[:150]
+        except TypeError:
+            args_preview = ""
+        bus.publish(
+            ctx.deps.session_id, "tool_called", tool=fn.__name__, args=args_preview
+        )
         return await fn(ctx, *args, **kwargs)
 
     return wrapper

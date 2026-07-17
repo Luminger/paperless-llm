@@ -43,22 +43,32 @@ def _dump_history(messages: list[ModelMessage]) -> list:
 
 def _progress_handler(session_id: int):
     """Event-stream consumer for streaming runs: publishes a throttled
-    'generating' SSE signal (with rough output size) so the UI can show
-    live progress instead of an opaque spinner. Passing a handler is
+    'generating' SSE signal so the UI can show live progress instead of
+    an opaque spinner. Streamed chunks arrive roughly one token each,
+    so the delta-event count is an honest token proxy; visible (non-
+    thinking) text is forwarded as a tail preview. Passing a handler is
     also what switches pydantic-ai to streamed model requests — only
     used when the profile declares supports_streaming."""
+    from pydantic_ai.messages import TextPartDelta
 
     async def handler(ctx, events) -> None:
-        chars = 0
+        tokens = 0
+        text = ""
         last_publish = 0.0
         async for ev in events:
             delta = getattr(ev, "delta", None)
-            content = getattr(delta, "content_delta", None)
-            if isinstance(content, str):
-                chars += len(content)
+            if delta is not None:
+                tokens += 1
+                if isinstance(delta, TextPartDelta):
+                    text += delta.content_delta
             now = time.monotonic()
-            if chars and now - last_publish >= 1.0:
-                bus.publish(session_id, "generating", chars=chars)
+            if tokens and now - last_publish >= 1.0:
+                bus.publish(
+                    session_id,
+                    "generating",
+                    tokens=tokens,
+                    text_tail=text[-400:],
+                )
                 last_publish = now
 
     return handler

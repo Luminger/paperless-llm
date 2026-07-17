@@ -317,7 +317,7 @@ describe("SessionDetail — retries & metrics", () => {
     mocked.retrySession.mockResolvedValue(makeDetail() as never);
     renderDetail();
 
-    expect(await screen.findByText(/Automatic retry \(attempt 2 of 3\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Automatic retry 1 of 2 at/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry now" }));
     await waitFor(() => expect(mocked.retrySession).toHaveBeenCalledWith(9));
   });
@@ -332,7 +332,7 @@ describe("SessionDetail — retries & metrics", () => {
       }),
     );
     renderDetail();
-    expect(await screen.findByText(/3 attempts exhausted/)).toBeInTheDocument();
+    expect(await screen.findByText(/all 2 automatic retries used/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry now" })).toBeInTheDocument();
   });
 

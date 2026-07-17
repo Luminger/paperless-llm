@@ -6,7 +6,8 @@ export type ProposalStatus =
   | "approved"
   | "rejected"
   | "applied"
-  | "superseded";
+  | "superseded"
+  | "no_change";
 
 export interface Proposal {
   id: number;

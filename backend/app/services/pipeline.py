@@ -196,15 +196,18 @@ async def _maybe_auto_apply(
             )
         )
     ).all()
-    applied = 0
+    applied = unchanged = 0
     for p in proposals:
         try:
-            await apply_proposal(paperless, db, p)
-            applied += 1
+            change = await apply_proposal(paperless, db, p)
+            if change is None:
+                unchanged += 1  # paperless already matched (no_change)
+            else:
+                applied += 1
         except Exception:  # noqa: BLE001 — leave for human review
             log.exception("auto-apply failed for proposal %s", p.id)
-    if applied:
-        bus.publish(session.id, "proposals_applied", count=applied)
+    if applied or unchanged:
+        bus.publish(session.id, "proposals_applied", count=applied, unchanged=unchanged)
 
 
 async def apply_ocr_gate(

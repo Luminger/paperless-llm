@@ -187,3 +187,67 @@ async def test_apply_rejected_status(db, paperless_client):
     )
     with pytest.raises(ApplyError, match="cannot apply"):
         await apply_proposal(paperless_client, db, p)
+
+
+@respx.mock
+async def test_apply_detects_state_already_matching(db, paperless_client):
+    """State moved between emit and apply (concurrent session, retry):
+    the proposal becomes no_change — nothing written, nothing journaled."""
+    doc = DOC | {"title": "Agent title", "tags": [1, 5]}
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=doc))
+    patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/")
+
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "reason": "r",
+            "title": "Agent title",  # already the current title
+        },
+    )
+    change = await apply_proposal(paperless_client, db, p)
+
+    assert change is None
+    assert p.status == ProposalStatus.no_change
+    assert not patch_route.called
+    from sqlalchemy import select
+
+    from app.db.models import AppliedChange
+
+    assert (await db.scalar(select(AppliedChange))) is None
+
+
+@respx.mock
+async def test_apply_create_entity_reuses_existing_name(db, paperless_client):
+    """An identically-named entity appeared since the proposal: reuse it
+    for assignment instead of erroring on a duplicate create."""
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/").mock(
+        return_value=Response(200, json={"count": 1, "next": None, "results": [
+            {"id": 9, "name": "Kraxi", "document_count": 0, "match": "",
+             "matching_algorithm": 0}
+        ]})
+    )
+    create_route = respx.post(f"{PAPERLESS_URL}/api/correspondents/")
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)  # correspondent: None -> assign needed
+    )
+    bulk = respx.post(f"{PAPERLESS_URL}/api/documents/bulk_edit/").mock(
+        return_value=Response(200, json={"result": "OK"})
+    )
+
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "create_entity",
+            "entity_type": "correspondent",
+            "name": "Kraxi",
+            "reason": "r",
+            "assign_to_documents": [7],
+        },
+    )
+    change = await apply_proposal(paperless_client, db, p)
+
+    assert change is not None and p.status == ProposalStatus.applied
+    assert not create_route.called  # reused id=9
+    assert bulk.called

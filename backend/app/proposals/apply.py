@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AppliedChange, Proposal, ProposalStatus, utcnow
-from app.paperless import PaperlessClient
+from app.paperless import PaperlessClient, PaperlessError
 from app.proposals.schemas import (
     AnyProposal,
     CreateEntity,
@@ -56,12 +56,20 @@ _BULK_SET_METHOD = {
 
 async def apply_proposal(
     paperless: PaperlessClient, db: AsyncSession, proposal: Proposal
-) -> AppliedChange:
+) -> AppliedChange | None:
+    """Apply a proposal. Returns the journal entry — or ``None`` when
+    paperless already matches the proposed state: the proposal is then
+    marked ``no_change`` instead of pretending a write happened."""
     if proposal.status not in (ProposalStatus.pending, ProposalStatus.approved):
         raise ApplyError(f"proposal {proposal.id} is {proposal.status}, cannot apply")
 
     payload = proposal.user_payload or proposal.agent_payload
     typed = validate_payload(payload)
+
+    if await _is_noop(paperless, typed):
+        proposal.status = ProposalStatus.no_change
+        await db.commit()
+        return None
 
     before, after = await _apply(paperless, typed)
 
@@ -72,6 +80,79 @@ async def apply_proposal(
     db.add(change)
     await db.commit()
     return change
+
+
+async def _find_existing_entity(paperless: PaperlessClient, entity_type: str, name: str):
+    get_list = {
+        "tag": paperless.list_tags,
+        "correspondent": paperless.list_correspondents,
+        "document_type": paperless.list_document_types,
+        "storage_path": paperless.list_storage_paths,
+    }[entity_type]
+    wanted = name.strip().lower()
+    for e in await get_list():
+        if e.name.strip().lower() == wanted:
+            return e
+    return None
+
+
+async def _is_noop(paperless: PaperlessClient, p: AnyProposal) -> bool:  # noqa: C901
+    """True when paperless already matches the proposed state (which can
+    happen between emit and apply: concurrent sessions, retries, manual
+    edits in paperless)."""
+    match p:
+        case UpdateDocumentMetadata():
+            doc = await paperless.get_document(p.document_id)
+            provided = p.model_dump(exclude_unset=True)
+            for f in ("title", "correspondent", "document_type", "storage_path",
+                      "archive_serial_number"):
+                if f in provided and provided[f] != getattr(doc, f):
+                    return False
+            if "created" in provided and provided["created"]:
+                if str(provided["created"])[:10] != (doc.created or "")[:10]:
+                    return False
+            if any(t not in doc.tags for t in p.add_tags):
+                return False
+            if any(t in doc.tags for t in p.remove_tags):
+                return False
+            if p.custom_fields:
+                existing = {cf.field: cf.value for cf in doc.custom_fields}
+                if any(existing.get(k) != v for k, v in p.custom_fields.items()):
+                    return False
+            return True
+        case ReplaceContent():
+            doc = await paperless.get_document(p.document_id)
+            return doc.content.strip() == p.content.strip()
+        case CreateEntity():
+            existing = await _find_existing_entity(paperless, p.entity_type, p.name)
+            if existing is None:
+                return False
+            for doc_id in p.assign_to_documents:
+                doc = await paperless.get_document(doc_id)
+                if p.entity_type == "tag":
+                    if existing.id not in doc.tags:
+                        return False
+                elif getattr(doc, p.entity_type) != existing.id:
+                    return False
+            return True
+        case UpdateEntity():
+            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
+            current = await getattr(paperless, get)(p.entity_id)
+            fields = _entity_fields(p)
+            return bool(fields) and all(
+                getattr(current, k, None) == v for k, v in fields.items()
+            )
+        case MergeEntities() | DeleteEntity():
+            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
+            entity_id = p.source_id if isinstance(p, MergeEntities) else p.entity_id
+            try:
+                await getattr(paperless, get)(entity_id)
+            except PaperlessError as e:
+                if e.status_code == 404:
+                    return True  # already merged away / deleted
+                raise
+            return False
+    return False
 
 
 async def _apply(
@@ -149,7 +230,11 @@ async def _apply_create_entity(
         # Needs create_storage_path client support + a `path`; deferred.
         raise ApplyError("storage_path creation not supported yet")
     _, create, _, _, _ = _ENTITY_OPS[p.entity_type]
-    created = await getattr(paperless, create)(**_entity_fields(p))
+    # An identically-named entity may have appeared since the proposal
+    # (concurrent session): reuse it instead of erroring on a duplicate.
+    created = await _find_existing_entity(paperless, p.entity_type, p.name)
+    if created is None:
+        created = await getattr(paperless, create)(**_entity_fields(p))
     after: dict[str, Any] = {"entity": created.model_dump(), "assigned_documents": []}
     if p.assign_to_documents:
         if p.entity_type == "tag":

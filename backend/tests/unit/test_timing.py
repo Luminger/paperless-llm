@@ -35,7 +35,7 @@ async def test_streaming_request_measures_ttft():
     assert 0 <= timing["ttft_s"] <= timing["duration_s"] + 0.001
 
 
-def test_transcript_attaches_timing_to_first_item_of_response():
+def test_transcript_attaches_timing_to_every_item_of_its_response():
     timing = {"duration_s": 2.5, "tps": 40.0, "ttft_s": 0.3}
     history = [
         {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "go"}]},
@@ -55,7 +55,8 @@ def test_transcript_attaches_timing_to_first_item_of_response():
     ]
     t = derive_transcript(history)
     tools = [i for i in t if i.role == "tool"]
-    assert tools[0].timing == timing  # first item of the response
-    assert tools[1].timing is None  # same LLM call -> no duplicate
+    # Both tool widgets came from the same LLM call — both carry it.
+    assert tools[0].timing == timing
+    assert tools[1].timing == timing
     agent_item = next(i for i in t if i.role == "agent")
     assert agent_item.timing["duration_s"] == 1.0

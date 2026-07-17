@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CallTiming, type Proposal, type RetryInfo, type TranscriptItem } from "../api";
 import { DiffView } from "../components/DiffView";
 import { ProposalCard } from "../components/ProposalCard";
-import { useSessionEvents } from "../hooks/useSessionEvents";
+import { useSessionEvents, type LiveActivity } from "../hooks/useSessionEvents";
 
 function Step({
   label,
@@ -61,19 +61,23 @@ function RetryBar({
     mutationFn: () => api.retrySession(sessionId),
     onSuccess: onRetried,
   });
+  // The first attempt is not a retry: only auto-RE-tries count here.
+  const maxRetries = retry ? Math.max(0, retry.max_attempts - 1) : 0;
+  const retriesDone = retry ? Math.max(0, retry.attempts - 1) : 0;
   const scheduled = retry?.state === "pending" && retry.next_attempt_at;
   return (
     <div className="flex items-center gap-3 text-xs">
       {scheduled ? (
         <span className="text-zinc-500">
-          Automatic retry (attempt {retry!.attempts + 1} of {retry!.max_attempts}) at{" "}
+          Automatic retry {retriesDone + 1} of {maxRetries} at{" "}
           {new Date(retry!.next_attempt_at!).toLocaleTimeString()}
         </span>
-      ) : retry && retry.state === "failed" ? (
+      ) : retry && retry.state === "failed" && maxRetries > 0 ? (
         <span className="text-zinc-500">
-          {retry.attempts} attempt{retry.attempts !== 1 ? "s" : ""} exhausted
+          all {maxRetries} automatic retr{maxRetries !== 1 ? "ies" : "y"} used
         </span>
       ) : null}
+      {/* Manual retries are never limited. */}
       <button
         className="rounded bg-zinc-700 px-2 py-1 text-white hover:bg-zinc-800 disabled:opacity-50"
         onClick={() => retryNow.mutate()}
@@ -82,6 +86,33 @@ function RetryBar({
         Retry now
       </button>
       {retryNow.error && <span className="text-red-600">{String(retryNow.error)}</span>}
+    </div>
+  );
+}
+
+/** Tool calls + streamed output of the CURRENT run, before anything is
+ * persisted — so an in-flight analysis already shows what's happening. */
+function LiveTrace({ live }: { live: LiveActivity | null }) {
+  if (!live || (live.tools.length === 0 && live.tokens === 0)) return null;
+  return (
+    <div className="space-y-1 rounded border border-blue-100 bg-blue-50/50 p-2 text-xs">
+      {live.tools.map((t, i) => (
+        <p key={i} className="font-mono text-zinc-600">
+          → {t.tool}
+          {t.args && t.args !== "{}" && <span className="text-zinc-400"> {t.args}</span>}
+        </p>
+      ))}
+      {live.tokens > 0 && (
+        <p className="text-zinc-500">
+          <span className="mr-1 inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+          streaming… {live.tokens} tokens
+        </p>
+      )}
+      {live.textTail && (
+        <p className="font-mono text-[11px] whitespace-pre-wrap text-zinc-400">
+          …{live.textTail.slice(-200)}
+        </p>
+      )}
     </div>
   );
 }
@@ -213,7 +244,7 @@ function Conversation({
   items,
   busy,
   error,
-  generating,
+  live,
   retry,
   onRetried,
 }: {
@@ -221,7 +252,7 @@ function Conversation({
   items: TranscriptItem[];
   busy: boolean;
   error: string | null;
-  generating: { chars: number } | null;
+  live: LiveActivity | null;
   retry: RetryInfo | null;
   onRetried: () => void;
 }) {
@@ -249,15 +280,13 @@ function Conversation({
         Array.isArray(b) ? <ToolTrace key={i} items={b} /> : <ChatItem key={i} item={b} />,
       )}
       {busy && (
-        <p className="text-sm text-zinc-500">
-          <span className="mr-1 inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-          Agent is working…
-          {generating && (
-            <span className="ml-1 text-xs text-zinc-400">
-              (~{(generating.chars / 1000).toFixed(1)}k chars generated)
-            </span>
-          )}
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-zinc-500">
+            <span className="mr-1 inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+            Agent is working…
+          </p>
+          <LiveTrace live={live} />
+        </div>
       )}
       {error && (
         <div className="space-y-2">
@@ -328,7 +357,7 @@ export default function SessionDetail() {
   const { id } = useParams();
   const sessionId = Number(id);
   const qc = useQueryClient();
-  const { generating } = useSessionEvents(sessionId);
+  const { live } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => api.getSession(sessionId),
@@ -432,11 +461,7 @@ export default function SessionDetail() {
                 />
               </div>
             )}
-            {ocrState === "active" && generating && (
-              <p className="text-xs text-zinc-400">
-                generating… ~{(generating.chars / 1000).toFixed(1)}k chars
-              </p>
-            )}
+            {ocrState === "active" && <LiveTrace live={live} />}
             {ocrState === "active" && typeof s.params.ocr_instructions === "string" && (
               <p className="text-xs text-zinc-500">
                 Re-running with: “{s.params.ocr_instructions}”
@@ -473,11 +498,7 @@ export default function SessionDetail() {
               />
             </div>
           )}
-          {analysisState === "active" && generating && (
-            <p className="text-xs text-zinc-400">
-              generating… ~{(generating.chars / 1000).toFixed(1)}k chars
-            </p>
-          )}
+          {analysisState === "active" && <LiveTrace live={live} />}
           {phase === "done" && (
             <div className="space-y-2">
               <ToolTrace items={analysisTools} />
@@ -514,7 +535,7 @@ export default function SessionDetail() {
               items={chatItems}
               busy={running}
               error={failed ? s.error : null}
-              generating={generating}
+              live={live}
               retry={s.retry}
               onRetried={() => qc.invalidateQueries({ queryKey: ["session", sessionId] })}
             />
