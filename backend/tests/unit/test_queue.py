@@ -255,3 +255,29 @@ async def test_recover_retries_running_and_fails_orphans(file_db):
         assert states == ["failed", "pending"]
         assert (await db.get(Session, s1_id)).status == SessionStatus.failed
         assert (await db.get(Session, s2_id)).status == SessionStatus.failed
+
+
+async def test_attempt_log_records_every_attempt(file_db, monkeypatch):
+    """Retries never shadow earlier attempts: each one is appended to
+    the item's log with its error."""
+
+    async def bad_stage(**kwargs):
+        raise RuntimeError("kaputt")
+
+    monkeypatch.setitem(queue_mod.STAGES, "start", bad_stage)
+    async with session_scope() as db:
+        item = await enqueue(db, "start", {}, lane=QueueLane.batch)
+        item_id = item.id
+
+    workers = QueueWorkers()
+    await workers.start()
+    try:
+        await _wait_for(_is_final(item_id))
+    finally:
+        await workers.stop()
+
+    async with session_scope() as db:
+        item = await db.get(QueueItem, item_id)
+        assert [a["attempt"] for a in item.attempt_log] == [1, 2, 3]
+        assert all("kaputt" in a["error"] for a in item.attempt_log)
+        assert all(a["started_at"] and a["finished_at"] for a in item.attempt_log)

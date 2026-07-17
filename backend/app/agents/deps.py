@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,12 @@ class AgentDeps:
     emitted: list[Proposal] = field(default_factory=list)
     # Per-run cache of taxonomy listings (validation lookups).
     taxonomy_cache: dict = field(default_factory=dict)
+    # Serializes tool execution within a run: pydantic-ai executes
+    # parallel tool calls concurrently, but they share this one DB
+    # session — concurrent flush/commit corrupts it
+    # (IllegalStateChangeError, seen live with find_similar_entities
+    # committing embedding cache rows next to another tool).
+    tool_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def taxonomy(self, entity_type: str) -> list:
         if entity_type not in self.taxonomy_cache:

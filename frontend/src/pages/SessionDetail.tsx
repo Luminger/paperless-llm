@@ -65,8 +65,26 @@ function RetryBar({
   const maxRetries = retry ? Math.max(0, retry.max_attempts - 1) : 0;
   const retriesDone = retry ? Math.max(0, retry.attempts - 1) : 0;
   const scheduled = retry?.state === "pending" && retry.next_attempt_at;
+  const history = retry?.history ?? [];
   return (
-    <div className="flex items-center gap-3 text-xs">
+    <div className="space-y-2 text-xs">
+      {history.length > 0 && (
+        <ol className="space-y-1">
+          {history.map((a, i) => (
+            <li key={i} className="text-zinc-500">
+              <span className="font-medium">Attempt {a.attempt}</span>
+              {a.started_at && ` · ${new Date(a.started_at).toLocaleTimeString()}`}
+              {a.finished_at && ` → ${new Date(a.finished_at).toLocaleTimeString()}`}
+              {a.error ? (
+                <span className="text-red-600"> · {a.error.slice(0, 160)}</span>
+              ) : (
+                <span className="text-emerald-600"> · ok</span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="flex items-center gap-3">
       {scheduled ? (
         <span className="text-zinc-500">
           Automatic retry {retriesDone + 1} of {maxRetries} at{" "}
@@ -85,7 +103,8 @@ function RetryBar({
       >
         Retry now
       </button>
-      {retryNow.error && <span className="text-red-600">{String(retryNow.error)}</span>}
+        {retryNow.error && <span className="text-red-600">{String(retryNow.error)}</span>}
+      </div>
     </div>
   );
 }

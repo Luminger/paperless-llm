@@ -95,6 +95,7 @@ async def get_session_detail(
             attempts=item.attempts,
             max_attempts=item.max_attempts,
             next_attempt_at=item.scheduled_at,
+            history=list(item.attempt_log or []),
         )
     return out
 

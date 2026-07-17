@@ -21,10 +21,11 @@ from app.services.events import bus
 
 
 def _instrumented(fn: Callable) -> Callable:
-    """Publish a tool_called event before each tool invocation — SSE
-    progress feedback during long agent runs. We deliberately do NOT use
-    pydantic-ai's event_stream_handler: it forces the model request into
-    streaming mode, which the qwen3_xml parser can't do reliably."""
+    """Wrap a tool for (a) a tool_called SSE event and (b) serialized
+    execution: pydantic-ai runs parallel tool calls concurrently, but
+    all tools of a run share one DB session, which is not
+    concurrency-safe. Tools are quick I/O next to the model's thinking
+    time, so the lock costs little."""
 
     @functools.wraps(fn)
     async def wrapper(ctx: RunContext[AgentDeps], *args, **kwargs):
@@ -37,7 +38,8 @@ def _instrumented(fn: Callable) -> Callable:
         bus.publish(
             ctx.deps.session_id, "tool_called", tool=fn.__name__, args=args_preview
         )
-        return await fn(ctx, *args, **kwargs)
+        async with ctx.deps.tool_lock:
+            return await fn(ctx, *args, **kwargs)
 
     return wrapper
 

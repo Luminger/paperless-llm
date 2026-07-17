@@ -179,6 +179,18 @@ class QueueWorkers:
             stage_failed = session is not None and session.status == SessionStatus.failed
             failure = error or (session.error if stage_failed else None)
 
+            # Attempts never shadow one another: each finished attempt is
+            # appended to the item's log for the timeline.
+            item.attempt_log = [
+                *item.attempt_log,
+                {
+                    "attempt": attempts,
+                    "started_at": item.started_at.isoformat() if item.started_at else None,
+                    "finished_at": utcnow().isoformat(),
+                    "error": failure,
+                },
+            ]
+
             if (error is not None or stage_failed) and attempts < max_attempts:
                 delay = get_settings().queue.retry_delay_seconds
                 item.state = QueueState.pending  # delayed retry
@@ -258,6 +270,15 @@ async def recover() -> dict[str, int]:
             await db.scalars(select(QueueItem).where(QueueItem.state == QueueState.running))
         ).all()
         for item in running_items:
+            item.attempt_log = [
+                *item.attempt_log,
+                {
+                    "attempt": item.attempts,
+                    "started_at": item.started_at.isoformat() if item.started_at else None,
+                    "finished_at": None,
+                    "error": "interrupted by app restart",
+                },
+            ]
             if item.attempts < item.max_attempts:
                 item.state = QueueState.pending
                 item.scheduled_at = None

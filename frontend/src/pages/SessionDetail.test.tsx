@@ -311,6 +311,14 @@ describe("SessionDetail — retries & metrics", () => {
           attempts: 1,
           max_attempts: 3,
           next_attempt_at: "2026-07-17T18:00:00Z",
+          history: [
+            {
+              attempt: 1,
+              started_at: "2026-07-17T17:58:00Z",
+              finished_at: "2026-07-17T17:59:00Z",
+              error: "ConnectError: LLM down",
+            },
+          ],
         },
       }),
     );
@@ -318,6 +326,9 @@ describe("SessionDetail — retries & metrics", () => {
     renderDetail();
 
     expect(await screen.findByText(/Automatic retry 1 of 2 at/)).toBeInTheDocument();
+    // Earlier attempts stay visible — retries never shadow them.
+    expect(screen.getByText("Attempt 1")).toBeInTheDocument();
+    expect(screen.getAllByText(/ConnectError: LLM down/).length).toBeGreaterThan(1);
     await userEvent.click(screen.getByRole("button", { name: "Retry now" }));
     await waitFor(() => expect(mocked.retrySession).toHaveBeenCalledWith(9));
   });
@@ -328,7 +339,7 @@ describe("SessionDetail — retries & metrics", () => {
         status: "failed",
         phase: "analyzing",
         error: "boom",
-        retry: { state: "failed", attempts: 3, max_attempts: 3, next_attempt_at: null },
+        retry: { state: "failed", attempts: 3, max_attempts: 3, next_attempt_at: null, history: [] },
       }),
     );
     renderDetail();

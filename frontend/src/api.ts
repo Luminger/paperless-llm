@@ -120,11 +120,19 @@ export interface TranscriptItem {
   timing: CallTiming | null;
 }
 
+export interface AttemptRecord {
+  attempt: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+}
+
 export interface RetryInfo {
   state: string;
   attempts: number;
   max_attempts: number;
   next_attempt_at: string | null;
+  history: AttemptRecord[];
 }
 
 export interface SessionDetail extends Session {

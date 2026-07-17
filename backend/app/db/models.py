@@ -228,6 +228,10 @@ class QueueItem(Base):
     )
     attempts: Mapped[int] = mapped_column(default=0)
     max_attempts: Mapped[int] = mapped_column(default=3)
+    # One entry per finished attempt ({attempt, started_at, finished_at,
+    # error}) — retries never shadow earlier attempts; the timeline shows
+    # what happened when.
+    attempt_log: Mapped[list[Any]] = mapped_column(default=list)
     session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), nullable=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

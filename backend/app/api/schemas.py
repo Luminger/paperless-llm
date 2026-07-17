@@ -42,6 +42,8 @@ class RetryInfo(BaseModel):
     attempts: int
     max_attempts: int
     next_attempt_at: datetime | None
+    # Chronological record of every finished attempt (never shadowed).
+    history: list[dict[str, Any]] = []
 
 
 class SessionDetailOut(SessionOut):
