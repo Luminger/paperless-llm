@@ -22,6 +22,8 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 # Application code + the corpus the seeder uploads.
 COPY backend/app ./app
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic
 COPY backend/tests/fixtures/corpus ./tests/fixtures/corpus
 RUN uv sync --frozen --no-dev
 

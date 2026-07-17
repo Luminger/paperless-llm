@@ -12,7 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import entities, proposals, sessions
 from app.config import get_settings
-from app.db.session import dispose_engine, init_db
+from app.db.migrations import run_migrations
+from app.db.session import dispose_engine
 from app.services.pipeline import recover_interrupted_sessions
 
 log = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_settings().data_dir.mkdir(parents=True, exist_ok=True)
-    await init_db()
+    await run_migrations()
     recovered = await recover_interrupted_sessions()
     if recovered:
         log.warning("marked %d interrupted session(s) as failed", recovered)
