@@ -9,7 +9,6 @@ const KIND_COLORS: Record<string, string> = {
   campaign: "bg-purple-100 text-purple-800",
   webhook: "bg-blue-100 text-blue-800",
   session: "bg-zinc-100 text-zinc-600",
-  system: "bg-amber-100 text-amber-800",
 };
 
 function describe(e: AuditEntry): React.ReactNode {
@@ -51,8 +50,6 @@ function describe(e: AuditEntry): React.ReactNode {
           {e.action}
         </>
       );
-    case "system/started":
-      return <>application started</>;
     default:
       return (
         <>
@@ -77,8 +74,8 @@ export default function AuditLog() {
     <div>
       <h1 className="mb-1 text-xl font-semibold">Log</h1>
       <p className="mb-4 text-sm text-zinc-500">
-        Audit trail of everything the application did: applied and reverted changes,
-        campaigns, webhook ingests, archive operations, application starts.
+        Audit trail of everything the application did to your data: applied and
+        reverted changes, campaigns, webhook ingests, archive operations.
       </p>
       <ul className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
         {(data?.results ?? []).map((e) => (

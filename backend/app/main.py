@@ -26,11 +26,6 @@ async def lifespan(app: FastAPI):
     stats = await recover()
     if any(stats.values()):
         log.warning("startup recovery: %s", stats)
-    from app.db.session import session_scope
-    from app.services.audit import record as audit_record
-
-    async with session_scope() as db:
-        await audit_record(db, "system", "started", recovery=stats, commit=True)
     await workers.start()
     yield
     await workers.stop()
