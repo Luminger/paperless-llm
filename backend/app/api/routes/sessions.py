@@ -30,6 +30,7 @@ from app.db.models import (
     Proposal,
     Session,
     SessionPhase,
+    SessionStatus,
     Step,
     StepKind,
     StepState,
@@ -48,18 +49,26 @@ async def list_sessions(
     entity_type: str | None = None,
     entity_id: int | None = None,
     archived: bool = False,
+    unfinished: bool = False,
     page: int = 1,
     page_size: int = 20,
     db: AsyncSession = Depends(get_session),
 ) -> SessionPage:
     """Paginated session list, filterable by bound entity. Active and
     archived sessions are separate lists (archived=true for the
-    latter)."""
+    latter); unfinished=true keeps only sessions that still need
+    something (gates, running/queued work, failures)."""
     page = max(1, page)
     page_size = min(100, max(1, page_size))
     where = [
         Session.archived_at.is_not(None) if archived else Session.archived_at.is_(None)
     ]
+    if unfinished:
+        where.append(
+            (Session.phase.is_(None))
+            | (Session.phase != SessionPhase.done)
+            | (Session.status != SessionStatus.idle)
+        )
     if entity_type is not None:
         try:
             where.append(Session.entity_type == EntityType(entity_type))

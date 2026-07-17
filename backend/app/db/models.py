@@ -9,7 +9,16 @@ import enum
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -293,6 +302,16 @@ class EntityEmbedding(Base):
     __table_args__ = (
         Index("ix_entity_embeddings_key", "entity_type", "entity_id", unique=True),
     )
+
+
+class Counter(Base):
+    """Lifetime counters (ocr_runs, llm tokens, ...). Incremented
+    atomically via UPDATE expressions — no read-modify-write races."""
+
+    __tablename__ = "counters"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class AuditLog(Base):

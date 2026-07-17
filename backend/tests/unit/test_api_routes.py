@@ -810,3 +810,29 @@ async def test_sync_status_tracks_paperless_fetches(client):
     assert tags["last_fetched_at"] is not None
     assert tags["in_flight"] == 0
     assert tags["last_error"] is None
+
+
+async def test_stats_lifetime_counters_and_unfinished_filter(client, db):
+    from app.db.models import SessionPhase, SessionStatus
+    from app.services.counters import increment
+
+    await increment(db, ocr_runs=2, llm_output_tokens=1000)
+    await increment(db, ocr_runs=1, llm_output_tokens=234)
+    await db.commit()
+
+    body = (await client.get("/api/stats")).json()
+    assert body["lifetime"]["ocr_runs"] == 3
+    assert body["lifetime"]["llm_output_tokens"] == 1234
+
+    # Unfinished filter: gate + failed + running stay; done/idle drops out.
+    finished = Session(agent_kind=AgentKind.document, phase=SessionPhase.done,
+                       status=SessionStatus.idle)
+    gate = Session(agent_kind=AgentKind.document, phase=SessionPhase.ocr_review)
+    failed = Session(agent_kind=AgentKind.document, phase=SessionPhase.done,
+                     status=SessionStatus.failed)
+    db.add_all([finished, gate, failed])
+    await db.commit()
+
+    body = (await client.get("/api/sessions?unfinished=true")).json()
+    ids = [s["id"] for s in body["results"]]
+    assert gate.id in ids and failed.id in ids and finished.id not in ids

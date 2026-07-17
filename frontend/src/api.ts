@@ -54,6 +54,7 @@ export interface SessionFilter {
   entity_type?: string;
   entity_id?: number;
   archived?: boolean;
+  unfinished?: boolean;
   page?: number;
   page_size?: number;
 }
@@ -144,6 +145,7 @@ export interface Stats {
   active_sessions: number;
   queue_pending: Record<string, number>;
   active_jobs: number;
+  lifetime: Record<string, number>;
 }
 
 export interface CallTiming {

@@ -151,6 +151,9 @@ class StatsOut(BaseModel):
     active_sessions: int
     queue_pending: dict[str, int]
     active_jobs: int
+    # Lifetime counters: ocr_runs, ocr_pages, llm_requests,
+    # llm_input_tokens, llm_output_tokens.
+    lifetime: dict[str, int] = {}
 
 
 class AuditEntryOut(BaseModel):

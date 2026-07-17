@@ -147,9 +147,12 @@ async def stats(db: AsyncSession = Depends(get_session)) -> StatsOut:
         .select_from(Job)
         .where(Job.status.in_([JobStatus.queued, JobStatus.running]))
     )
+    from app.services.counters import get_all
+
     return StatsOut(
         pending_proposals=pending_proposals or 0,
         active_sessions=active_sessions or 0,
         queue_pending={str(k.value): v for k, v in lanes.items()},
         active_jobs=active_jobs or 0,
+        lifetime=await get_all(db),
     )

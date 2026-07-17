@@ -83,6 +83,7 @@ function PagedList({
   entityType,
   entityId,
   archived,
+  unfinished,
   pageSize,
   showEntity,
   emptyText,
@@ -90,18 +91,20 @@ function PagedList({
   entityType?: string;
   entityId?: number;
   archived: boolean;
+  unfinished?: boolean;
   pageSize: number;
   showEntity: boolean;
   emptyText: string;
 }) {
   const [page, setPage] = useState(1);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["sessions", { entityType, entityId, archived, page, pageSize }],
+    queryKey: ["sessions", { entityType, entityId, archived, unfinished, page, pageSize }],
     queryFn: () =>
       api.listSessions({
         entity_type: entityType,
         entity_id: entityId,
         archived,
+        unfinished,
         page,
         page_size: pageSize,
       }),
@@ -131,11 +134,15 @@ export function SessionList({
   entityId,
   pageSize = 5,
   showEntity = true,
+  unfinished = false,
+  showArchived: showArchivedSection = true,
 }: {
   entityType?: string;
   entityId?: number;
   pageSize?: number;
   showEntity?: boolean;
+  unfinished?: boolean;
+  showArchived?: boolean;
 }) {
   const [showArchived, setShowArchived] = useState(false);
   return (
@@ -144,10 +151,12 @@ export function SessionList({
         entityType={entityType}
         entityId={entityId}
         archived={false}
+        unfinished={unfinished}
         pageSize={pageSize}
         showEntity={showEntity}
-        emptyText="No sessions yet."
+        emptyText={unfinished ? "Nothing needs attention." : "No sessions yet."}
       />
+      {showArchivedSection && (
       <details
         onToggle={(e) => setShowArchived((e.target as HTMLDetailsElement).open)}
         className="rounded border border-zinc-100 p-2"
@@ -168,6 +177,7 @@ export function SessionList({
           )}
         </div>
       </details>
+      )}
     </div>
   );
 }

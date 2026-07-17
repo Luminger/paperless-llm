@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
-import Sessions from "./Sessions";
+import Dashboard from "./Dashboard";
 import { renderWithProviders } from "../test/utils";
 import { api, type Session, type SessionPage } from "../api";
 
@@ -38,7 +38,7 @@ function page(results: Session[], count = results.length): SessionPage {
   return { count, page: 1, page_size: 5, results };
 }
 
-describe("Sessions", () => {
+describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.getStats.mockResolvedValue({
@@ -46,12 +46,13 @@ describe("Sessions", () => {
       active_sessions: 0,
       queue_pending: {},
       active_jobs: 0,
+      lifetime: { ocr_runs: 7, llm_output_tokens: 123456, llm_input_tokens: 9 },
     });
   });
 
   it("marks finished runs without proposals explicitly and links to the timeline", async () => {
     mocked.listSessions.mockResolvedValue(page([makeSession()]));
-    renderWithProviders(<Sessions />);
+    renderWithProviders(<Dashboard />);
 
     expect(await screen.findByText("no changes proposed")).toBeInTheDocument();
     const links = screen.getAllByRole("link") as HTMLAnchorElement[];
@@ -62,7 +63,7 @@ describe("Sessions", () => {
     mocked.listSessions.mockResolvedValue(
       page([makeSession({ id: 5, phase: "ocr_review", params: { redo_ocr: true } })]),
     );
-    renderWithProviders(<Sessions />);
+    renderWithProviders(<Dashboard />);
     expect(await screen.findByText("OCR review needed")).toBeInTheDocument();
   });
 
@@ -70,14 +71,14 @@ describe("Sessions", () => {
     mocked.listSessions.mockResolvedValue(
       page([makeSession({ id: 2, status: "failed", error: "ModelAPIError: Connection error." })]),
     );
-    renderWithProviders(<Sessions />);
+    renderWithProviders(<Dashboard />);
     expect(await screen.findByText(/Connection error/)).toBeInTheDocument();
   });
 
   it("paginates: 5 per page with a generic pager", async () => {
     const sessions = Array.from({ length: 5 }, (_, i) => makeSession({ id: i + 1 }));
     mocked.listSessions.mockResolvedValue(page(sessions, 12));
-    renderWithProviders(<Sessions />);
+    renderWithProviders(<Dashboard />);
 
     expect(await screen.findByText(/page 1 of 3 · 12 total/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "next ›" }));
@@ -91,25 +92,31 @@ describe("Sessions", () => {
   it("archives a session from the list", async () => {
     mocked.listSessions.mockResolvedValue(page([makeSession()]));
     mocked.archiveSession.mockResolvedValue(makeSession({ archived_at: "2026-07-17T12:00:00Z" }));
-    renderWithProviders(<Sessions />);
+    renderWithProviders(<Dashboard />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
     await waitFor(() => expect(mocked.archiveSession).toHaveBeenCalledWith(4));
   });
 
-  it("archived sessions live in a collapsed section, unarchivable", async () => {
-    mocked.listSessions.mockImplementation(async (f) =>
-      f?.archived
-        ? page([makeSession({ id: 9, archived_at: "2026-07-17T12:00:00Z" })])
-        : page([]),
-    );
-    mocked.unarchiveSession.mockResolvedValue(makeSession({ id: 9 }));
-    renderWithProviders(<Sessions />);
+  it("shows lifetime stats and hides the archived section", async () => {
+    mocked.listSessions.mockResolvedValue(page([]));
+    renderWithProviders(<Dashboard />);
 
-    // Collapsed by default — the archived list is not fetched yet.
-    expect(screen.queryByText("Unarchive")).not.toBeInTheDocument();
-    await userEvent.click(await screen.findByText("Archived sessions"));
-    await userEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
-    await waitFor(() => expect(mocked.unarchiveSession).toHaveBeenCalledWith(9));
+    expect(await screen.findByText("OCR runs (lifetime)")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("123k")).toBeInTheDocument();
+    expect(screen.getByText("LLM tokens generated (lifetime)")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing needs attention.")).toBeInTheDocument();
+    expect(screen.queryByText("Archived sessions")).not.toBeInTheDocument();
+  });
+
+  it("requests only unfinished sessions", async () => {
+    mocked.listSessions.mockResolvedValue(page([]));
+    renderWithProviders(<Dashboard />);
+    await waitFor(() =>
+      expect(mocked.listSessions).toHaveBeenCalledWith(
+        expect.objectContaining({ unfinished: true, archived: false, page_size: 5 }),
+      ),
+    );
   });
 });

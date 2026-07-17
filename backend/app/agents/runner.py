@@ -153,6 +153,16 @@ async def run_agent_turn(
     if not session.title:
         session.title = user_message[:200]
 
+    from app.services.counters import increment
+
+    usage = result.usage() if callable(result.usage) else result.usage
+    await increment(
+        db,
+        llm_requests=usage.requests or 0,
+        llm_input_tokens=usage.input_tokens or 0,
+        llm_output_tokens=usage.output_tokens or 0,
+    )
+
     # Finalize proposals: draft -> pending, superseding older open
     # revisions targeting the same (kind, entity).
     for p in deps.emitted:

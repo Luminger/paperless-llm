@@ -162,6 +162,16 @@ async def run_ocr(
 
     # Upsert: a force re-run must update the existing cache row, not
     # violate the unique key.
+    from app.services.counters import increment
+
+    await increment(
+        db,
+        ocr_runs=1,
+        ocr_pages=len(pages),
+        llm_requests=len(timings),
+        llm_input_tokens=sum(t.get("input_tokens") or 0 for t in timings),
+        llm_output_tokens=sum(t.get("output_tokens") or 0 for t in timings),
+    )
     if cached:
         cached.pages = pages
         cached.text = text
