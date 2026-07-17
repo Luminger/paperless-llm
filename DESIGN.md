@@ -196,7 +196,9 @@ Proposal          kind, revision, supersedes_id?, step_id,
                   status: draft | pending | approved | rejected | applied |
                           superseded | no_change (apply-time: already matched)
 AppliedChange     proposal_id, paperless before/after snapshots — undo journal
-Job               campaign: scope (inbox|query|untagged|ids), apply_policy
+Job               bulk run: scope (inbox|tag|untagged|ids — deliberately
+                  NO free-text-query scope: jobs run over deterministic
+                  selections, not search results), apply_policy
                   (review|auto), progress counters, per-document sessions
 EntityInstruction app-local per-entity agent instructions (see below)
 AuditLog          data operations + paperless traffic, actor-attributed
@@ -210,6 +212,36 @@ emit a revised proposal (new revision superseding the old — chain preserved
 and fully visible), or both. If the user hand-edited fields first, the
 current `user_payload` is injected into context ("the user amended your
 proposal as follows: ...") so manual fixes and "agent, fix it" compose.
+
+Steering is **contextual, not a chat box**: there is no fixed composer.
+Free-text input appears where a decision is being made — in the
+proposal review UI ("ask the agent to revise"), in the redo dialog
+(amended instructions), at the OCR gate — and once the initial
+analysis completes, an inline "continue" affordance at the end of the
+timeline offers the next free-text turn.
+
+### Session surface (the centerpiece, specified)
+
+One chronological step feed; every step is one card with a consistent
+anatomy: header (kind · state · timestamps · timing chip) · body ·
+footer (attempt history, retry/redo controls). Within an agent step's
+body, the transcript renders **every part of the model exchange as a
+first-class, explorable item**, in order:
+
+- **thinking blocks** — shown collapsed ("Reasoning …"), expandable to
+  the full text; never hidden entirely
+- **tool calls** — collapsed to `name(short arg summary)` with status;
+  expanding reveals the full arguments and the full return value
+  (pretty-printed JSON), including rejected calls with their
+  `ModelRetry` reason
+- **text** — rendered as markdown
+- **proposals** — inline editor cards (agent payload immutable, user
+  payload editable), with the steering affordance attached
+
+Collapsed by default, everything expandable — the user can audit
+exactly what the model saw, did, and got back. System prompts and
+steering preambles remain internal (they are configuration, not
+conversation).
 
 **Apply engine**: applies `user_payload` if present, else the latest
 revision's `agent_payload`. Snapshots before-state to the journal. Merges
@@ -297,7 +329,9 @@ and the per-endpoint `max_concurrent` semaphore are settings.
 
 **Triggers**:
 1. Manual — per entity from the UI.
-2. Bulk — UI multi-select / filter → batch job (initial-review campaigns).
+2. Bulk — UI multi-select or deterministic scopes (inbox, tag,
+   untagged) → job. Free-text search may aid *browsing*, but jobs are
+   never defined by a search query.
 3. Webhook — `POST /api/webhooks/paperless` for paperless-ngx workflow
    actions on document-added (shared-secret header).
 
@@ -310,7 +344,8 @@ and the per-endpoint `max_concurrent` semaphore are settings.
                          /{id}/archive|unarchive, GET /{id}/events (SSE)
 /api/proposals           list/filter, PATCH /{id} (user edits),
                          POST /{id}/apply|reject|revert, GET /{id}/revert-check
-/api/jobs                campaigns: create/list/detail/cancel
+/api/jobs                bulk jobs: create/list/detail/cancel
+/api/settings            read-only config overview (M5)
 /api/entities            proxied browse (+ name-resolved filters), entity
                          detail, /{type}/merge-candidates,
                          PUT /{type}/{id}/instructions
@@ -329,8 +364,17 @@ transcript widgets it produced.
 
 ## Frontend
 
-**React + Vite + TypeScript + Tailwind**, npm, TanStack Query,
-SSE for live updates. No SSR; FastAPI serves the built `dist/` in
+**React + Vite + TypeScript + Tailwind + shadcn/ui**, npm, TanStack
+Query, SSE for live updates. shadcn/ui components are vendored source
+(no runtime library lock-in) over Radix primitives — chosen in M5 for
+proper menu/dialog/focus accessibility once app chrome (user menu,
+settings, dialogs) entered scope; the theme tokens carry the design
+language. TS API types are generated from the backend's OpenAPI schema;
+a thin hand-written fetch wrapper remains. assistant-ui was evaluated
+for the session surface and rejected: the timeline is a review surface
+over steps/gates/proposals, not a chat thread, and our transcript
+derivation already yields typed items — a chat runtime's abstractions
+would fight the step model. No SSR; FastAPI serves the built `dist/` in
 production, Vite dev-server proxy in development.
 
 **The session timeline is the single review surface.** There is no
@@ -339,6 +383,12 @@ produces — the OCR gate, the agent's run, and ALL proposals (metadata
 updates and entity creations alike, rendered as full inline editor
 cards with resolved names) — lives on one timeline page.
 `/proposals/:id` deep-links redirect to the owning session.
+
+App chrome: top nav with user icon + dropdown (about/version, link to
+settings; becomes the account menu when auth lands in M6) and a
+**Settings** page (read-only overview of model profiles, queue/retry
+config, embeddings/webhook status — config stays file/env-driven, the
+page makes it inspectable).
 
 Views:
 1. **Dashboard** (home) — sessions needing attention, lifetime counters,
@@ -356,7 +406,7 @@ Views:
 5. **Entity pages** — facts, preview, instructions editor, session
    history, paperless deep link (documents and taxonomy alike; analysis
    starts here, not from lists)
-6. **Campaigns** — job list/detail with progress and per-doc sessions
+6. **Jobs** — job list/detail with progress and per-doc sessions
 7. **Log** — audit trail with actor, kind filters, per-field diffs
 
 SPA with client-side routing; the backend serves `dist/` with an SPA
@@ -534,27 +584,37 @@ scenarios accumulate from M1 on.
    document RAG is parked under future extensions — the system is
    useful without it): one design language and one set of patterns
    across the whole API and UI, grown feature-by-feature until now.
-   - **API contract pass**: a single list envelope for app-owned
-     collections; an explicit response schema on every route (OpenAPI
-     becomes the contract); one machine-readable error shape, rendered
-     as humane messages in the UI; dead surface removed (e.g. the
-     approve flow the UI no longer exposes); one name per concept end
-     to end (jobs vs campaigns).
-   - **UI design system**: a small set of owned primitives (Button,
-     Card, Table/List, Badge, Dialog, form fields, EmptyState, loading
-     + error states) that concentrate every color/spacing/typography
-     decision; pages compose primitives instead of hand-rolling
-     Tailwind runs; the SessionDetail/ProposalCard monoliths split
-     into feature modules; a central query-key registry with typed
-     invalidation helpers replaces ad-hoc keys.
-   - **UX pass**: consistent page scaffold (title · actions · filters ·
-     content), consistent list presentation, humane error/empty/
-     loading states, uniform date formatting.
+   Decisions: shadcn/ui (vendored) for primitives; TS types generated
+   from OpenAPI; "jobs" is the one name; approve flow deleted (the
+   model is propose → user applies); no query-scoped jobs.
+   Phased, tests green after each phase:
+   - **Phase 0 — decided cleanups**: nav says Jobs; `query` job scope
+     removed (tag scope added); approve route + `approved` status
+     deleted (enum migration); dead surface swept.
+   - **Phase 1 — API contract**: one list envelope for app-owned
+     collections; explicit response schema on every route; one error
+     shape `{code, message}` rendered humanely in the UI; TS types
+     generated from OpenAPI (thin hand-written fetch wrapper stays).
+   - **Phase 2 — design system**: shadcn/ui init themed to the
+     existing zinc/emerald language; primitives (Button, Card, Table,
+     Badge, Dialog, DropdownMenu, form fields, EmptyState, loading/
+     error states, PageHeader) concentrate every color/spacing
+     decision; central query-key registry with typed invalidation
+     helpers.
+   - **Phase 3 — page migration**: Dashboard, Documents, Taxonomy,
+     Jobs, Log, EntityPage onto the primitives and one page scaffold
+     (title · actions · filters · content); one list presentation;
+     uniform dates, empty states.
+   - **Phase 4 — session surface redesign** (see Session surface):
+     monolith split into feature modules; thinking blocks and
+     first-class explorable tool calls; fixed composer removed in
+     favor of contextual steering.
+   - **Phase 5 — app chrome**: top nav user menu (auth-ready for M6),
+     read-only Settings page (`/api/settings`).
    - Definition of done: no color literals outside primitives, no
-     unschema'd route, no raw `String(error)` in the UI, tests green
-     throughout.
+     unschema'd route, no raw `String(error)` in the UI, no
+     hand-maintained API types.
 6. **M6 — authentication, packaging & docs**: auth modes
-   (none/proxy/paperless — see Authentication), security hardening,
-   production compose + Containerfile polish, read-only settings /
-   model-profile overview page (deferred from M4), Playwright e2e smoke
-   suite, user documentation.
+   (none/proxy/paperless — see Authentication) wired into the M5 user
+   menu, security hardening, production compose + Containerfile
+   polish, Playwright e2e smoke suite, user documentation.
