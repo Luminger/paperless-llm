@@ -201,7 +201,7 @@ export function AgentProse({ item }: { item: TranscriptItem }) {
 /** The fixed turn summary: no icon, full-width text, meta top-right. */
 export function SummaryProse({ item }: { item: TranscriptItem }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] items-start gap-x-2 px-2">
+    <div className="grid grid-cols-[1fr_auto] items-start gap-x-2 rounded-lg border bg-muted/20 p-4">
       <div className={PROSE_CLASSES}>
         <Markdown remarkPlugins={[remarkGfm]}>{item.content}</Markdown>
       </div>

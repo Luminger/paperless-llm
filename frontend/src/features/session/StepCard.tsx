@@ -212,11 +212,11 @@ function WorkFold({ items }: { items: TranscriptItem[] }) {
       .filter(Boolean)
       .join(" · ") || `${items.length} steps`;
   return (
-    <details className="rounded-md border border-dashed px-3 py-2">
-      <summary className="cursor-pointer text-xs text-muted-foreground select-none">
+    <details className="rounded-lg border bg-muted/20">
+      <summary className="cursor-pointer px-4 py-3 text-xs text-muted-foreground select-none">
         The agent's work — {label}, expand to inspect
       </summary>
-      <div className="mt-2">
+      <div className="px-4 pb-3">
         <Transcript items={items} />
       </div>
     </details>
