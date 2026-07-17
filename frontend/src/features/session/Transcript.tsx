@@ -182,16 +182,35 @@ export function ThinkingItem({ item }: { item: TranscriptItem }) {
   );
 }
 
+const PROSE_CLASSES =
+  "prose prose-sm dark:prose-invert max-w-none text-sm leading-6 prose-headings:mt-3 prose-headings:mb-1 prose-headings:text-sm prose-headings:font-semibold prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 [&>*:first-child]:mt-0";
+
 export function AgentProse({ item }: { item: TranscriptItem }) {
   return (
     <ItemRow
       icon={<Sparkles className="size-3.5 text-primary/80" />}
       meta={item.timing ? timingLabel(item.timing) : undefined}
     >
-      <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-6 prose-headings:mt-3 prose-headings:mb-1 prose-headings:text-sm prose-headings:font-semibold prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 [&>*:first-child]:mt-0">
+      <div className={PROSE_CLASSES}>
         <Markdown remarkPlugins={[remarkGfm]}>{item.content}</Markdown>
       </div>
     </ItemRow>
+  );
+}
+
+/** The fixed turn summary: no icon, full-width text, meta top-right. */
+export function SummaryProse({ item }: { item: TranscriptItem }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-start gap-x-2 px-2">
+      <div className={PROSE_CLASSES}>
+        <Markdown remarkPlugins={[remarkGfm]}>{item.content}</Markdown>
+      </div>
+      {item.timing && (
+        <span className="pt-0.5 pl-2 font-mono text-[10px] whitespace-nowrap text-muted-foreground/50">
+          {timingLabel(item.timing)}
+        </span>
+      )}
+    </div>
   );
 }
 

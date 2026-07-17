@@ -15,7 +15,7 @@ import { formatClock } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard } from "../../components/ProposalCard";
 import { DiffView } from "../../components/DiffView";
-import { AgentProse, Transcript, UserMessage } from "./Transcript";
+import { SummaryProse, Transcript, UserMessage } from "./Transcript";
 import { OcrGateBody } from "./OcrGate";
 import { RedoDialog } from "./RedoDialog";
 
@@ -284,7 +284,7 @@ function TurnBody({
           </div>
         </details>
       )}
-      {summaryIdx >= 0 && <AgentProse item={items[summaryIdx]} />}
+      {summaryIdx >= 0 && <SummaryProse item={items[summaryIdx]} />}
       <ProposalList ids={ids} proposals={proposals} archived={archived} />
       {step.state === "succeeded" && step.kind === "analysis" && ids.length === 0 && (
         <p className="px-2 text-sm text-muted-foreground">No changes proposed.</p>
