@@ -161,6 +161,7 @@ class AuditEntryOut(BaseModel):
     ts: datetime
     kind: str
     action: str
+    actor: str = "system"
     detail: dict[str, Any] = {}
 
 

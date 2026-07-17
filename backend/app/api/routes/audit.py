@@ -20,14 +20,23 @@ router = APIRouter(prefix="/api", tags=["audit"])
 async def list_audit(
     page: int = 1,
     page_size: int = 20,
+    kind: str | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> AuditPage:
     page = max(1, page)
     page_size = min(100, max(1, page_size))
-    count = await db.scalar(select(func.count()).select_from(AuditLog)) or 0
+    where = []
+    if kind == "changes":
+        where.append(AuditLog.kind != "paperless")
+    elif kind:
+        where.append(AuditLog.kind == kind)
+    count = (
+        await db.scalar(select(func.count()).select_from(AuditLog).where(*where))
+    ) or 0
     rows = (
         await db.scalars(
             select(AuditLog)
+            .where(*where)
             .order_by(AuditLog.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -38,7 +47,8 @@ async def list_audit(
         page=page,
         page_size=page_size,
         results=[
-            {"id": r.id, "ts": r.ts, "kind": r.kind, "action": r.action, "detail": r.detail}
+            {"id": r.id, "ts": r.ts, "kind": r.kind, "action": r.action,
+             "actor": r.actor, "detail": r.detail}
             for r in rows
         ],
     )

@@ -323,10 +323,13 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    # Coarse category (proposal, campaign, webhook, session, system).
+    # Coarse category (proposal, campaign, webhook, session, paperless).
     kind: Mapped[str] = mapped_column(String(30))
-    # Short action verb (applied, reverted, created, ingested, ...).
+    # Short action verb (applied, reverted, created, ingested, fetch, write).
     action: Mapped[str] = mapped_column(String(50))
+    # Who kicked it off. Namespaced string ("user", "system"; later
+    # "user:<name>") — multi-user support is a value change only.
+    actor: Mapped[str] = mapped_column(String(100), default="system")
     detail: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
     __table_args__ = (Index("ix_audit_ts", "ts"),)

@@ -51,6 +51,10 @@ async def paperless_webhook(
         raise HTTPException(404, "webhook ingress not configured")
     if request.headers.get("X-PLLM-Token") != cfg.secret:
         raise HTTPException(403, "bad webhook token")
+    # Machine-to-machine: not a user action.
+    from app.services.actor import actor_var
+
+    actor_var.set("system")
 
     try:
         body = await request.json()

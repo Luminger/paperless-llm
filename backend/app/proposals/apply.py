@@ -101,6 +101,7 @@ async def apply_proposal(
         session_id=proposal.session_id,
         entity_type=proposal.entity_type.value if proposal.entity_type else None,
         entity_id=proposal.entity_id,
+        diff=audit_diff(before, after),
     )
     await db.commit()
     return change
@@ -183,6 +184,29 @@ def _fmt(v: Any) -> str:
     import json
 
     return json.dumps(v, ensure_ascii=False, default=str)
+
+
+def _short(v: Any) -> Any:
+    if isinstance(v, str) and len(v) > 200:
+        return v[:200] + f" …[{len(v)} chars total]"
+    return v
+
+
+def audit_diff(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    """From-→-to per changed field, derived from the journal snapshots
+    (long strings truncated — the full snapshots stay in the journal)."""
+    b = before.get("document") or before.get("entity") or before
+    a = after.get("document") or after.get("entity") or after
+    if not isinstance(b, dict):
+        b = {}
+    if not isinstance(a, dict):
+        a = {}
+    out: dict[str, Any] = {}
+    for k in sorted(set(b) | set(a)):
+        bv, av = b.get(k), a.get(k)
+        if bv != av:
+            out[k] = {"from": _short(bv), "to": _short(av)}
+    return out
 
 
 async def _snapshot_conflicts(  # noqa: C901
@@ -597,5 +621,7 @@ async def revert_change(
         db, "proposal", "reverted",
         proposal_id=proposal.id, proposal_kind=proposal.kind,
         session_id=proposal.session_id,
+        # Reverting goes applied-state -> pre-apply-state.
+        diff=audit_diff(change.paperless_after, change.paperless_before),
     )
     await db.commit()

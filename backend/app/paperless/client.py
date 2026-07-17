@@ -117,12 +117,37 @@ class PaperlessClient:
         self._client.headers["Authorization"] = f"Token {resp.json()['token']}"
         self._authed = True
 
+    def _audit_call(self, method: str, url: str, status: int | None) -> None:
+        """Every paperless call lands in the audit trail (via the async
+        buffer — the client has no DB session), attributed to the actor
+        that caused it. Auth traffic is internal and skipped."""
+        if url.startswith("/api/token"):
+            return
+        from datetime import UTC, datetime
+
+        from app.services.actor import current_actor
+        from app.services.paperless_log import enqueue
+
+        enqueue(
+            {
+                "ts": datetime.now(UTC),
+                "action": "fetch" if method in ("GET", "HEAD") else "write",
+                "actor": current_actor(),
+                "method": method,
+                "path": url,
+                "resource": _classify(url),
+                "status": status,
+            }
+        )
+
     async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         await self._ensure_auth()
         resource = _classify(url) if method == "GET" else None
         entry = _track_start(resource) if resource else None
+        status: int | None = None
         try:
             resp = await self._client.request(method, url, **kwargs)
+            status = resp.status_code
         except httpx.HTTPError as e:
             if entry is not None:
                 entry["last_error"] = str(e)[:200]
@@ -130,6 +155,7 @@ class PaperlessClient:
         finally:
             if entry is not None:
                 entry["in_flight"] -= 1
+            self._audit_call(method, url, status)
         if resp.status_code >= 400:
             if entry is not None:
                 entry["last_error"] = f"HTTP {resp.status_code}"

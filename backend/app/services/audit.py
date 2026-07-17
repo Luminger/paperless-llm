@@ -13,12 +13,21 @@ log = logging.getLogger(__name__)
 
 
 async def record(
-    db: AsyncSession, kind: str, action: str, commit: bool = False, **detail: Any
+    db: AsyncSession,
+    kind: str,
+    action: str,
+    commit: bool = False,
+    actor: str | None = None,
+    **detail: Any,
 ) -> None:
-    """Append an audit entry. Never raises — the audit trail must not
-    break the operation it describes."""
+    """Append an audit entry (actor defaults to the ambient context —
+    "user" inside API requests, "system" in background work). Never
+    raises — the audit trail must not break the operation it
+    describes."""
+    from app.services.actor import current_actor
+
     try:
-        db.add(AuditLog(kind=kind, action=action, detail=detail))
+        db.add(AuditLog(kind=kind, action=action, actor=actor or current_actor(), detail=detail))
         if commit:
             await db.commit()
         else:

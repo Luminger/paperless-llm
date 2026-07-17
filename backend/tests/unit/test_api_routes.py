@@ -848,3 +848,51 @@ async def test_stats_lifetime_counters_and_unfinished_filter(client, db):
     body = (await client.get("/api/sessions?unfinished=true")).json()
     ids = [s["id"] for s in body["results"]]
     assert gate.id in ids and failed.id in ids and finished.id not in ids
+
+
+@respx.mock
+async def test_audit_actor_attribution_and_diff(client, db):
+    """API-triggered work is attributed to the user; the applied entry
+    carries the from->to diff derived from the journal."""
+    get_route = respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
+    respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Agent title"})
+    )
+    p = await _seed_proposal(db)
+    assert (await client.post(f"/api/proposals/{p.id}/apply")).status_code == 200
+    get_route.mock(return_value=Response(200, json=DOC | {"title": "Agent title"}))
+
+    body = (await client.get("/api/audit?kind=proposal")).json()
+    applied = next(e for e in body["results"] if e["action"] == "applied")
+    assert applied["actor"] == "user"
+    assert applied["detail"]["diff"]["title"] == {"from": "scan_0001", "to": "Agent title"}
+
+
+@respx.mock
+async def test_paperless_traffic_logged_with_actor(client, db):
+    """Every paperless call the app makes lands in the audit buffer,
+    attributed to whoever caused it."""
+    from app.services.paperless_log import _buffer, drain
+
+    _buffer.clear()
+    respx.get(f"{PAPERLESS_URL}/api/tags/").mock(
+        return_value=Response(200, json={"count": 0, "next": None, "results": []})
+    )
+    await client.get("/api/entities/tags")  # user-caused fetch
+    assert len(_buffer) >= 1
+
+    n = await drain(db)
+    await db.commit()
+    assert n >= 1
+    body = (await client.get("/api/audit?kind=paperless")).json()
+    entry = body["results"][0]
+    assert entry["action"] == "fetch"
+    assert entry["actor"] == "user"
+    assert entry["detail"]["resource"] == "tags"
+    assert entry["detail"]["method"] == "GET"
+
+    # The changes filter hides paperless traffic.
+    body = (await client.get("/api/audit?kind=changes")).json()
+    assert all(e["kind"] != "paperless" for e in body["results"])

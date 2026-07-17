@@ -78,6 +78,7 @@ export interface AuditEntry {
   ts: string;
   kind: string;
   action: string;
+  actor: string;
   detail: Record<string, unknown>;
 }
 
@@ -258,8 +259,10 @@ export const api = {
 
   getMeta: () => request<Meta>("/api/meta"),
   getSyncStatus: () => request<SyncStatus>("/api/sync/status"),
-  listAudit: (page = 1, pageSize = 20) =>
-    request<AuditPage>(`/api/audit?page=${page}&page_size=${pageSize}`),
+  listAudit: (page = 1, pageSize = 20, kind?: string) =>
+    request<AuditPage>(
+      `/api/audit?page=${page}&page_size=${pageSize}${kind ? `&kind=${kind}` : ""}`,
+    ),
   listSessions: (filter: SessionFilter = {}) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) {

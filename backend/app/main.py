@@ -26,14 +26,40 @@ async def lifespan(app: FastAPI):
     stats = await recover()
     if any(stats.values()):
         log.warning("startup recovery: %s", stats)
+    import asyncio
+
+    from app.services.paperless_log import drain, writer_loop
+
+    traffic_writer = asyncio.create_task(writer_loop())
     await workers.start()
     yield
     await workers.stop()
+    traffic_writer.cancel()
+    from app.db.session import session_scope
+
+    try:
+        async with session_scope() as db:  # final flush
+            await drain(db)
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        pass
     await dispose_engine()
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="paperless-llm", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def _actor_middleware(request, call_next):
+        # Work caused by an API request is attributed to the user;
+        # background work keeps the contextvar default ("system").
+        from app.services.actor import actor_var
+
+        token = actor_var.set("user")
+        try:
+            return await call_next(request)
+        finally:
+            actor_var.reset(token)
 
     app.include_router(proposals.router)
     app.include_router(sessions.router)
