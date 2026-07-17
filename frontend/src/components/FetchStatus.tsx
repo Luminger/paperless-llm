@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { api } from "../api";
+import { keys } from "../lib/keys";
+import { formatAgo } from "../lib/format";
 
 /** Transparency bar for paperless-backed lists: when the app last
  * fetched this resource from paperless (server-side truth, covering
@@ -15,36 +19,36 @@ export function FetchStatus({
   onRefresh: () => void;
 }) {
   const { data } = useQuery({
-    queryKey: ["sync-status"],
+    queryKey: keys.syncStatus(),
     queryFn: api.getSyncStatus,
     refetchInterval: 5000,
   });
   const status = data?.resources[resource];
   const busy = isFetching || (status?.in_flight ?? 0) > 0;
   return (
-    <div className="flex items-center gap-2 text-xs text-zinc-400">
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
       {busy ? (
-        <span className="flex items-center gap-1 text-blue-600">
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+        <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+          <span className="inline-block size-2 animate-pulse rounded-full bg-current" />
           fetching from paperless…
         </span>
       ) : status?.last_fetched_at ? (
-        <span>
-          fetched {new Date(status.last_fetched_at).toLocaleTimeString()}
-        </span>
+        <span>fetched {formatAgo(status.last_fetched_at)}</span>
       ) : (
         <span>not fetched yet</span>
       )}
       {status?.last_error && (
-        <span className="text-red-600">last error: {status.last_error}</span>
+        <span className="text-destructive">last error: {status.last_error}</span>
       )}
-      <button
-        className="rounded bg-zinc-100 px-2 py-0.5 text-zinc-600 hover:bg-zinc-200"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 gap-1 px-2 text-xs"
         onClick={onRefresh}
         disabled={busy}
       >
-        Refresh
-      </button>
+        <RefreshCw className="size-3" /> Refresh
+      </Button>
     </div>
   );
 }
