@@ -45,6 +45,7 @@ export interface OcrReview {
   previous_content: string;
   ocr_text: string;
   pages: number;
+  timings: (CallTiming & { pages?: string })[];
 }
 
 export interface EntityRef {
@@ -98,6 +99,16 @@ export interface Stats {
   active_jobs: number;
 }
 
+export interface CallTiming {
+  started_at: string;
+  finished_at: string;
+  duration_s: number;
+  ttft_s: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  tps: number | null;
+}
+
 export interface TranscriptItem {
   role: "user" | "agent" | "tool";
   content: string;
@@ -105,11 +116,20 @@ export interface TranscriptItem {
   tool_name: string | null;
   tool_args: Record<string, unknown> | null;
   tool_result: string | null;
+  timing: CallTiming | null;
+}
+
+export interface RetryInfo {
+  state: string;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string | null;
 }
 
 export interface SessionDetail extends Session {
   transcript: TranscriptItem[];
   proposals: Proposal[];
+  retry: RetryInfo | null;
 }
 
 export interface SessionEvent {
@@ -193,6 +213,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ instructions }),
     }),
+  retrySession: (sessionId: number) =>
+    request<Session>(`/api/sessions/${sessionId}/retry`, { method: "POST" }),
 
   listDocuments: (query?: string, page = 1) =>
     request<{ count: number; results: PaperlessDocument[] }>(

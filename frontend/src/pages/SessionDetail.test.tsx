@@ -13,6 +13,7 @@ function mkItem(overrides: Partial<TranscriptItem>): TranscriptItem {
     tool_name: null,
     tool_args: null,
     tool_result: null,
+    timing: null,
     ...overrides,
   };
 }
@@ -24,6 +25,7 @@ vi.mock("../api", () => ({
     resolveOcrGate: vi.fn(),
     rerunOcr: vi.fn(),
     sendMessage: vi.fn(),
+    retrySession: vi.fn(),
     // ProposalCard dependencies:
     patchProposal: vi.fn(),
     proposalAction: vi.fn(),
@@ -56,6 +58,7 @@ function makeDetail(overrides: Partial<SessionDetailT> = {}): SessionDetailT {
       mkItem({ role: "agent", content: "All done; proposed a better title." }),
     ],
     proposals: [],
+    retry: null,
     ...overrides,
   };
 }
@@ -91,6 +94,7 @@ describe("SessionDetail timeline", () => {
       previous_content: "old garbled line",
       ocr_text: "clean OCR line",
       pages: 1,
+      timings: [],
     });
     mocked.resolveOcrGate.mockResolvedValue(makeDetail({ phase: "analyzing" }) as never);
     renderDetail();
@@ -117,7 +121,7 @@ describe("SessionDetail timeline", () => {
       makeDetail({ phase: "ocr_review", params: { redo_ocr: true } }),
     );
     mocked.getOcrReview.mockResolvedValue({
-      document_id: 7, previous_content: "a", ocr_text: "b", pages: 1,
+      document_id: 7, previous_content: "a", ocr_text: "b", pages: 1, timings: [],
     });
     mocked.resolveOcrGate.mockResolvedValue(makeDetail() as never);
     renderDetail();
@@ -133,7 +137,7 @@ describe("SessionDetail timeline", () => {
       makeDetail({ phase: "ocr_review", params: { redo_ocr: true } }),
     );
     mocked.getOcrReview.mockResolvedValue({
-      document_id: 7, previous_content: "same\nremoved", ocr_text: "same\nadded", pages: 1,
+      document_id: 7, previous_content: "same\nremoved", ocr_text: "same\nadded", pages: 1, timings: [],
     });
     renderDetail();
 
@@ -199,7 +203,7 @@ describe("SessionDetail timeline", () => {
       makeDetail({ phase: "ocr_review", params: { redo_ocr: true } }),
     );
     mocked.getOcrReview.mockResolvedValue({
-      document_id: 7, previous_content: "a", ocr_text: "b", pages: 1,
+      document_id: 7, previous_content: "a", ocr_text: "b", pages: 1, timings: [],
     });
     mocked.rerunOcr.mockResolvedValue(
       makeDetail({ phase: "ocr_running" }) as never,
@@ -278,5 +282,83 @@ describe("SessionDetail timeline", () => {
     expect(await screen.findByText(/1 earlier revision/)).toBeInTheDocument();
     // Only one Apply button — the superseded revision is read-only.
     expect(screen.getAllByRole("button", { name: "Apply to paperless" })).toHaveLength(1);
+  });
+});
+
+describe("SessionDetail — retries & metrics", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    mocked.getDocument.mockResolvedValue({
+      id: 7, title: "scan_0001", correspondent: null, document_type: null,
+      storage_path: null, tags: [], created: "2024-04-17", added: null,
+      archive_serial_number: null,
+    });
+    mocked.listTags.mockResolvedValue([]);
+    mocked.listCorrespondents.mockResolvedValue([]);
+    mocked.listDocumentTypes.mockResolvedValue([]);
+    mocked.listStoragePaths.mockResolvedValue([]);
+  });
+
+  it("failed analysis offers Retry now and shows the scheduled attempt", async () => {
+    mocked.getSession.mockResolvedValue(
+      makeDetail({
+        status: "failed",
+        phase: "analyzing",
+        error: "ConnectError: LLM down",
+        retry: {
+          state: "pending",
+          attempts: 1,
+          max_attempts: 3,
+          next_attempt_at: "2026-07-17T18:00:00Z",
+        },
+      }),
+    );
+    mocked.retrySession.mockResolvedValue(makeDetail() as never);
+    renderDetail();
+
+    expect(await screen.findByText(/Automatic retry \(attempt 2 of 3\)/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry now" }));
+    await waitFor(() => expect(mocked.retrySession).toHaveBeenCalledWith(9));
+  });
+
+  it("exhausted retries still offer a manual Retry now", async () => {
+    mocked.getSession.mockResolvedValue(
+      makeDetail({
+        status: "failed",
+        phase: "analyzing",
+        error: "boom",
+        retry: { state: "failed", attempts: 3, max_attempts: 3, next_attempt_at: null },
+      }),
+    );
+    renderDetail();
+    expect(await screen.findByText(/3 attempts exhausted/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry now" })).toBeInTheDocument();
+  });
+
+  it("renders per-call timing on agent replies and tool traces", async () => {
+    const timing = {
+      started_at: "2026-07-17T10:00:00Z",
+      finished_at: "2026-07-17T10:00:03Z",
+      duration_s: 3.2,
+      ttft_s: 0.42,
+      input_tokens: 900,
+      output_tokens: 130,
+      tps: 41.3,
+    };
+    mocked.getSession.mockResolvedValue(
+      makeDetail({
+        transcript: [
+          mkItem({ role: "user", origin: "pipeline", content: "Process document id=7." }),
+          mkItem({ role: "tool", tool_name: "get_document", timing }),
+          mkItem({ role: "agent", content: "All done.", timing: { ...timing, duration_s: 5.0 } }),
+        ],
+      }),
+    );
+    renderDetail();
+
+    expect(await screen.findByText(/5\.0s · 41 tok\/s · ttft 0\.42s/)).toBeInTheDocument();
+    // Tool trace row carries its call metrics too (collapsed details).
+    expect(screen.getByText(/3\.2s · 41 tok\/s/)).toBeInTheDocument();
   });
 });

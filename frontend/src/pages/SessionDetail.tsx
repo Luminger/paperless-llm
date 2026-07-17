@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Proposal, type TranscriptItem } from "../api";
+import { api, type CallTiming, type Proposal, type RetryInfo, type TranscriptItem } from "../api";
 import { DiffView } from "../components/DiffView";
 import { ProposalCard } from "../components/ProposalCard";
 import { useSessionEvents } from "../hooks/useSessionEvents";
@@ -32,6 +32,60 @@ function Step({
   );
 }
 
+function timingLabel(t: CallTiming): string {
+  const parts = [`${t.duration_s.toFixed(1)}s`];
+  if (t.tps != null) parts.push(`${t.tps.toFixed(0)} tok/s`);
+  if (t.ttft_s != null) parts.push(`ttft ${t.ttft_s.toFixed(2)}s`);
+  return parts.join(" · ");
+}
+
+function TimingChip({ t }: { t: CallTiming | null }) {
+  if (!t) return null;
+  return (
+    <span className="text-[10px] text-zinc-400" title={`${t.started_at} → ${t.finished_at}, ${t.input_tokens ?? "?"} in / ${t.output_tokens ?? "?"} out tokens`}>
+      {timingLabel(t)}
+    </span>
+  );
+}
+
+function RetryBar({
+  sessionId,
+  retry,
+  onRetried,
+}: {
+  sessionId: number;
+  retry: RetryInfo | null;
+  onRetried: () => void;
+}) {
+  const retryNow = useMutation({
+    mutationFn: () => api.retrySession(sessionId),
+    onSuccess: onRetried,
+  });
+  const scheduled = retry?.state === "pending" && retry.next_attempt_at;
+  return (
+    <div className="flex items-center gap-3 text-xs">
+      {scheduled ? (
+        <span className="text-zinc-500">
+          Automatic retry (attempt {retry!.attempts + 1} of {retry!.max_attempts}) at{" "}
+          {new Date(retry!.next_attempt_at!).toLocaleTimeString()}
+        </span>
+      ) : retry && retry.state === "failed" ? (
+        <span className="text-zinc-500">
+          {retry.attempts} attempt{retry.attempts !== 1 ? "s" : ""} exhausted
+        </span>
+      ) : null}
+      <button
+        className="rounded bg-zinc-700 px-2 py-1 text-white hover:bg-zinc-800 disabled:opacity-50"
+        onClick={() => retryNow.mutate()}
+        disabled={retryNow.isPending}
+      >
+        Retry now
+      </button>
+      {retryNow.error && <span className="text-red-600">{String(retryNow.error)}</span>}
+    </div>
+  );
+}
+
 function ToolTrace({ items }: { items: TranscriptItem[] }) {
   if (items.length === 0) return null;
   return (
@@ -49,6 +103,7 @@ function ToolTrace({ items }: { items: TranscriptItem[] }) {
             {t.tool_result?.startsWith("rejected: ") && (
               <span className="text-amber-600"> → {t.tool_result.slice(0, 120)}</span>
             )}
+            {t.timing && <span className="text-zinc-400"> · {timingLabel(t.timing)}</span>}
           </li>
         ))}
       </ul>
@@ -78,10 +133,13 @@ function OcrGate({ sessionId, onResolved }: { sessionId: number; onResolved: () 
 
   if (!ocr || newText === null) return <p className="text-sm text-zinc-500">Loading OCR result…</p>;
 
+  const totalOcrSeconds = (ocr.timings ?? []).reduce((a, t) => a + t.duration_s, 0);
+
   return (
     <div className="space-y-3">
       <p className="text-sm text-zinc-600">
-        Review the re-OCRed content ({ocr.pages} page{ocr.pages !== 1 ? "s" : ""}). You can
+        Review the re-OCRed content ({ocr.pages} page{ocr.pages !== 1 ? "s" : ""}
+        {totalOcrSeconds > 0 ? `, OCR took ${totalOcrSeconds.toFixed(1)}s` : ""}). You can
         fix mistakes directly in the new text before accepting. The metadata analysis
         continues only after this step — based on whatever content you decide on.
       </p>
@@ -139,8 +197,13 @@ function ChatItem({ item }: { item: TranscriptItem }) {
     );
   }
   return (
-    <div className="mr-8 rounded-lg border border-zinc-200 bg-white p-2 text-sm whitespace-pre-wrap text-zinc-700">
-      {item.content}
+    <div className="mr-8 rounded-lg border border-zinc-200 bg-white p-2 text-sm text-zinc-700">
+      <div className="whitespace-pre-wrap">{item.content}</div>
+      {item.timing && (
+        <div className="mt-1 text-right">
+          <TimingChip t={item.timing} />
+        </div>
+      )}
     </div>
   );
 }
@@ -150,11 +213,17 @@ function Conversation({
   items,
   busy,
   error,
+  generating,
+  retry,
+  onRetried,
 }: {
   sessionId: number;
   items: TranscriptItem[];
   busy: boolean;
   error: string | null;
+  generating: { chars: number } | null;
+  retry: RetryInfo | null;
+  onRetried: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const send = useMutation({
@@ -183,9 +252,19 @@ function Conversation({
         <p className="text-sm text-zinc-500">
           <span className="mr-1 inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500" />
           Agent is working…
+          {generating && (
+            <span className="ml-1 text-xs text-zinc-400">
+              (~{(generating.chars / 1000).toFixed(1)}k chars generated)
+            </span>
+          )}
         </p>
       )}
-      {error && <p className="rounded bg-red-50 p-2 font-mono text-xs text-red-700">{error}</p>}
+      {error && (
+        <div className="space-y-2">
+          <p className="rounded bg-red-50 p-2 font-mono text-xs text-red-700">{error}</p>
+          <RetryBar sessionId={sessionId} retry={retry} onRetried={onRetried} />
+        </div>
+      )}
       <form
         className="flex gap-2 pt-1"
         onSubmit={(e) => {
@@ -249,7 +328,7 @@ export default function SessionDetail() {
   const { id } = useParams();
   const sessionId = Number(id);
   const qc = useQueryClient();
-  useSessionEvents(sessionId);
+  const { generating } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => api.getSession(sessionId),
@@ -344,7 +423,19 @@ export default function SessionDetail() {
             state={ocrState}
           >
             {ocrState === "failed" && s.error && (
-              <p className="rounded bg-red-50 p-2 font-mono text-xs text-red-700">{s.error}</p>
+              <div className="space-y-2">
+                <p className="rounded bg-red-50 p-2 font-mono text-xs text-red-700">{s.error}</p>
+                <RetryBar
+                  sessionId={s.id}
+                  retry={s.retry}
+                  onRetried={() => qc.invalidateQueries({ queryKey: ["session", sessionId] })}
+                />
+              </div>
+            )}
+            {ocrState === "active" && generating && (
+              <p className="text-xs text-zinc-400">
+                generating… ~{(generating.chars / 1000).toFixed(1)}k chars
+              </p>
             )}
             {ocrState === "active" && typeof s.params.ocr_instructions === "string" && (
               <p className="text-xs text-zinc-500">
@@ -373,15 +464,34 @@ export default function SessionDetail() {
           state={analysisState === "failed" && phase === "done" ? "done" : analysisState}
         >
           {failed && !failedDuringOcr && phase !== "done" && (
-            <p className="rounded bg-red-50 p-2 font-mono text-xs text-red-700">{s.error}</p>
+            <div className="space-y-2">
+              <p className="rounded bg-red-50 p-2 font-mono text-xs text-red-700">{s.error}</p>
+              <RetryBar
+                sessionId={s.id}
+                retry={s.retry}
+                onRetried={() => qc.invalidateQueries({ queryKey: ["session", sessionId] })}
+              />
+            </div>
+          )}
+          {analysisState === "active" && generating && (
+            <p className="text-xs text-zinc-400">
+              generating… ~{(generating.chars / 1000).toFixed(1)}k chars
+            </p>
           )}
           {phase === "done" && (
             <div className="space-y-2">
               <ToolTrace items={analysisTools} />
               {analysisText && (
-                <pre className="rounded border border-zinc-200 bg-white p-3 font-sans text-sm whitespace-pre-wrap text-zinc-700">
-                  {analysisText}
-                </pre>
+                <div className="rounded border border-zinc-200 bg-white p-3">
+                  <pre className="font-sans text-sm whitespace-pre-wrap text-zinc-700">
+                    {analysisText}
+                  </pre>
+                  {firstAgent >= 0 && s.transcript[firstAgent].timing && (
+                    <div className="mt-1 text-right">
+                      <TimingChip t={s.transcript[firstAgent].timing} />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -404,6 +514,9 @@ export default function SessionDetail() {
               items={chatItems}
               busy={running}
               error={failed ? s.error : null}
+              generating={generating}
+              retry={s.retry}
+              onRetried={() => qc.invalidateQueries({ queryKey: ["session", sessionId] })}
             />
           </Step>
         )}
