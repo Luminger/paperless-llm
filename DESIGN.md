@@ -580,10 +580,11 @@ scenarios accumulate from M1 on.
    unified pipeline, queue, and timeline into one abstraction.
    A settings/model-profile overview UI was deferred out of M4 (moved
    to M6 packaging polish).
-5. **M5 — coherence & consolidation** (replaces the RAG milestone;
-   document RAG is parked under future extensions — the system is
-   useful without it): one design language and one set of patterns
-   across the whole API and UI, grown feature-by-feature until now.
+5. **M5 — coherence & consolidation** ✓ (shipped; replaced the RAG
+   milestone — document RAG is parked under future extensions, the
+   system is useful without it): one design language and one set of
+   patterns across the whole API and UI, grown feature-by-feature
+   until then.
    Decisions: shadcn/ui (vendored) for primitives; TS types generated
    from OpenAPI; "jobs" is the one name; the proposal lifecycle is
    propose → user applies or rejects; no query-scoped jobs.
