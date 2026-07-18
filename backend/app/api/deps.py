@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from fastapi import Depends, HTTPException, Request
 
 from app.config import get_settings
-from app.paperless import PaperlessClient
+from app.paperless import PaperlessClient, make_client
 from app.services.actor import actor_var
 from app.services.auth import CurrentUser
 
@@ -50,12 +50,5 @@ async def get_paperless(request: Request) -> AsyncIterator[PaperlessClient]:
         if user is not None and user.paperless_token
         else s.token
     )
-    async with PaperlessClient(
-        s.base_url,
-        token,
-        timeout=s.timeout_seconds,
-        username=s.username,
-        password=s.password,
-        verify_tls=s.verify_tls,
-    ) as client:
+    async with make_client(token) as client:
         yield client

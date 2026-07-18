@@ -4,6 +4,7 @@ endpoint is disabled entirely when no secret is configured)."""
 
 from __future__ import annotations
 
+import hmac
 import logging
 import re
 from typing import Any
@@ -23,6 +24,13 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
+def _ascii_int(v: Any) -> int | None:
+    """int() only for ASCII digits — str.isdigit() is True for unicode
+    digits like "²" where int() raises (AUDIT API-F11)."""
+    s = str(v)
+    return int(s) if s.isascii() and s.isdigit() else None
+
+
 def _extract_document_ids(body: Any) -> list[int]:
     """Tolerant extraction: paperless workflow webhook bodies are
     user-templated; accept the obvious shapes."""
@@ -30,10 +38,12 @@ def _extract_document_ids(body: Any) -> list[int]:
         for key in ("document_id", "id", "doc_id"):
             if isinstance(body.get(key), int):
                 return [body[key]]
-            if isinstance(body.get(key), str) and body[key].isdigit():
-                return [int(body[key])]
+            if (n := _ascii_int(body.get(key))) is not None and isinstance(
+                body.get(key), str
+            ):
+                return [n]
         if isinstance(body.get("documents"), list):
-            return [int(x) for x in body["documents"] if str(x).isdigit()]
+            return [n for x in body["documents"] if (n := _ascii_int(x)) is not None]
         # e.g. {"url": "https://paperless/documents/123/"}
         for key in ("url", "doc_url"):
             if isinstance(body.get(key), str):
@@ -52,7 +62,8 @@ async def paperless_webhook(
     cfg = get_settings().webhook
     if not cfg.secret:
         raise HTTPException(404, "webhook ingress not configured")
-    if request.headers.get("X-PLLM-Token") != cfg.secret:
+    # Constant-time compare (AUDIT API-F11).
+    if not hmac.compare_digest(request.headers.get("X-PLLM-Token", ""), cfg.secret):
         raise HTTPException(403, "bad webhook token")
     # Machine-to-machine: not a user action.
     from app.services.actor import actor_var

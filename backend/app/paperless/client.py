@@ -9,6 +9,7 @@ API reference: https://docs.paperless-ngx.com/api/
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -188,7 +189,16 @@ class PaperlessClient:
         while page_url:
             data = await self._get_json(page_url, **params)
             out.extend(model.model_validate(r) for r in data["results"])  # type: ignore[attr-defined]
-            page_url = data.get("next")
+            nxt = data.get("next")
+            if nxt:
+                # AUDIT API-F16: `next` is an ABSOLUTE url built from
+                # paperless's own Host header — in split-horizon setups
+                # following it verbatim would send the Authorization
+                # token to a different host. Keep path+query, request
+                # relative to OUR base_url.
+                parsed = urlsplit(nxt)
+                nxt = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+            page_url = nxt
             params = {}  # `next` already carries the query string
         return out
 
@@ -421,3 +431,21 @@ class PaperlessClient:
             return True
         except PaperlessError:
             return False
+
+
+def make_client(token: str | None = None) -> PaperlessClient:
+    """THE settings-based constructor. Every code path that talks to the
+    CONFIGURED paperless goes through here so timeout/TLS/auth can never
+    drift between call sites (AUDIT API-C3: `resolve_role` had already
+    forgotten `timeout`, login had forgotten `verify_tls`)."""
+    from app.config import get_settings
+
+    s = get_settings().paperless
+    return PaperlessClient(
+        s.base_url,
+        token or s.token,
+        timeout=s.timeout_seconds,
+        username=s.username,
+        password=s.password,
+        verify_tls=s.verify_tls,
+    )

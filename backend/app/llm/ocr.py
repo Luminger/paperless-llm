@@ -138,13 +138,12 @@ async def run_ocr(
     from app.services.prefs import get_prefs
 
     prefs = await get_prefs(db)
-    base_prompt = prefs.get("ocr_prompt_base", "").strip() or OCR_PROMPT
-    ocr_addition = prefs.get("ocr_prompt_addition", "").strip()
-    if ocr_addition:
-        base_prompt += (
-            "\nAdditional instructions from the archive's owner "
-            "(follow them):\n" + ocr_addition + "\n"
-        )
+    from app.services.prefs import with_owner_addition
+
+    base_prompt = with_owner_addition(
+        prefs.get("ocr_prompt_base", "").strip() or OCR_PROMPT,
+        prefs.get("ocr_prompt_addition", ""),
+    )
     fingerprint = hashlib.sha256(base_prompt.encode()).hexdigest()[:16]
 
     cached = await db.scalar(

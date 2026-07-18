@@ -1,4 +1,4 @@
-from app.paperless.client import PaperlessClient, PaperlessError
+from app.paperless.client import PaperlessClient, PaperlessError, make_client
 from app.paperless.schemas import (
     Correspondent,
     CustomField,
@@ -17,6 +17,7 @@ __all__ = [
     "Page",
     "PaperlessClient",
     "PaperlessError",
+    "make_client",
     "StoragePath",
     "Tag",
 ]

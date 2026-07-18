@@ -27,6 +27,7 @@ from app.db.models import (
 from app.llm.ocr import run_ocr
 from app.paperless import PaperlessClient
 from app.proposals.apply import apply_proposal
+from app.proposals.kinds import is_internal, visible
 from app.proposals.schemas import ReplaceContent, dump_payload
 from app.services.steps import AWAIT_USER, EXECUTORS, RESOLVERS, create_step
 
@@ -214,7 +215,7 @@ async def continue_after_decision(
     still 'running' and must not count as in-flight work."""
     if session.archived_at is not None:
         return None
-    if proposal.step_id is None or str(proposal.kind) == "replace_content":
+    if proposal.step_id is None or is_internal(proposal.kind):
         return None
     if proposal.status not in (ProposalStatus.applied, ProposalStatus.no_change):
         return None
@@ -222,7 +223,7 @@ async def continue_after_decision(
         select(func.count()).select_from(Proposal).where(
             Proposal.session_id == session.id,
             Proposal.status == ProposalStatus.pending,
-            Proposal.kind != "replace_content",
+            visible(),
         )
     )
     if open_left:

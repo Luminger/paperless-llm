@@ -380,8 +380,10 @@ async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
     # failure path promotes or discards it explicitly).
     await ctx.deps.db.commit()
     ctx.deps.emitted.append(proposal)
+    from app.proposals.tokens import proposal_token
+
     return (
-        f"Proposal [[proposal:{proposal.id}]] ({p.kind}) recorded for human "
+        f"Proposal {proposal_token(proposal.id)} ({p.kind}) recorded for human "
         "review. It is NOT applied yet. Do not repeat it; continue with "
         "your task or finish with a short summary."
     )

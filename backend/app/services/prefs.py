@@ -54,3 +54,15 @@ def format_instructions(prefs: dict[str, str]) -> str:
         f"preference: {date_part}, {time_part}{zone_part}. Machine fields "
         f"in proposals (e.g. `created`) always stay ISO YYYY-MM-DD."
     )
+
+
+def with_owner_addition(prompt: str, addition: str) -> str:
+    """Append the archive owner's standing instructions — ONE wording
+    for every prompt (agent + OCR); divergent copies would change cache
+    fingerprints and model behavior independently."""
+    if addition.strip():
+        prompt += (
+            "\nAdditional instructions from the archive's owner "
+            "(follow them):\n" + addition.strip() + "\n"
+        )
+    return prompt

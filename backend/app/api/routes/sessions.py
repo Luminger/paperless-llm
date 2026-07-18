@@ -5,12 +5,12 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
 from app.api.deps import get_paperless
-from app.api.enrich import entity_names
+from app.api.enrich import apply_entity_names, entity_names, proposal_counts
 from app.api.pagination import count_of, paginate
 from app.api.presenters import proposal_out
 from app.api.schemas import (
@@ -41,6 +41,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
+from app.proposals.kinds import visible
 from app.services import steps as engine
 from app.services.audit import record
 from app.services.events import bus
@@ -76,7 +77,7 @@ async def list_sessions(
             .where(
                 Proposal.session_id == Session.id,
                 Proposal.status == ProposalStatus.pending,
-                Proposal.kind != "replace_content",
+                visible(),
             )
             # The outer list query also joins Proposal — correlate only
             # Session so the subquery keeps its own FROM.
@@ -96,27 +97,9 @@ async def list_sessions(
             raise HTTPException(422, f"unknown entity type {entity_type!r}") from e
     if entity_id is not None:
         where.append(Session.entity_id == entity_id)
-    pending_case = case(
-        (
-            (Proposal.status == ProposalStatus.pending)
-            & (Proposal.kind != "replace_content"),
-            1,
-        ),
-        else_=0,
-    )
-    applied_case = case(
-        (
-            (Proposal.status == ProposalStatus.applied)
-            & (Proposal.kind != "replace_content"),
-            1,
-        ),
-        else_=0,
-    )
     q = (
-        select(Session, func.count(Proposal.id), func.sum(pending_case), func.sum(applied_case))
-        .outerjoin(Proposal, Proposal.session_id == Session.id)
+        select(Session)
         .where(*where)
-        .group_by(Session.id)
         .order_by(Session.updated_at.desc())
         # List rows must stay narrow: the full chat history is a
         # per-session JSON blob and belongs to the detail view only.
@@ -126,17 +109,18 @@ async def list_sessions(
         db, q, count_of(Session, *where), page=page, page_size=page_size,
         max_page_size=100,
     )
+    sessions = list((await db.scalars(q)).all())
+    counts = await proposal_counts(db, [x.id for x in sessions])
     results: list[SessionOut] = []
-    for s, n, pending, applied in (await db.execute(q)).all():
-        item = SessionOut.model_validate(s)
-        item.proposal_count = n
-        item.pending_proposal_count = int(pending or 0)
-        item.applied_proposal_count = int(applied or 0)
+    for x in sessions:
+        item = SessionOut.model_validate(x)
+        (
+            item.proposal_count,
+            item.pending_proposal_count,
+            item.applied_proposal_count,
+        ) = counts.get(x.id, (0, 0, 0))
         results.append(item)
-    names = await entity_names(paperless, [(r.entity_type, r.entity_id) for r in results])
-    for r in results:
-        if r.entity_type is not None and r.entity_id is not None:
-            r.entity_name = names.get((r.entity_type.value, r.entity_id), "")
+    await apply_entity_names(paperless, results)
     return SessionPage(
         count=win.count, page=win.page, page_size=win.page_size, results=results
     )
@@ -236,7 +220,8 @@ async def analyze_document(
     s = await db.scalar(
         select(Session).where(Session.job_id == job.id).order_by(Session.id)
     )
-    assert s is not None
+    if s is None:  # pragma: no cover — guarded by the 404 above
+        raise HTTPException(404, "session not found")
     return SessionOut.model_validate(s)
 
 
@@ -283,7 +268,9 @@ async def get_ocr_review(
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "session not found")
-    if s.entity_id is None:
+    # AUDIT API-F13: taxonomy sessions share the id space — entity_id 7
+    # of a tag session must never look up OCR for DOCUMENT 7.
+    if s.entity_id is None or s.entity_type != EntityType.document:
         raise HTTPException(409, "session is not bound to a document")
     latest = await db.scalar(
         select(OcrResult)

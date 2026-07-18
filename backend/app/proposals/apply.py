@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AppliedChange, Proposal, ProposalStatus, utcnow
 from app.paperless import PaperlessClient, PaperlessError
 from app.paperless.taxonomy import TAXONOMY
+from app.proposals.kinds import ENTITY_RULE_FIELDS, MATCHING_AUTO
 from app.proposals.schemas import (
     AnyProposal,
     CreateEntity,
@@ -344,7 +345,7 @@ def _entity_fields(p: CreateEntity | UpdateEntity) -> dict[str, Any]:
     provided = p.model_dump(exclude_unset=True)
     fields = {
         k: provided[k]
-        for k in ("name", "match", "matching_algorithm", "is_insensitive")
+        for k in ENTITY_RULE_FIELDS
         if k in provided and provided[k] is not None
     }
     fields.update(p.extra)
@@ -370,7 +371,7 @@ async def _apply_create_entity(
         # own classifier keeps learning and pre-assigning — the agent can
         # still propose an explicit rule instead.
         if "match" not in fields:
-            fields.setdefault("matching_algorithm", 6)
+            fields.setdefault("matching_algorithm", MATCHING_AUTO)
         created = await spec.create(paperless, **fields)
     # AUDIT API-F1: an honest journal — when we REUSED an entity that
     # appeared since the proposal, `before` snapshots it and `reused`
@@ -539,7 +540,7 @@ async def revert_is_noop(
             ent = before.get("entity") or {}
             return all(
                 getattr(current, k, None) == ent[k]
-                for k in ("name", "match", "matching_algorithm", "is_insensitive")
+                for k in ENTITY_RULE_FIELDS
                 if k in ent
             )
         case MergeEntities():
@@ -628,7 +629,7 @@ async def _revert_claimed(
                 typed.entity_id,
                 **{
                     k: entity[k]
-                    for k in ("name", "match", "matching_algorithm", "is_insensitive")
+                    for k in ENTITY_RULE_FIELDS
                     if k in entity
                 },
             )
@@ -660,7 +661,7 @@ async def _revert_claimed(
             recreated = await spec.create(paperless, 
                 **{
                     k: src[k]
-                    for k in ("name", "match", "matching_algorithm", "is_insensitive")
+                    for k in ENTITY_RULE_FIELDS
                     if k in src and src[k] is not None
                 }
             )
@@ -683,7 +684,7 @@ async def _revert_claimed(
             recreated = await spec.create(paperless, 
                 **{
                     k: src[k]
-                    for k in ("name", "match", "matching_algorithm", "is_insensitive")
+                    for k in ENTITY_RULE_FIELDS
                     if k in src and src[k] is not None
                 }
             )

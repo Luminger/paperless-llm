@@ -13,7 +13,6 @@ and therefore don't pollute user messages here.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -23,7 +22,9 @@ _RESULT_LIMIT = 500
 # The propose_* tool result format is OWNED by app.agents.tools._persist
 # ("Proposal [[proposal:N]] (kind) recorded ..."): parsing it here is a
 # contract between two modules of this codebase, not string guessing.
-_PROPOSAL_TOKEN_RE = re.compile(r"\[\[proposal:(\d+)\]\]")
+# The token contract lives in app/proposals/tokens.py; re-exported name
+# kept for backwards compatibility within this package.
+from app.proposals.tokens import PROPOSAL_TOKEN_RE as _PROPOSAL_TOKEN_RE  # noqa: E402
 
 
 class CallTiming(BaseModel):

@@ -38,10 +38,15 @@ router = APIRouter(prefix="/api/entities", tags=["entities"])
 
 
 def _id_list(v: str | None) -> list[int] | None:
-    """Comma-separated ids from the URL ("1,5,9") — empty means None."""
+    """Comma-separated ids from the URL ("1,5,9") — empty means None.
+    AUDIT API-F9: malformed input is the CLIENT's error (422), never a
+    500."""
     if not v:
         return None
-    return [int(part) for part in v.split(",") if part.strip()]
+    try:
+        return [int(part) for part in v.split(",") if part.strip()]
+    except ValueError as e:
+        raise HTTPException(422, f"invalid id list {v!r}") from e
 
 
 @router.get("/documents")
@@ -56,6 +61,10 @@ async def list_documents(
 ) -> DocumentSearchPage:
     """Browse filters are multiselects with ANY-of semantics — ids come
     comma-separated per taxonomy type."""
+    # AUDIT API-F10: clamp what we proxy — page_size=100000 would make
+    # paperless serialize its whole archive per request.
+    page = max(1, page)
+    page_size = min(max(1, page_size), 100)
     result = await paperless.search_documents(
         query=query,
         tags_any=_id_list(tag_ids),

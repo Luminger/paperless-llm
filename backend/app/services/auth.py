@@ -145,14 +145,10 @@ async def resolve_role(username: str) -> str:
     live instance), so the lookup runs under the app's own token; if
     THAT lacks the rights, everyone is a regular user and the log says
     why."""
-    from app.paperless import PaperlessClient
+    from app.paperless import make_client
 
-    cfg = get_settings().paperless
     try:
-        async with PaperlessClient(
-            cfg.base_url, cfg.token, username=cfg.username,
-            password=cfg.password, verify_tls=cfg.verify_tls,
-        ) as client:
+        async with make_client() as client:
             data = await client._get_json(  # noqa: SLF001 — same package, thin proxy
                 "/api/users/", username__iexact=username, page_size=2
             )

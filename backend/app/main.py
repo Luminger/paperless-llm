@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -133,6 +133,10 @@ def create_app() -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         async def spa(path: str) -> FileResponse:
+            # AUDIT API-F18: unknown /api/ paths are API 404s, not a
+            # 200 index.html that confuses clients.
+            if path.startswith("api/"):
+                raise HTTPException(404, "not found")
             file = (dist / path).resolve()
             if path and file.is_file() and file.is_relative_to(dist):
                 return FileResponse(file)

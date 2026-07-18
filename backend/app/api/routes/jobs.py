@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.api.deps import get_paperless
-from app.api.enrich import entity_names
+from app.api.enrich import apply_entity_names, proposal_counts
 from app.api.pagination import count_of, paginate
 from app.api.schemas import (
     CorpusOut,
@@ -33,6 +33,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
+from app.proposals.kinds import visible
 from app.services.jobs import ACTIVE_PHASES, apply_live, live_job_counts
 from app.services.jobs import create_job as create_job_service
 
@@ -126,7 +127,7 @@ async def job_attention(
                 select(Proposal.session_id).where(
                     Proposal.session_id.in_(session_ids),
                     Proposal.status == ProposalStatus.pending,
-                    Proposal.kind != "replace_content",
+                    visible(),
                 )
             )
         ).all()
@@ -191,37 +192,7 @@ async def get_job(
             .order_by(Session.id)
         )
     ).all()
-    pending_case = case(
-        (
-            (Proposal.status == ProposalStatus.pending)
-            & (Proposal.kind != "replace_content"),
-            1,
-        ),
-        else_=0,
-    )
-    applied_case = case(
-        (
-            (Proposal.status == ProposalStatus.applied)
-            & (Proposal.kind != "replace_content"),
-            1,
-        ),
-        else_=0,
-    )
-    counts = {
-        sid: (n, int(pending or 0), int(applied or 0))
-        for sid, n, pending, applied in (
-            await db.execute(
-                select(
-                    Proposal.session_id,
-                    func.count(),
-                    func.sum(pending_case),
-                    func.sum(applied_case),
-                )
-                .where(Proposal.session_id.in_([s.id for s in sessions] or [0]))
-                .group_by(Proposal.session_id)
-            )
-        ).all()
-    }
+    counts = await proposal_counts(db, [s.id for s in sessions])
     out.sessions = []
     for s in sessions:
         item = SessionOut.model_validate(s)
@@ -231,12 +202,7 @@ async def get_job(
             item.applied_proposal_count,
         ) = counts.get(s.id, (0, 0, 0))
         out.sessions.append(item)
-    names = await entity_names(
-        paperless, [(i.entity_type, i.entity_id) for i in out.sessions]
-    )
-    for i in out.sessions:
-        if i.entity_type is not None and i.entity_id is not None:
-            i.entity_name = names.get((i.entity_type.value, i.entity_id), "")
+    await apply_entity_names(paperless, out.sessions)
     return out
 
 
@@ -270,7 +236,7 @@ async def stats(db: AsyncSession = Depends(get_session)) -> StatsOut:
     pending_proposals = await db.scalar(
         select(func.count())
         .select_from(Proposal)
-        .where(Proposal.status == ProposalStatus.pending, Proposal.kind != "replace_content")
+        .where(Proposal.status == ProposalStatus.pending, visible())
     )
     active_sessions = await db.scalar(
         select(func.count())

@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_user
@@ -37,6 +37,19 @@ class PrefsUpdate(BaseModel):
     date_format: DateFormat | None = None
     time_format: TimeFormat | None = None
     time_zone: str | None = None
+
+    @field_validator("time_zone")
+    @classmethod
+    def _known_zone(cls, v: str | None) -> str | None:
+        # AUDIT API-F18: a bad zone would crash every date render in the
+        # frontend — reject it at the door.
+        if v is None or v == "system":
+            return v
+        import zoneinfo
+
+        if v not in zoneinfo.available_timezones():
+            raise ValueError(f"unknown time zone {v!r}")
+        return v
     agent_prompt_base: str | None = None
     agent_prompt_addition: str | None = None
     ocr_prompt_base: str | None = None

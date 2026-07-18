@@ -65,11 +65,10 @@ def _instrumented(fn: Callable) -> Callable:
             result_preview = ""
         extra: dict = {}
         if fn.__name__.startswith("propose_") and isinstance(result, str):
-            from app.services.transcript import _PROPOSAL_TOKEN_RE
+            from app.proposals.tokens import find_proposal_id
 
-            m = _PROPOSAL_TOKEN_RE.search(result)
-            if m:
-                extra["proposal_id"] = int(m.group(1))
+            if (pid := find_proposal_id(result)) is not None:
+                extra["proposal_id"] = pid
         bus.publish(
             ctx.deps.session_id, "step_progress",
             step_id=ctx.deps.step_id, tool_done=fn.__name__,
@@ -193,13 +192,11 @@ def compose_prompt(
     optional user addition."""
     if kind not in _TASKS:
         raise ValueError(f"agent kind {kind} not implemented")
-    prompt = (base.strip() or DEFAULT_BASE_PROMPT) + _TASKS[kind]
-    if addition.strip():
-        prompt += (
-            "\nAdditional instructions from the archive's owner "
-            "(follow them):\n" + addition.strip() + "\n"
-        )
-    return prompt
+    from app.services.prefs import with_owner_addition
+
+    return with_owner_addition(
+        (base.strip() or DEFAULT_BASE_PROMPT) + _TASKS[kind], addition
+    )
 
 
 def build_agent(

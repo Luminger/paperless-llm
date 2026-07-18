@@ -57,12 +57,9 @@ TERMINAL = (StepState.succeeded, StepState.failed, StepState.superseded, StepSta
 
 
 def _paperless_client() -> PaperlessClient:
-    s = get_settings().paperless
-    return PaperlessClient(
-        s.base_url, s.token,
-        timeout=s.timeout_seconds, username=s.username, password=s.password,
-        verify_tls=s.verify_tls,
-    )
+    from app.paperless import make_client
+
+    return make_client()
 
 
 def _publish(step: Step) -> None:

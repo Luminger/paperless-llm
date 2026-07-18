@@ -239,7 +239,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #73
 
 ### BC-F16 — LOW — transcript drops non-tool retry-prompts
-- **Status:** OPEN
+- **Status:** OPEN (accepted for now) — niche shape (output-validation retries without tool_call_id); revisit if turn auditing ever misses content
 - **Where:** `app/services/transcript.py:169-174`
 - **Detail:** `retry-prompt` parts are only attached to a known
   `tool_call_id`; retries without one (output-validation failures)
@@ -281,7 +281,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** (small; fold into #73)
 
 ### BC-C — centralization opportunities
-- **Status:** OPEN — todo #82
+- **Status:** LARGELY DONE — (1) tokens → `app/proposals/tokens.py` (format+regex+finder, all three sites rewired); (3) MATCHING_AUTO in kinds.py, apply uses it (full matching-map move deferred); (4) `with_owner_addition` in prefs.py (agent+OCR share it); (5) paperless-error wrapper NOT done (accepted — F15 fixed the concrete case); (2)/(6) partially: ENTITY_RULE_FIELDS centralized (5 copies), doc-scalar lists remain purpose-specific; (7) per-profile timeouts done in #72
   1. Proposal-token contract spans three modules (`tools._persist`
      builds the string, `transcript.py:26` owns the regex,
      `registry.py:58` imports the private regex) → one
@@ -622,18 +622,18 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #80
 
 ### API-F9 — LOW — malformed id lists → 500
-- **Status:** OPEN — `entities.py:37-41`: `?tag_ids=1,foo` raises
+- **Status:** FIXED — `_id_list` raises 422; live-verified — `entities.py:37-41`: `?tag_ids=1,foo` raises
   ValueError → 500 instead of 422. Shared validating dependency.
   Todo #81.
 
 ### API-F10 — LOW — proxied pagination params flow to paperless unclamped
-- **Status:** OPEN — `entities.py:44-63`: `page_size=100000` makes
+- **Status:** FIXED — page>=1, page_size<=100 clamped at the route — `entities.py:44-63`: `page_size=100000` makes
   paperless serialize its archive (authenticated amplification);
   page=0 → paperless 404 surfaced as `paperless_not_found`. Clamp
   page>=1, size<=100. Todo #81.
 
 ### API-F11 — LOW — webhook secret compared with `!=`; unicode digits 500
-- **Status:** OPEN — `webhooks.py:55` non-constant-time compare (use
+- **Status:** FIXED — `hmac.compare_digest` + ASCII-only int extraction — `webhooks.py:55` non-constant-time compare (use
   `hmac.compare_digest`); `_extract_document_ids` `int(x)` on
   `str.isdigit()` — true for `"²"` where int() raises → 500. No rate
   limit for secret holders (accepted, comment). Todo #81.
@@ -642,7 +642,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Status:** FIXED — 5-minute TTL added (4-entry cap kept); re-archived documents refresh within TTL. Per-entry size still unbounded (a PDF is what it is) — accepted.
 
 ### API-F13 — LOW — `GET /{session_id}/ocr` ignores `entity_type`
-- **Status:** OPEN — `sessions.py:286-296` checks only
+- **Status:** FIXED — requires `entity_type == document` — `sessions.py:286-296` checks only
   `entity_id is not None`; a taxonomy session with entity_id=7 would
   look up OCR for *document* 7 — wrong-domain id reuse, nonsense diff on
   collision. Require `entity_type == document`. Todo #81.
@@ -656,12 +656,12 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
   Todo #79 (documentation).
 
 ### API-F15 — LOW — entity-name enrichment caps documents at 100
-- **Status:** OPEN — `enrich.py:238-241`: a 100-row session page bound
+- **Status:** FIXED — `id__in` chunked in pages of 100 — `enrich.py:238-241`: a 100-row session page bound
   to >100 distinct documents leaves some names empty, silently. Drain or
   chunk `id__in`. Todo #81.
 
 ### API-F16 — LOW — `_drain` follows absolute `next` URLs from paperless
-- **Status:** OPEN — `client.py:183-193`: `next` is generated from
+- **Status:** FIXED — `next` re-relativized to path+query against our base_url — `client.py:183-193`: `next` is generated from
   paperless's Host header; httpx sends the Authorization token to
   whatever host it names — split-horizon deployments leak the token or
   fail. Re-parse and keep path+query relative to base_url. Todo #81.
@@ -673,7 +673,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
   doc or gate. Decide and record.
 
 ### API-F18 — INFO — misc
-- **Status:** OPEN — todo #81
+- **Status:** FIXED (assert→raise; /api/ 404s instead of SPA fallback — live-verified; time_zone validated against zoneinfo). Remaining accepted: no login rate limit (LAN + audited), first-boot secret race (single-process), parse_cookie exp (unreachable)
   - `sessions.py:239` `assert s is not None` vanishes under `python -O`.
   - Unknown `/api/...` GETs fall through to SPA `index.html` 200 instead
     of JSON 404.
@@ -686,7 +686,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
     `zoneinfo.available_timezones()`.
 
 ### API-C — centralization opportunities
-- **Status:** OPEN — todo #82
+- **Status:** DONE — (1) `proposal_counts` + `visible()` predicate (`app/api/enrich.py` + `app/proposals/kinds.py`, all 8 predicate sites); (2) `apply_entity_names` (3 copies removed); (3) `make_client` factory (`app/paperless/client.py`, steps/deps/auth rewired — seeding keeps explicit args by design); (4) proxy clamps at route (F10); (5) ENTITY_RULE_FIELDS (5 copies); (6) `_id_list` validates (F9)
   1. Per-session proposal counts (CASE expressions + stitching)
      duplicated `sessions.py:99-135` / `jobs.py:244-283`;
      `kind != "replace_content"` ×6 here alone → `proposal_counts()`
