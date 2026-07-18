@@ -20,6 +20,26 @@ base_url = "http://llm.lan:8001/v1"
 model = "qwen3.6-27b"
 ```
 
+
+## Precedence
+
+Settings are layered — first match wins:
+
+1. **Environment variables** (`PLLM_…`) — authoritative. A key set here
+   is *locked*: the config file cannot override it (the startup log
+   warns about every shadowed file value) and the Settings UI shows it
+   with a lock.
+2. **Settings UI** — a curated whitelist (model endpoints, sampling,
+   queue brake, webhook defaults) is editable at runtime by
+   administrators and persisted in the app database.
+3. **Config file** (TOML, path in `PAPERLESS_LLM_CONFIG`, default
+   `./paperless-llm.toml`).
+4. Built-in defaults.
+
+Deliberately *not* runtime-editable: the paperless connection,
+database, auth and worker pool sizes — a bad value there would take
+down the very UI needed to fix it.
+
 ## Model profiles
 
 Every serving-setup quirk is **configuration, not code** — image
@@ -91,6 +111,7 @@ once per `find_documents` call.
 | `paperless.external_url` | Where *your browser* reaches paperless (UI deep links); defaults to `base_url` |
 | `paperless.token` | API token for background work |
 | `paperless.username` / `password` | Alternative to a token (one is fetched via `/api/token/`) |
+| `paperless.verify_tls` | TLS certificate/host verification (default `true`); disable only for self-signed setups |
 
 ## Authentication
 
@@ -101,7 +122,14 @@ matrix and nothing to configure.
 
 Each user's applied changes run under **their own paperless token** —
 paperless's audit trail names the real person and paperless
-permissions apply naturally. Sessions are signed httpOnly cookies
+permissions apply naturally.
+
+**Roles come from paperless too**: whoever is a *superuser* there is an
+administrator here (admin rights gate settings, prompt tuning and
+runtime configuration). The lookup runs under the app's background
+credentials at login — those must belong to a paperless superuser,
+otherwise everyone signs in as a regular user and the server log says
+so. Sessions are signed httpOnly cookies
 (`auth.session_hours`, default one week); the signing secret is
 generated once and persisted, or set explicitly via
 `auth.session_secret`.

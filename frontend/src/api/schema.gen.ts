@@ -134,7 +134,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Documents */
+        /**
+         * List Documents
+         * @description Browse filters are multiselects with ANY-of semantics — ids come
+         *     comma-separated per taxonomy type.
+         */
         get: operations["list_documents_api_entities_documents_get"];
         put?: never;
         post?: never;
@@ -788,6 +792,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Config
+         * @description The UI-editable slice of the configuration, with per-key source
+         *     and lock state.
+         */
+        get: operations["get_config_api_settings_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_settings_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stats": {
         parameters: {
             query?: never;
@@ -920,6 +946,12 @@ export interface components {
         };
         /** AuthMeOut */
         AuthMeOut: {
+            /**
+             * Role
+             * @default user
+             * @enum {string}
+             */
+            role: "admin" | "user";
             /** User */
             user?: string | null;
         };
@@ -942,6 +974,37 @@ export interface components {
             tps?: number | null;
             /** Ttft S */
             ttft_s?: number | null;
+        };
+        /** ConfigRowOut */
+        ConfigRowOut: {
+            /** Editable */
+            editable: boolean;
+            /**
+             * Is Set
+             * @default false
+             */
+            is_set: boolean;
+            /** Key */
+            key: string;
+            /**
+             * Secret
+             * @default false
+             */
+            secret: boolean;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "environment" | "ui" | "file" | "default";
+            /** Value */
+            value?: unknown;
+        };
+        /** ConfigUpdate */
+        ConfigUpdate: {
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
         };
         /**
          * CorpusOut
@@ -1313,6 +1376,11 @@ export interface components {
             external_url: string;
             /** Timeout Seconds */
             timeout_seconds: number;
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
         };
         /** PrefsOut */
         PrefsOut: {
@@ -1995,9 +2063,9 @@ export interface operations {
         parameters: {
             query?: {
                 query?: string | null;
-                tag_id?: number | null;
-                correspondent_id?: number | null;
-                document_type_id?: number | null;
+                tag_ids?: string | null;
+                correspondent_ids?: string | null;
+                document_type_ids?: string | null;
                 page?: number;
                 page_size?: number;
             };
@@ -3122,6 +3190,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+        };
+    };
+    get_config_api_settings_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigRowOut"][];
+                };
+            };
+        };
+    };
+    put_config_api_settings_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice } from "@/components/app/states";
 import { api } from "../../api";
 import { keys } from "../../lib/keys";
+import { useAuth } from "../../lib/auth";
 
 function PromptSection({
   label,
@@ -78,6 +79,7 @@ export function PromptTuning({
 }: {
   defaults: { agent_base: string; ocr_base: string };
 }) {
+  const { role } = useAuth();
   const { data: prefs } = useQuery({ queryKey: keys.prefs(), queryFn: api.getPrefs });
   const [draft, setDraft] = useState<Record<string, string> | null>(null);
   const qc = useQueryClient();
@@ -115,12 +117,20 @@ export function PromptTuning({
       { onSuccess: () => setDraft(null) },
     );
 
+  const readOnly = role !== "admin";
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Prompts</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {readOnly && (
+          <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+            Prompt tuning shapes the agent for the whole workspace and
+            requires administrator rights (a paperless superuser account).
+          </p>
+        )}
+        <fieldset disabled={readOnly} className="space-y-6">
         <PromptSection
           label="Additional agent instructions"
           hint="The place for YOUR context — appended to every agent prompt. Describe the archive, its purpose, house rules (e.g. language of titles, who the archive owner is)."
@@ -160,6 +170,7 @@ export function PromptTuning({
           {save.isSuccess && !dirty && <span className="text-xs text-primary">saved</span>}
           <ErrorNotice error={save.error} />
         </div>
+        </fieldset>
       </CardContent>
     </Card>
   );

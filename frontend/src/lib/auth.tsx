@@ -11,7 +11,7 @@ import { keys } from "./keys";
 import { LoadingState } from "@/components/app/states";
 import Login from "../pages/Login";
 
-const AuthContext = createContext<AuthMe>({ user: null });
+const AuthContext = createContext<AuthMe>({ user: null, role: "user" });
 
 export function useAuth() {
   return useContext(AuthContext);

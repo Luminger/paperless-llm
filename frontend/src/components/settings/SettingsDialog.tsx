@@ -3,7 +3,7 @@
 // section per concern.
 
 import { useQuery } from "@tanstack/react-query";
-import { Clock, Info, MessageSquareCode } from "lucide-react";
+import { Clock, Cpu, Info, Link2, MessageSquareCode } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,12 +16,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "../../api";
 import { keys } from "../../lib/keys";
 import { DateTimePrefs } from "./DateTimePrefs";
+import { ModelsConfig } from "./Models";
+import { PaperlessInfo } from "./PaperlessInfo";
 import { PromptTuning } from "./PromptTuning";
 import { SystemInfo } from "./SystemInfo";
 
 const SECTIONS = [
   { value: "preferences", label: "Date & time", icon: Clock },
+  { value: "models", label: "Models", icon: Cpu },
   { value: "prompts", label: "Prompts", icon: MessageSquareCode },
+  { value: "paperless", label: "Paperless", icon: Link2 },
   { value: "system", label: "System", icon: Info },
 ] as const;
 
@@ -49,8 +53,8 @@ export function SettingsDialog({
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Preferences are saved on the server — every browser shows the same.
-            The system section is read-only.
+            Everything here is saved on the server — every browser shows the
+            same. Model and prompt changes require administrator rights.
           </DialogDescription>
         </DialogHeader>
         <Tabs
@@ -75,6 +79,12 @@ export function SettingsDialog({
             <div className="p-6">
               <TabsContent value="preferences" className="mt-0">
                 <DateTimePrefs />
+              </TabsContent>
+              <TabsContent value="models" className="mt-0">
+                <ModelsConfig />
+              </TabsContent>
+              <TabsContent value="paperless" className="mt-0">
+                <PaperlessInfo />
               </TabsContent>
               <TabsContent value="prompts" className="mt-0">
                 {overview && <PromptTuning defaults={overview.prompt_defaults} />}

@@ -5,18 +5,20 @@
 // backend guarantees every timestamp is explicit UTC; formatters here
 // convert into the chosen zone.
 
-export type DatePref = "system" | "iso" | "eu" | "us";
+export type DatePref = "iso" | "eu" | "us";
 export type TimePref = "24h" | "24h-seconds" | "12h" | "12h-seconds";
 
 const DATE_KEY = "pllm.pref.dateFormat";
 const TIME_KEY = "pllm.pref.timeFormat";
 const TZ_KEY = "pllm.pref.timeZone";
 
+// Concrete formats only: preferences are stored on the server and
+// shared across browsers, so "whatever this device's locale does"
+// would render differently everywhere — the opposite of a preference.
 export const DATE_PREFS: { value: DatePref; label: string }[] = [
-  { value: "system", label: "System locale" },
-  { value: "iso", label: "ISO 8601 (2026-07-17)" },
-  { value: "eu", label: "European (17.07.2026)" },
-  { value: "us", label: "US (07/17/2026)" },
+  { value: "iso", label: "Year-Month-Day" },
+  { value: "eu", label: "Day.Month.Year" },
+  { value: "us", label: "Month/Day/Year" },
 ];
 
 export const TIME_PREFS: { value: TimePref; label: string }[] = [
@@ -26,12 +28,40 @@ export const TIME_PREFS: { value: TimePref; label: string }[] = [
   { value: "12h-seconds", label: "12-hour with seconds (6:49:15 PM)" },
 ];
 
-export function timeZoneOptions(): string[] {
+/** "GMT+02:00" for a zone right now (offsets shift with DST). */
+export function gmtOffset(zone: string): string {
   try {
-    return Intl.supportedValuesOf("timeZone");
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: zone,
+      timeZoneName: "longOffset",
+    }).formatToParts(new Date());
+    const name = parts.find((p) => p.type === "timeZoneName")?.value ?? "";
+    return name === "GMT" ? "GMT+00:00" : name;
   } catch {
-    return ["UTC"];
+    return "";
   }
+}
+
+/** Every IANA zone as "(GMT+02:00) Europe/Berlin", sorted by offset
+ * then name — the usual OS timezone picker shape. */
+export function timeZoneOptions(): { value: string; label: string }[] {
+  let zones: string[];
+  try {
+    zones = Intl.supportedValuesOf("timeZone");
+  } catch {
+    zones = ["UTC"];
+  }
+  const toMinutes = (off: string) => {
+    const m = /GMT([+-])(\d{2}):(\d{2})/.exec(off);
+    return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+  };
+  return zones
+    .map((z) => {
+      const off = gmtOffset(z);
+      return { value: z, label: `(${off}) ${z.replaceAll("_", " ")}`, sort: toMinutes(off) };
+    })
+    .sort((a, b) => a.sort - b.sort || a.value.localeCompare(b.value))
+    .map(({ value, label }) => ({ value, label }));
 }
 
 export function getDateTimePrefs(): {
@@ -39,8 +69,11 @@ export function getDateTimePrefs(): {
   time: TimePref;
   timeZone: string; // "system" or an IANA zone
 } {
+  const storedDate = localStorage.getItem(DATE_KEY);
   return {
-    date: (localStorage.getItem(DATE_KEY) as DatePref) || "system",
+    // Legacy "system" (device-locale) collapses to ISO — concrete
+    // formats only, now that prefs are server-shared.
+    date: storedDate === "eu" || storedDate === "us" ? storedDate : "iso",
     time: (localStorage.getItem(TIME_KEY) as TimePref) || "24h-seconds",
     timeZone: localStorage.getItem(TZ_KEY) || "system",
   };
@@ -69,7 +102,6 @@ export function setDateTimePrefs(
 
 // Formatter cache, invalidated when prefs change.
 let cacheKey = "";
-let dateFmt: Intl.DateTimeFormat;
 let timeFmt: Intl.DateTimeFormat;
 let partsFmt: Intl.DateTimeFormat;
 
@@ -80,12 +112,6 @@ function ensureFormatters(): ReturnType<typeof getDateTimePrefs> {
     cacheKey = key;
     const tz =
       prefs.timeZone === "system" ? undefined : { timeZone: prefs.timeZone };
-    dateFmt = new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      ...tz,
-    });
     timeFmt = new Intl.DateTimeFormat(undefined, {
       hour: "2-digit",
       minute: "2-digit",
@@ -128,16 +154,12 @@ export function formatDate(iso: string | null | undefined): string {
     ? { y: iso.slice(0, 4), m: iso.slice(5, 7), day: iso.slice(8, 10) }
     : ymdInZone(d);
   switch (prefs.date) {
-    case "iso":
-      return `${y}-${m}-${day}`;
     case "eu":
       return `${day}.${m}.${y}`;
     case "us":
       return `${m}/${day}/${y}`;
     default:
-      return plain
-        ? dateFmt.format(new Date(Number(y), Number(m) - 1, Number(day)))
-        : dateFmt.format(d);
+      return `${y}-${m}-${day}`;
   }
 }
 

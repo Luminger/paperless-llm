@@ -30,6 +30,7 @@ export type ProposalPage = S["ProposalPage"];
 export type Stats = S["StatsOut"];
 export type Corpus = S["CorpusOut"];
 export type JobAttention = S["JobAttentionOut"];
+export type ConfigRow = S["ConfigRowOut"];
 export type EntityRef = S["EntityOut"];
 export type PaperlessDocument = S["DocumentOut"];
 export type DocumentSearchPage = S["DocumentSearchPage"];
@@ -101,6 +102,12 @@ export const api = {
     request<RevertCheck>(`/api/proposals/${id}/revert-check`),
 
   getMeta: () => request<Meta>("/api/meta"),
+  getConfig: () => request<ConfigRow[]>("/api/settings/config"),
+  putConfig: (values: Record<string, unknown>) =>
+    request<ConfigRow[]>("/api/settings/config", {
+      method: "PUT",
+      body: JSON.stringify({ values }),
+    }),
   getAuthMe: () => request<AuthMe>("/api/auth/me"),
   login: (username: string, password: string) =>
     request<AuthMe>("/api/auth/login", {

@@ -1,17 +1,31 @@
 # Settings & prompts
 
 Settings open as a modal from the user menu (or `/settings`). Sections
-are deep-linkable: `/settings#preferences`, `/settings#prompts`,
-`/settings#system`.
+are deep-linkable: `/settings#preferences`, `/settings#models`,
+`/settings#prompts`, `/settings#paperless`, `/settings#system`.
+Everything is stored on the server — every browser shows the same.
+Changing models or prompts requires **administrator rights** (a
+paperless superuser account); other sections are for everyone.
 
 ## Date & time
 
-Date format (ISO / European / US), time format (24h, with seconds,
-12h), and timezone (system or a fixed IANA zone). Stored **on the
-server** — every browser and device shows the same formats. Timestamps
-themselves are always stored in UTC; these preferences only control
-rendering. The agent is told your formats too, so dates in its prose
-match what you see (machine-readable fields stay ISO).
+The usual picker: a **time zone** (automatic per browser, or a fixed
+IANA zone — the list shows GMT offsets like `(GMT+02:00)
+Europe/Berlin`), a **date format** and a **time format**, each option
+shown with a live example. Deliberately no "system locale" format:
+preferences are shared across browsers, so "whatever this device does"
+would render differently everywhere. Timestamps are always stored in
+UTC and converted for display.
+
+## Models
+
+The runtime-editable slice of the configuration: agent / OCR /
+embeddings / reranker endpoints and knobs, the auto-continuation
+brake, webhook defaults. Every value shows **where it comes from** —
+environment (locked), set here, config file, or default — per the
+[precedence rules](../configuration.md#precedence). Admin changes
+apply immediately, validate before persisting, and can be reset back
+to the underlying config-file/default value per field.
 
 ## Prompts
 
@@ -31,11 +45,19 @@ Four prompts, shown in full — nothing hidden behind folds:
 Editing the OCR prompt invalidates the OCR cache for exactly the
 affected transcriptions — prompt tweaks always take effect.
 
+## Paperless
+
+The instance this app is attached to: a link to it, the API endpoint,
+how the app authenticates, TLS verification state (with a loud warning
+when disabled), and the webhook status. Read-only by design — the
+connection is configured via environment or config file only, so a bad
+value can never lock you out of the UI that would fix it.
+
 ## System
 
-A read-only view of the effective server configuration: model profiles,
-paperless connection, queue and retry settings, webhook status, auth
-mode. Secrets never leave the server — only their presence is shown.
+Version, database backend, worker pool and retry policy — read-only
+runtime facts. Secrets never leave the server; only their presence is
+shown.
 
 ## Theme
 

@@ -450,6 +450,17 @@ of our own. The per-user paperless token is used for that user's
 applied changes, so paperless's audit trail attributes changes to the
 real person and paperless permissions apply naturally.
 
+Roles come from paperless as well: an administrator here is whoever
+holds superuser rights THERE (permissions decide, not account names),
+resolved at login via the app's background credentials — a plain user
+cannot query their own permissions (verified: /api/users/ and
+/api/ui_settings/ 403), so the fixed high-privilege token is the
+reliable path. Admin gates: prompt tuning, runtime configuration.
+Config precedence is environment > settings UI (DB, whitelisted keys)
+> TOML file > defaults; env-shadowed file values are warned about at
+startup, and anything whose misconfiguration could brick the app is
+never runtime-editable.
+
 Machinery: signed httpOnly session cookie,
 `/api/auth/login|logout|me`, frontend 401 interceptor + login page.
 The webhook keeps its separate shared-secret header (machine-to-machine).

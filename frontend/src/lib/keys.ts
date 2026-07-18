@@ -31,6 +31,7 @@ export const keys = {
   meta: () => ["meta"] as const,
   auth: () => ["auth"] as const,
   settings: () => ["settings"] as const,
+  config: () => ["settings", "config"] as const,
   prefs: () => ["prefs"] as const,
 } as const;
 

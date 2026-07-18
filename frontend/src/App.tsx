@@ -115,7 +115,7 @@ function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
-const SECTION_VALUES = ["preferences", "prompts", "system"] as const;
+const SECTION_VALUES = ["preferences", "models", "prompts", "paperless", "system"] as const;
 
 export default function App() {
   // Settings is a routable modal: /settings opens it, the section
