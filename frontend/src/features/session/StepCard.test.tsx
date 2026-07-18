@@ -50,6 +50,47 @@ const liveItem = (over: object): LiveTranscriptItem => ({
 }) as LiveTranscriptItem;
 
 describe("StepCard streaming", () => {
+  it("a streaming chat turn shows the user's message from the first moment", () => {
+    renderWithProviders(
+      <StepCard
+        step={
+          {
+            ...step,
+            kind: "chat",
+            input: { content: "also check the date" },
+          } as unknown as Step
+        }
+        proposals={[]}
+        live={{ tokens: 5, items: [] }}
+        onChanged={() => {}}
+        archived={false}
+        turn={2}
+      />,
+    );
+    // Not "magically after streaming": the box is there immediately.
+    expect(screen.getByText("also check the date")).toBeInTheDocument();
+    expect(screen.getByText("Turn 2")).toBeInTheDocument();
+  });
+
+  it("the whole turn folds via the header, independent of inner folds", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    renderWithProviders(
+      <StepCard
+        step={{ ...step, state: "succeeded" } as unknown as Step}
+        proposals={[]}
+        live={undefined}
+        onChanged={() => {}}
+        archived={false}
+        turn={1}
+      />,
+    );
+    expect(screen.getByText("No changes proposed.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Initial analysis/ }));
+    expect(screen.queryByText("No changes proposed.")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Initial analysis/ }));
+    expect(screen.getByText("No changes proposed.")).toBeInTheDocument();
+  });
+
   it("live tail is an open work panel", () => {
     renderWithProviders(
       <StepCard

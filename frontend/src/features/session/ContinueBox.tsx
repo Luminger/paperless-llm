@@ -75,13 +75,15 @@ export function NextTurnBox({
                   }
                 }}
               />
-              {draft.trim() && (
-                <div className="mt-2">
-                  <Button type="submit" size="sm" disabled={send.isPending}>
-                    Send
-                  </Button>
-                </div>
-              )}
+              <div className="mt-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!draft.trim() || send.isPending}
+                >
+                  Send
+                </Button>
+              </div>
             </form>
           )}
         </div>

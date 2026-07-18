@@ -3,6 +3,7 @@
 // Kind-specific code only renders body content.
 
 import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -297,6 +298,28 @@ function TurnBody({
       </Panel>,
     );
   }
+  // While streaming, the transcript slice doesn't exist yet — the
+  // user's message comes straight from the step input so their box is
+  // there from the first moment, not after the run finishes.
+  if (
+    streaming &&
+    step.kind === "chat" &&
+    typeof step.input.content === "string" &&
+    step.input.auto !== true
+  ) {
+    out.push(
+      <UserMessage
+        key="pending-user"
+        item={
+          {
+            role: "user",
+            content: step.input.content,
+            origin: "chat",
+          } as TranscriptItem
+        }
+      />,
+    );
+  }
   const renderProposal = (p: Proposal) =>
     p.status === "superseded" ? (
       <details key={`p-${p.id}`} className="rounded-md border border-dashed px-3 py-2">
@@ -310,6 +333,9 @@ function TurnBody({
     ) : (
       <Panel
         key={`p-${p.id}`}
+        // Decided proposals are history: folded on load (and they fold
+        // themselves the moment the decision lands).
+        defaultOpen={p.status !== "applied" && p.status !== "no_change"}
         title={
           <>
             <PanelTitle>Proposal</PanelTitle>
@@ -473,10 +499,26 @@ export function StepCard({
     mine.every((p) => p.status === "superseded");
   const collapsed = superseded || outdated;
   const suffix = outdated ? "superseded by a later revision" : stateSuffix(step);
+  // Whole-turn fold: its own state, never touching the folds inside.
+  const [folded, setFolded] = useState(false);
   return (
     <Card className={cn("gap-0 overflow-hidden py-0", collapsed && "border-dashed")}>
-      {/* Uniform header strip. */}
-      <div className="flex h-10 items-center gap-2.5 border-b bg-muted/30 px-4">
+      {/* Uniform header strip — click anywhere to fold the whole turn. */}
+      <div
+        role="button"
+        aria-expanded={!folded}
+        className={cn(
+          "flex h-10 cursor-pointer items-center gap-2.5 bg-muted/30 px-4 select-none",
+          !folded && "border-b",
+        )}
+        onClick={() => setFolded(!folded)}
+      >
+        <ChevronRight
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            !folded && "rotate-90",
+          )}
+        />
         <span
           className={cn(
             "size-2 shrink-0 rounded-full",
@@ -497,6 +539,7 @@ export function StepCard({
         </span>
       </div>
 
+      {folded ? null : (
       <div className="space-y-3 px-4 py-3">
         {collapsed ? (
           <SupersededBody
@@ -521,10 +564,11 @@ export function StepCard({
           </>
         )}
       </div>
+      )}
 
       {/* Footer: whole-turn cost on the left, step actions on the
           right — actions live with the turn they act on. */}
-      {!collapsed && (
+      {!collapsed && !folded && (
         <StepFooter
           step={step}
           archived={archived}
