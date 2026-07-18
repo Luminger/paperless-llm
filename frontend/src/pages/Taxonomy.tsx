@@ -71,49 +71,6 @@ function CandidateRow({ c, onReview }: { c: MergeCandidate; onReview: () => void
   );
 }
 
-/** The taxonomy landing: pick which part to curate. Each type has a
- * dedicated page (one shared implementation). */
-export function TaxonomyIndex() {
-  const counts: Record<string, number | undefined> = {
-    tag: useQuery({ queryKey: keys.entities("tag"), queryFn: api.listTags }).data
-      ?.length,
-    correspondent: useQuery({
-      queryKey: keys.entities("correspondent"),
-      queryFn: api.listCorrespondents,
-    }).data?.length,
-    document_type: useQuery({
-      queryKey: keys.entities("document_type"),
-      queryFn: api.listDocumentTypes,
-    }).data?.length,
-  };
-  return (
-    <div>
-      <PageHeader title="Taxonomy" />
-      <p className="-mt-2 mb-4 text-sm text-muted-foreground">
-        The structures your documents hang on. Pick one to review, clean
-        up, and govern.
-      </p>
-      <div className="grid gap-4 md:grid-cols-3">
-        {TYPES.map((t) => (
-          <Link
-            key={t.key}
-            to={`/taxonomy/${t.key}`}
-            className="rounded-lg border bg-card p-4 transition-colors hover:border-primary/50"
-          >
-            <div className="flex items-baseline justify-between">
-              <h2 className="font-medium">{t.label}</h2>
-              <span className="text-sm text-muted-foreground">
-                {counts[t.key] ?? "…"}
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">{t.description}</p>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function Taxonomy() {
   const params = useParams();
   const type = params.type as TypeKey;
@@ -169,11 +126,6 @@ export default function Taxonomy() {
 
   return (
     <div>
-      <nav className="mb-2 text-sm">
-        <Link className="text-primary hover:underline" to="/taxonomy">
-          ← Taxonomy
-        </Link>
-      </nav>
       <PageHeader
         title={typeDef.label}
         filters={

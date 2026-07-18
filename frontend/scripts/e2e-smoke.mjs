@@ -52,7 +52,7 @@ console.log(`smoke against ${BASE}`);
 // Every top-level surface renders its key content.
 await visit("/", "Dashboard");
 await visit("/documents", "Documents");
-await visit("/taxonomy", "Taxonomy");
+await visit("/taxonomy", "Tags"); // menu, not a page: redirects to tags
 await visit("/jobs", "Jobs");
 await visit("/log", "Log");
 

@@ -1,4 +1,5 @@
 import {
+  Navigate,
   NavLink,
   Route,
   Routes,
@@ -6,7 +7,7 @@ import {
   useNavigate,
   type Location,
 } from "react-router-dom";
-import { CircleUser, Monitor, Moon, Settings2, Sun } from "lucide-react";
+import { ChevronDown, CircleUser, LogOut, Monitor, Moon, Settings2, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,12 +24,11 @@ import { useAuth } from "./lib/auth";
 import { api } from "./api";
 import { keys } from "./lib/keys";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { LogOut } from "lucide-react";
 import Documents from "./pages/Documents";
 import Dashboard from "./pages/Dashboard";
 import SessionDetail from "./pages/SessionDetail";
 import ProposalRedirect from "./pages/ProposalRedirect";
-import Taxonomy, { TaxonomyIndex } from "./pages/Taxonomy";
+import Taxonomy, { TYPES as TAXONOMY_TYPES } from "./pages/Taxonomy";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
@@ -38,12 +38,38 @@ import {
   type SettingsSection,
 } from "@/components/settings/SettingsDialog";
 
-const nav = [
-  { to: "/documents", label: "Documents" },
-  { to: "/taxonomy", label: "Taxonomy" },
+const nav = [{ to: "/documents", label: "Documents" }];
+const navAfterTaxonomy = [
   { to: "/jobs", label: "Jobs" },
   { to: "/log", label: "Log" },
 ];
+
+/** Taxonomy is a MENU, not a page: the three curated types hang
+ * directly off the top nav. */
+function TaxonomyMenu() {
+  const location = useLocation();
+  const active = location.pathname.startsWith("/taxonomy");
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={
+          active
+            ? "flex items-center gap-1 font-medium text-primary outline-none"
+            : "flex items-center gap-1 text-muted-foreground transition-colors outline-none hover:text-foreground"
+        }
+      >
+        Taxonomy <ChevronDown className="size-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-44">
+        {TAXONOMY_TYPES.map((t) => (
+          <DropdownMenuItem key={t.key} asChild>
+            <NavLink to={`/taxonomy/${t.key}`}>{t.label}</NavLink>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { theme, setTheme } = useTheme();
@@ -123,8 +149,22 @@ export default function App() {
           <NavLink to="/" className="text-lg font-semibold tracking-tight">
             paperless<span className="text-primary">-llm</span>
           </NavLink>
-          <nav className="flex gap-4 text-sm">
-            {nav.map((n) => (
+          <nav className="flex items-center gap-4 text-sm">
+            {[...nav].map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                className={({ isActive }) =>
+                  isActive
+                    ? "font-medium text-primary"
+                    : "text-muted-foreground transition-colors hover:text-foreground"
+                }
+              >
+                {n.label}
+              </NavLink>
+            ))}
+            <TaxonomyMenu />
+            {navAfterTaxonomy.map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
@@ -151,7 +191,8 @@ export default function App() {
           <Route path="/proposals/:id" element={<ProposalRedirect />} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/documents/:id" element={<EntityPage />} />
-          <Route path="/taxonomy" element={<TaxonomyIndex />} />
+          {/* Old landing links land on tags. */}
+          <Route path="/taxonomy" element={<Navigate to="/taxonomy/tag" replace />} />
           <Route path="/taxonomy/:type" element={<Taxonomy />} />
           <Route path="/taxonomy/:type/:id" element={<EntityPage />} />
           <Route path="/jobs" element={<Jobs />} />
