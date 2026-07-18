@@ -15,12 +15,11 @@ dependencies = [
     "alembic>=1.14",
     "pymupdf>=1.25",
     "rapidfuzz>=3.10",
-    "python-multipart>=0.0.20",
-    "sse-starlette>=2.1",
 ]
 
 [project.optional-dependencies]
-postgres = ["asyncpg>=0.30"]
+# psycopg (sync) runs the alembic migrations; asyncpg serves the app.
+postgres = ["asyncpg>=0.30", "psycopg[binary]>=3.2"]
 
 [project.scripts]
 paperless-llm = "app.cli:main"

@@ -13,9 +13,6 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
-# The m1-m2 baseline revision (schema as of the first release).
-BASELINE_REVISION = "be2f530fc15c"
-
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 
 

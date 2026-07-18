@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: 3c093eb86560
+Revision ID: 7d2b705f5572
 Revises: 
-Create Date: 2026-07-17 19:36:04.899705
+Create Date: 2026-07-18 09:31:27.884626
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '3c093eb86560'
+revision: str = '7d2b705f5572'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -31,6 +31,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('audit_log', schema=None) as batch_op:
+        batch_op.create_index('ix_audit_kind', ['kind', 'id'], unique=False)
         batch_op.create_index('ix_audit_ts', ['ts'], unique=False)
 
     op.create_table('counters',
@@ -80,6 +81,7 @@ def upgrade() -> None:
     sa.Column('checksum', sa.String(length=64), nullable=False),
     sa.Column('model', sa.String(length=200), nullable=False),
     sa.Column('prompt_version', sa.Integer(), nullable=False),
+    sa.Column('prompt_fingerprint', sa.String(length=16), nullable=False),
     sa.Column('pages', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('text', sa.Text(), nullable=False),
     sa.Column('similarity', sa.Float(), nullable=True),
@@ -88,15 +90,21 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('ocr_results', schema=None) as batch_op:
-        batch_op.create_index('ix_ocr_key', ['document_id', 'checksum', 'model', 'prompt_version'], unique=True)
+        batch_op.create_index('ix_ocr_key', ['document_id', 'checksum', 'model', 'prompt_version', 'prompt_fingerprint'], unique=True)
 
+    op.create_table('user_prefs',
+    sa.Column('key', sa.String(length=64), nullable=False),
+    sa.Column('value', sa.Text(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.PrimaryKeyConstraint('key')
+    )
     op.create_table('sessions',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('agent_kind', sa.Enum('document', 'tag', 'correspondent', 'document_type', name='agentkind', native_enum=False), nullable=False),
     sa.Column('entity_type', sa.Enum('document', 'tag', 'correspondent', 'document_type', 'storage_path', name='entitytype', native_enum=False), nullable=True),
     sa.Column('entity_id', sa.Integer(), nullable=True),
     sa.Column('title', sa.String(length=500), nullable=False),
-    sa.Column('status', sa.Enum('idle', 'running', 'failed', 'archived', name='sessionstatus', native_enum=False), nullable=False),
+    sa.Column('status', sa.Enum('idle', 'running', 'failed', name='sessionstatus', native_enum=False), nullable=False),
     sa.Column('phase', sa.Enum('queued', 'ocr_running', 'ocr_review', 'analyzing', 'done', name='sessionphase', native_enum=False), nullable=True),
     sa.Column('params', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('message_history', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
@@ -110,6 +118,7 @@ def upgrade() -> None:
     )
     with op.batch_alter_table('sessions', schema=None) as batch_op:
         batch_op.create_index('ix_sessions_entity', ['entity_type', 'entity_id'], unique=False)
+        batch_op.create_index('ix_sessions_job', ['job_id'], unique=False)
 
     op.create_table('steps',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -146,7 +155,7 @@ def upgrade() -> None:
     sa.Column('agent_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('user_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
     sa.Column('base_snapshot', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
-    sa.Column('status', sa.Enum('draft', 'pending', 'rejected', 'applied', 'superseded', 'no_change', name='proposalstatus', native_enum=False), nullable=False),
+    sa.Column('status', sa.Enum('draft', 'pending', 'applied', 'superseded', 'no_change', name='proposalstatus', native_enum=False), nullable=False),
     sa.Column('entity_type', sa.Enum('document', 'tag', 'correspondent', 'document_type', 'storage_path', name='entitytype', native_enum=False), nullable=True),
     sa.Column('entity_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
@@ -158,7 +167,9 @@ def upgrade() -> None:
     )
     with op.batch_alter_table('proposals', schema=None) as batch_op:
         batch_op.create_index('ix_proposals_entity', ['entity_type', 'entity_id'], unique=False)
+        batch_op.create_index('ix_proposals_session', ['session_id'], unique=False)
         batch_op.create_index('ix_proposals_status', ['status'], unique=False)
+        batch_op.create_index('ix_proposals_step', ['step_id'], unique=False)
 
     op.create_table('applied_changes',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -168,7 +179,8 @@ def upgrade() -> None:
     sa.Column('applied_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('reverted_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['proposal_id'], ['proposals.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('proposal_id')
     )
     # ### end Alembic commands ###
 
@@ -178,7 +190,9 @@ def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_table('applied_changes')
     with op.batch_alter_table('proposals', schema=None) as batch_op:
+        batch_op.drop_index('ix_proposals_step')
         batch_op.drop_index('ix_proposals_status')
+        batch_op.drop_index('ix_proposals_session')
         batch_op.drop_index('ix_proposals_entity')
 
     op.drop_table('proposals')
@@ -188,9 +202,11 @@ def downgrade() -> None:
 
     op.drop_table('steps')
     with op.batch_alter_table('sessions', schema=None) as batch_op:
+        batch_op.drop_index('ix_sessions_job')
         batch_op.drop_index('ix_sessions_entity')
 
     op.drop_table('sessions')
+    op.drop_table('user_prefs')
     with op.batch_alter_table('ocr_results', schema=None) as batch_op:
         batch_op.drop_index('ix_ocr_key')
 
@@ -207,6 +223,7 @@ def downgrade() -> None:
     op.drop_table('counters')
     with op.batch_alter_table('audit_log', schema=None) as batch_op:
         batch_op.drop_index('ix_audit_ts')
+        batch_op.drop_index('ix_audit_kind')
 
     op.drop_table('audit_log')
     # ### end Alembic commands ###

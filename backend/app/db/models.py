@@ -52,7 +52,6 @@ class SessionStatus(enum.StrEnum):
     idle = "idle"  # no agent run in flight; steerable
     running = "running"  # an agent run is executing
     failed = "failed"  # last run errored; still steerable
-    archived = "archived"
 
 
 class SessionPhase(enum.StrEnum):
@@ -147,7 +146,10 @@ class Session(Base):
 
     proposals: Mapped[list[Proposal]] = relationship(back_populates="session")
 
-    __table_args__ = (Index("ix_sessions_entity", "entity_type", "entity_id"),)
+    __table_args__ = (
+        Index("ix_sessions_entity", "entity_type", "entity_id"),
+        Index("ix_sessions_job", "job_id"),
+    )
 
 
 class Proposal(Base):
@@ -194,6 +196,8 @@ class Proposal(Base):
     __table_args__ = (
         Index("ix_proposals_status", "status"),
         Index("ix_proposals_entity", "entity_type", "entity_id"),
+        Index("ix_proposals_session", "session_id"),
+        Index("ix_proposals_step", "step_id"),
     )
 
 
@@ -203,7 +207,7 @@ class AppliedChange(Base):
     __tablename__ = "applied_changes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    proposal_id: Mapped[int] = mapped_column(ForeignKey("proposals.id"))
+    proposal_id: Mapped[int] = mapped_column(ForeignKey("proposals.id"), unique=True)
     # Snapshot of the paperless state we touched, sufficient to restore.
     paperless_before: Mapped[dict[str, Any]] = mapped_column()
     paperless_after: Mapped[dict[str, Any]] = mapped_column()
@@ -351,7 +355,10 @@ class AuditLog(Base):
     actor: Mapped[str] = mapped_column(String(100), default="system")
     detail: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
-    __table_args__ = (Index("ix_audit_ts", "ts"),)
+    __table_args__ = (
+        Index("ix_audit_ts", "ts"),
+        Index("ix_audit_kind", "kind", "id"),
+    )
 
 
 class OcrResult(Base):
@@ -377,7 +384,13 @@ class OcrResult(Base):
 
     __table_args__ = (
         Index(
-            "ix_ocr_key", "document_id", "checksum", "model", "prompt_version", unique=True
+            "ix_ocr_key",
+            "document_id",
+            "checksum",
+            "model",
+            "prompt_version",
+            "prompt_fingerprint",
+            unique=True,
         ),
     )
 
