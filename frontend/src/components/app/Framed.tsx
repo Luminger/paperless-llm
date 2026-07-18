@@ -24,7 +24,7 @@ export function FramedCard({
   children,
   className,
   bodyClassName,
-  collapsible = false,
+  collapsible = true,
   defaultOpen = true,
 }: {
   title: React.ReactNode;
@@ -35,7 +35,8 @@ export function FramedCard({
   children: React.ReactNode;
   className?: string;
   bodyClassName?: string;
-  /** Header click folds the whole box (the trace-turn behavior). */
+  /** Header click folds the whole box (the trace-turn behavior).
+   * On by default — every box is foldable. */
   collapsible?: boolean;
   defaultOpen?: boolean;
 }) {
@@ -57,9 +58,7 @@ export function FramedCard({
           ) : (
             <ChevronRight className="size-3.5 text-muted-foreground/60" />
           ))}
-        <span className={cn(frameTitleClass, folded && "font-medium text-muted-foreground/70")}>
-          {title}
-        </span>
+        <span className={frameTitleClass}>{title}</span>
         <span className="flex-1" />
         {meta && <span className={frameMetaClass}>{meta}</span>}
       </div>

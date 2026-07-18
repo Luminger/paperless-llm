@@ -222,7 +222,7 @@ export function SessionList({
       <div className="space-y-4">
         <FramedCard title="Sessions">{active}</FramedCard>
         {showArchivedSection && (
-          <FramedCard title="Archived sessions" collapsible defaultOpen={false}>
+          <FramedCard title="Archived sessions" defaultOpen={false}>
             {archivedList}
           </FramedCard>
         )}
