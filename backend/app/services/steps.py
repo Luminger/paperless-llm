@@ -22,18 +22,16 @@ tokens/tool calls.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession as DbSession
 
 from app.config import get_settings
 from app.db.models import (
-    Job,
-    JobStatus,
     Proposal,
     ProposalStatus,
     QueueLane,
@@ -46,10 +44,7 @@ from app.db.models import (
     utcnow,
 )
 from app.db.session import session_scope
-from app.llm.ocr import run_ocr
 from app.paperless import PaperlessClient
-from app.proposals.apply import apply_proposal
-from app.proposals.schemas import ReplaceContent, dump_payload
 from app.services.audit import record as audit_record
 from app.services.events import bus
 
@@ -265,6 +260,7 @@ async def resolve_step(
     """Resolve an awaiting_user step (kind-specific semantics)."""
     if step.state != StepState.awaiting_user:
         raise StepActionError(f"step is {step.state.value}, not awaiting user input")
+    _ensure_registered()
     resolver = RESOLVERS.get(step.kind)
     if resolver is None:
         raise StepActionError(f"steps of kind {step.kind.value} are not resolvable")
@@ -279,273 +275,23 @@ async def resolve_step(
     return step
 
 
-# ----- executors ------------------------------------------------------
+# ----- executor/resolver registries -----------------------------------
+
+# kind -> coroutine; filled by app.services.pipeline (the domain side).
+# The engine never imports the pipeline at module load — registration is
+# one-directional, the worker pulls it in lazily on first use.
+EXECUTORS: dict[StepKind, Any] = {}
+RESOLVERS: dict[StepKind, Any] = {}
+
+_registered = False
 
 
-async def _exec_ocr(
-    db: DbSession, paperless: PaperlessClient, session: Session, step: Step
-) -> str | None:
-    assert session.entity_id is not None
-    outcome = await run_ocr(
-        paperless,
-        db,
-        session.entity_id,
-        force=True,
-        instructions=step.input.get("instructions"),
-        dpi=step.input.get("dpi"),
-    )
-    step.result = {
-        "pages": len(outcome.pages),
-        "duration_s": round(sum(t.get("duration_s", 0) for t in outcome.timings or []), 1),
-        "from_cache": outcome.from_cache,
-        # Snapshots so a later superseded rendering can still show what
-        # THIS run produced and the diff it presented at the time.
-        "text": outcome.text,
-        "previous_content": outcome.previous_content,
-    }
-    return AWAIT_USER  # the gate: user reviews the diff
+def _ensure_registered() -> None:
+    global _registered
+    if not _registered:
+        import app.services.pipeline  # noqa: F401  (registers executors)
 
-
-def _kickoff_prompt(session: Session, step: Step) -> str:
-    if session.agent_kind.value == "document":
-        prompt = f"Process document id={session.entity_id}."
-    else:
-        noun = (session.entity_type.value if session.entity_type else "entity").replace("_", " ")
-        prompt = f"Review {noun} id={session.entity_id}."
-    gate = step.input.get("gate")
-    if gate == "accepted":
-        prompt += (
-            "\nThe document's content was just re-OCRed and reviewed by the "
-            "user - treat the stored content as accurate and do not "
-            "second-guess it."
-        )
-    elif gate == "kept_existing":
-        prompt += (
-            "\nThe user reviewed a re-OCR of this document and chose to keep "
-            "the existing content."
-        )
-    if session.params.get("instructions"):
-        prompt += f"\nAdditional instructions from the user: {session.params['instructions']}"
-    return prompt
-
-
-async def _run_turn(
-    db: DbSession, paperless: PaperlessClient, session: Session, step: Step, prompt: str
-) -> None:
-    from app.agents.runner import run_agent_turn
-
-    outcome = await run_agent_turn(paperless, db, session, prompt, step=step)
-    step.result = {
-        "message_range": list(outcome.message_range),
-        "proposal_ids": outcome.proposal_ids,
-    }
-    await _maybe_auto_apply(db, paperless, session, step)
-
-
-async def _exec_analysis(
-    db: DbSession, paperless: PaperlessClient, session: Session, step: Step
-) -> str | None:
-    await _run_turn(db, paperless, session, step, _kickoff_prompt(session, step))
-    return None
-
-
-async def _exec_chat(
-    db: DbSession, paperless: PaperlessClient, session: Session, step: Step
-) -> str | None:
-    await _run_turn(db, paperless, session, step, step.input["content"])
-    return None
-
-
-EXECUTORS = {
-    StepKind.ocr: _exec_ocr,
-    StepKind.analysis: _exec_analysis,
-    StepKind.chat: _exec_chat,
-}
-
-
-async def _maybe_auto_apply(
-    db: DbSession, paperless: PaperlessClient, session: Session, step: Step
-) -> None:
-    """apply_policy=auto (bulk jobs/webhook): apply fresh proposals right
-    away — validated, journaled, revertible. Failures stay pending for a
-    human instead of failing the step. Under the decision loop this
-    auto-continues the session (bounded), so autonomous runs converge."""
-    if session.params.get("apply_policy") != "auto":
-        return
-    proposals = (
-        await db.scalars(
-            select(Proposal).where(
-                Proposal.step_id == step.id, Proposal.status == ProposalStatus.pending
-            )
-        )
-    ).all()
-    for p in proposals:
-        try:
-            await apply_proposal(paperless, db, p)
-        except Exception:  # noqa: BLE001
-            log.exception("auto-apply failed for proposal %s", p.id)
-            continue
-        await continue_after_decision(db, session, p)
-
-
-# ----- the decision loop ----------------------------------------------
-
-# Runaway brake for autonomous (auto-apply) sessions: at most this many
-# auto-continuation turns per session. Manual continuations (user
-# applies) are driven by the user and never limited.
-CONTINUATION_LIMIT = 10
-
-
-def _decision_message(p: Proposal) -> str:
-    """Synthetic pipeline prompt telling the agent what the user did.
-    Hidden in the UI (the timeline already shows the decision); the
-    model needs it to continue the loop."""
-    kind = str(p.kind).replace("_", " ")
-    if p.status == ProposalStatus.no_change:
-        head = (
-            f"Paperless already matched your proposal ({kind}) — nothing "
-            "was written."
-        )
-    elif p.user_payload is not None:
-        head = (
-            f"The user edited your proposal ({kind}) before applying it. "
-            f"The APPLIED values are: {json.dumps(p.user_payload, ensure_ascii=False)}. "
-            "These are the user's preference and override yours."
-        )
-    else:
-        head = f"The user accepted your proposal ({kind}) as-is; it has been applied."
-    return (
-        f"{head} Continue the review: if further changes are needed, "
-        "propose the SINGLE next one; otherwise finish with a brief "
-        "closing summary."
-    )
-
-
-async def continue_after_decision(
-    db: DbSession, session: Session, proposal: Proposal
-) -> Step | None:
-    """After the user (or the auto policy) decided a proposal, the
-    session continues on its own: a new turn tells the agent what
-    happened. Skipped when the session is archived, other proposals
-    are still open, work is already in flight, or the auto brake hit."""
-    if session.archived_at is not None:
-        return None
-    if proposal.step_id is None or str(proposal.kind) == "replace_content":
-        return None
-    if proposal.status not in (ProposalStatus.applied, ProposalStatus.no_change):
-        return None
-    open_left = await db.scalar(
-        select(func.count()).select_from(Proposal).where(
-            Proposal.session_id == session.id,
-            Proposal.status == ProposalStatus.pending,
-            Proposal.kind != "replace_content",
-        )
-    )
-    if open_left:
-        return None  # legacy multi-proposal turns: the user decides each
-    busy = await db.scalar(
-        select(func.count()).select_from(Step).where(
-            Step.session_id == session.id,
-            Step.state.in_(
-                (StepState.pending, StepState.running, StepState.awaiting_user)
-            ),
-        )
-    )
-    if busy:
-        return None
-    if session.params.get("apply_policy") == "auto":
-        auto_turns = await db.scalar(
-            select(func.count()).select_from(Step).where(
-                Step.session_id == session.id,
-                Step.kind == StepKind.chat,
-                Step.input["auto"].as_boolean() == True,  # noqa: E712
-            )
-        )
-        if (auto_turns or 0) >= CONTINUATION_LIMIT:
-            log.warning(
-                "session %s hit the auto-continuation limit (%s)",
-                session.id, CONTINUATION_LIMIT,
-            )
-            return None
-    step_row = await db.get(Step, proposal.step_id)
-    lane = step_row.lane if step_row is not None else QueueLane.interactive
-    return await create_step(
-        db,
-        session,
-        StepKind.chat,
-        {"content": _decision_message(proposal), "auto": True},
-        lane=lane,
-    )
-
-
-# ----- resolvers (awaiting_user) --------------------------------------
-
-
-async def _resolve_ocr(
-    db: DbSession,
-    paperless: PaperlessClient,
-    session: Session,
-    step: Step,
-    body: dict[str, Any],
-) -> None:
-    """The OCR gate. body: {"content": str|None} — None keeps the
-    existing paperless content; a string is the accepted (possibly
-    hand-fixed) text, written via an internal journaled proposal. The
-    analysis step is created either way."""
-    assert session.entity_id is not None
-    accepted = body.get("content")
-    if accepted is None:
-        resolution = "kept_existing"
-    else:
-        doc = await paperless.get_document(session.entity_id)
-        resolution = "accepted"
-        if accepted.strip() != doc.content.strip():
-            from app.db.models import OcrResult
-
-            latest = await db.scalar(
-                select(OcrResult)
-                .where(OcrResult.document_id == session.entity_id)
-                .order_by(OcrResult.created_at.desc())
-                .limit(1)
-            )
-            ocr_text = latest.text if latest else accepted
-            agent_p = ReplaceContent(
-                document_id=session.entity_id,
-                content=ocr_text,
-            )
-            proposal = Proposal(
-                session_id=session.id,
-                step_id=step.id,
-                kind=str(agent_p.kind),
-                agent_payload=dump_payload(agent_p),
-                user_payload=(
-                    dump_payload(
-                        ReplaceContent(
-                            document_id=session.entity_id,
-                            content=accepted,
-                        )
-                    )
-                    if accepted != ocr_text
-                    else None
-                ),
-                status=ProposalStatus.pending,
-                entity_type=session.entity_type,
-                entity_id=session.entity_id,
-            )
-            db.add(proposal)
-            await db.flush()
-            await apply_proposal(paperless, db, proposal)
-    step.result = {**step.result, "resolution": resolution, "edited": bool(
-        accepted is not None and step.result.get("resolution") is None and accepted
-    )}
-    session.params = {**session.params, "ocr_gate": resolution}
-    await create_step(db, session, StepKind.analysis, {"gate": resolution}, lane=step.lane)
-
-
-RESOLVERS = {StepKind.ocr: _resolve_ocr}
-
-
-# ----- worker pool ----------------------------------------------------
+        _registered = True
 
 
 class StepWorkers:
@@ -600,8 +346,8 @@ class StepWorkers:
     async def _claim(self, lane: QueueLane) -> int | None:
         async with self._claim_lock:
             async with session_scope() as db:
-                step = await db.scalar(
-                    select(Step)
+                step_id = await db.scalar(
+                    select(Step.id)
                     .where(
                         Step.state == StepState.pending,
                         Step.lane == lane,
@@ -610,10 +356,23 @@ class StepWorkers:
                     .order_by(Step.id)
                     .limit(1)
                 )
-                if step is None:
+                if step_id is None:
                     return None
-                step.state = StepState.running
-                step.attempt_count += 1
+                # Atomic claim: the UPDATE only wins if the step is STILL
+                # pending — a second worker (or process) gets rowcount 0.
+                # The asyncio lock above is an optimization, not the guard.
+                claimed = await db.execute(
+                    sa_update(Step)
+                    .where(Step.id == step_id, Step.state == StepState.pending)
+                    .values(
+                        state=StepState.running,
+                        attempt_count=Step.attempt_count + 1,
+                    )
+                )
+                if claimed.rowcount == 0:
+                    return None
+                step = await db.get(Step, step_id)
+                assert step is not None
                 step.started_at = step.started_at or utcnow()
                 session = await db.get(Session, step.session_id)
                 if session is not None:
@@ -623,6 +382,7 @@ class StepWorkers:
                 return step.id
 
     async def _run(self, step_id: int) -> None:
+        _ensure_registered()
         attempt_started = utcnow()
         async with session_scope() as db:
             step = await db.get(Step, step_id)
@@ -684,53 +444,40 @@ class StepWorkers:
             if session is not None:
                 await sync_session(db, session)
                 if session.job_id is not None:
+                    # Lazy: jobs.py imports create_step from here.
+                    from app.services.jobs import update_job
+
                     await update_job(db, session.job_id)
             await db.commit()
             _publish(step)
 
 
-# Serializes job-counter updates (lost-update race between workers).
-_job_update_lock = asyncio.Lock()
 
 
-async def update_job(db: DbSession, job_id: int) -> None:
-    """Job counters: a session counts as done when it reached a
-    terminal, non-blocked position (done/failed)."""
-    async with _job_update_lock:
-        job = await db.get(Job, job_id)
-        if job is None:
-            return
-        sessions = (
-            await db.scalars(select(Session).where(Session.job_id == job_id))
-        ).all()
-        done = failed = unfinished = 0
-        for s in sessions:
-            if s.status == SessionStatus.failed:
-                # Failed only counts as final when no retry is pending.
-                has_pending = await db.scalar(
-                    select(func.count())
-                    .select_from(Step)
-                    .where(
-                        Step.session_id == s.id,
-                        Step.state.in_([StepState.pending, StepState.running]),
-                    )
-                )
-                if has_pending:
-                    unfinished += 1
-                else:
-                    failed += 1
-            elif s.phase == SessionPhase.done:
-                done += 1
-            else:
-                unfinished += 1
-        job.done, job.failed = done, failed
-        if job.status != JobStatus.cancelled:
-            job.status = (
-                JobStatus.running
-                if unfinished
-                else (JobStatus.completed if done else JobStatus.failed)
-            )
-        await db.flush()
+async def cancel_job_steps(db: DbSession, job_id: int) -> int:
+    """Cancel every still-pending step of a job's sessions. Running
+    steps finish on their own; the sessions re-derive their status from
+    the cancelled tail (single writer stays single)."""
+    pending = (
+        await db.scalars(
+            select(Step)
+            .join(Session, Session.id == Step.session_id)
+            .where(Session.job_id == job_id, Step.state == StepState.pending)
+        )
+    ).all()
+    touched: set[int] = set()
+    for step in pending:
+        step.state = StepState.cancelled
+        step.error = "cancelled with its job"
+        step.finished_at = utcnow()
+        touched.add(step.session_id)
+    for sid in touched:
+        session = await db.get(Session, sid)
+        if session is not None:
+            await sync_session(db, session)
+    for step in pending:
+        _publish(step)
+    return len(pending)
 
 
 async def recover() -> dict[str, int]:

@@ -140,6 +140,10 @@ class QueueConfig(BaseModel):
     interactive_concurrency: int = 2
     batch_concurrency: int = 2
     poll_interval_seconds: float = 1.0
+    # Runaway brake for autonomous (auto-apply) sessions: at most this
+    # many auto-continuation turns per session. Manual continuations
+    # (user applies) are user-driven and never limited.
+    auto_continuation_limit: int = 10
     # Automatic retries for failed stages (LLM hiccups, restarts, …):
     # a failed stage is re-run up to retry_attempts more times, waiting
     # retry_delay_seconds between attempts. "Retry now" in the UI

@@ -14,6 +14,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.paperless.client import PaperlessError
+
 CODE_BY_STATUS = {
     400: "bad_request",
     401: "unauthorized",
@@ -37,6 +39,37 @@ def _payload(status_code: int, detail: object) -> dict:
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    # Domain exceptions map centrally so routes never repeat
+    # try/except-to-HTTPException plumbing — raising the domain error IS
+    # the API contract.
+    from app.proposals.apply import ApplyError
+    from app.services.steps import StepActionError
+
+    @app.exception_handler(PaperlessError)
+    async def _paperless_error(request: Request, exc: PaperlessError):
+        if exc.status_code == 404:
+            status, code = 404, "paperless_not_found"
+        else:
+            status, code = 502, "paperless_unavailable"
+        return JSONResponse(
+            status_code=status,
+            content={"detail": {"code": code, "message": str(exc)}},
+        )
+
+    @app.exception_handler(ApplyError)
+    async def _apply_error(request: Request, exc: ApplyError):
+        return JSONResponse(
+            status_code=409,
+            content={"detail": {"code": "conflict", "message": str(exc)}},
+        )
+
+    @app.exception_handler(StepActionError)
+    async def _step_error(request: Request, exc: StepActionError):
+        return JSONResponse(
+            status_code=409,
+            content={"detail": {"code": "conflict", "message": str(exc)}},
+        )
+
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request: Request, exc: StarletteHTTPException):
         return JSONResponse(

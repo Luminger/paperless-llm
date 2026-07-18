@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AppliedChange, Proposal, ProposalStatus, utcnow
@@ -61,9 +62,32 @@ async def apply_proposal(
     """Apply a proposal. Returns the journal entry — or ``None`` when
     paperless already matches the proposed state: the proposal is then
     marked ``no_change`` instead of pretending a write happened."""
-    if proposal.status != ProposalStatus.pending:
-        raise ApplyError(f"proposal {proposal.id} is {proposal.status}, cannot apply")
+    # Atomic claim: flip pending -> applying in one UPDATE so two
+    # concurrent applies can never both pass a check-then-act gate.
+    # (applied_changes.proposal_id is UNIQUE as a second line of
+    # defense.)
+    claimed = await db.execute(
+        sa_update(Proposal)
+        .where(Proposal.id == proposal.id, Proposal.status == ProposalStatus.pending)
+        .values(status=ProposalStatus.applying)
+    )
+    if claimed.rowcount == 0:
+        raise ApplyError(f"proposal {proposal.id} is {proposal.status.value}, cannot apply")
+    await db.commit()
+    await db.refresh(proposal)
 
+    try:
+        return await _apply_claimed(paperless, db, proposal)
+    except Exception:
+        # Nothing was journaled: release the claim so the user can retry.
+        proposal.status = ProposalStatus.pending
+        await db.commit()
+        raise
+
+
+async def _apply_claimed(
+    paperless: PaperlessClient, db: AsyncSession, proposal: Proposal
+) -> AppliedChange | None:
     payload = proposal.user_payload or proposal.agent_payload
     typed = validate_payload(payload)
 

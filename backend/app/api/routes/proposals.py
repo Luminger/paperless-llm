@@ -16,7 +16,7 @@ from app.api.schemas import (
 from app.db.models import AppliedChange, Proposal, ProposalStatus
 from app.db.session import get_session
 from app.paperless import PaperlessClient
-from app.proposals import ApplyError, apply_proposal, revert_change, validate_payload
+from app.proposals import apply_proposal, revert_change, validate_payload
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
 
@@ -123,13 +123,10 @@ async def apply(
             409, "session is archived: its proposals cannot be applied "
             "(unarchive the session first); applied changes remain revertible"
         )
-    try:
-        await apply_proposal(paperless, db, p)
-    except ApplyError as e:
-        raise HTTPException(409, str(e)) from e
+    await apply_proposal(paperless, db, p)
     # The decision loop: the session continues on its own, telling the
     # agent what the user decided (incl. their edited values).
-    from app.services.steps import continue_after_decision
+    from app.services.pipeline import continue_after_decision
 
     if session is not None:
         await continue_after_decision(db, session, p)
@@ -175,8 +172,5 @@ async def revert(
     )
     if change is None:
         raise HTTPException(409, "proposal was never applied")
-    try:
-        await revert_change(paperless, db, change)
-    except ApplyError as e:
-        raise HTTPException(409, str(e)) from e
+    await revert_change(paperless, db, change)
     return _out(await _load(db, proposal_id))

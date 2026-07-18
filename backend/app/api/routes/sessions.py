@@ -115,7 +115,12 @@ def _step_out(step: Step, history: list) -> StepOut:
     out = StepOut.model_validate(step)
     rng = step.result.get("message_range")
     if rng and isinstance(rng, list) and len(rng) == 2:
-        out.transcript = derive_transcript(history[rng[0] : rng[1]])
+        # Analysis kickoffs and auto continuations open with a synthetic
+        # pipeline prompt; only real chat starts with a human utterance.
+        synthetic = step.kind == StepKind.analysis or bool(step.input.get("auto"))
+        out.transcript = derive_transcript(
+            history[rng[0] : rng[1]], pipeline_first_user=synthetic
+        )
     return out
 
 
@@ -309,10 +314,7 @@ async def resolve_step(
     """Resolve an awaiting_user step (the OCR gate: content=None keeps
     the existing text, a string is the accepted/hand-fixed version)."""
     step = await _load_step(db, session_id, step_id)
-    try:
-        await engine.resolve_step(db, paperless, step, body.model_dump())
-    except engine.StepActionError as e:
-        raise HTTPException(409, str(e)) from e
+    await engine.resolve_step(db, paperless, step, body.model_dump())
     return StepOut.model_validate(step)
 
 
@@ -323,10 +325,7 @@ async def retry_step(
     """Generic retry-now: skip a scheduled backoff or revive a failed
     step with a fresh auto-retry budget. Never limited."""
     step = await _load_step(db, session_id, step_id)
-    try:
-        await engine.retry_step(db, step)
-    except engine.StepActionError as e:
-        raise HTTPException(409, str(e)) from e
+    await engine.retry_step(db, step)
     return StepOut.model_validate(step)
 
 
@@ -340,10 +339,7 @@ async def redo_step(
     """Generic redo: supersede the step and run a fresh one, optionally
     with amended input (e.g. OCR re-run with instructions)."""
     step = await _load_step(db, session_id, step_id)
-    try:
-        new = await engine.redo_step(db, step, (body.input if body else None) or None)
-    except engine.StepActionError as e:
-        raise HTTPException(409, str(e)) from e
+    new = await engine.redo_step(db, step, (body.input if body else None) or None)
     return StepOut.model_validate(new)
 
 

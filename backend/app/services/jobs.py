@@ -14,21 +14,25 @@ Per-job ``apply_policy``:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     AgentKind,
     EntityType,
     Job,
+    JobStatus,
     QueueLane,
     Session,
     SessionPhase,
     SessionStatus,
+    Step,
     StepKind,
+    StepState,
 )
 from app.paperless import PaperlessClient
 from app.services.audit import record
@@ -237,3 +241,49 @@ async def create_entity_job(
     )
     await db.commit()
     return job, session
+
+
+# Serializes job-counter updates (lost-update race between workers).
+_job_update_lock = asyncio.Lock()
+
+
+async def update_job(db: AsyncSession, job_id: int) -> None:
+    """Job counters: a session counts as done when it reached a
+    terminal, non-blocked position (done/failed)."""
+    async with _job_update_lock:
+        job = await db.get(Job, job_id)
+        if job is None:
+            return
+        sessions = (
+            await db.scalars(select(Session).where(Session.job_id == job_id))
+        ).all()
+        done = failed = unfinished = 0
+        for s in sessions:
+            if s.status == SessionStatus.failed:
+                # Failed only counts as final when no retry is pending.
+                has_pending = await db.scalar(
+                    select(func.count())
+                    .select_from(Step)
+                    .where(
+                        Step.session_id == s.id,
+                        Step.state.in_([StepState.pending, StepState.running]),
+                    )
+                )
+                if has_pending:
+                    unfinished += 1
+                else:
+                    failed += 1
+            elif s.phase == SessionPhase.done:
+                done += 1
+            else:
+                unfinished += 1
+        job.done, job.failed = done, failed
+        if job.status != JobStatus.cancelled:
+            job.status = (
+                JobStatus.running
+                if unfinished
+                else (JobStatus.completed if done else JobStatus.failed)
+            )
+        await db.flush()
+
+

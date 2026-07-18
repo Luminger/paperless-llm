@@ -24,7 +24,9 @@ def test_pipeline_prompt_marked_and_chat_kept_apart():
         _request({"part_kind": "user-prompt", "content": "Use German instead"}),
         _response({"part_kind": "text", "content": "Revised."}),
     ]
-    t = derive_transcript(history)
+    # The CALLER declares synthetic kickoffs (structural fact from the
+    # step kind) — no string matching on prompt wording.
+    t = derive_transcript(history, pipeline_first_user=True)
     assert [(i.role, i.origin) for i in t if i.role == "user"] == [
         ("user", "pipeline"),
         ("user", "chat"),
@@ -71,6 +73,29 @@ def test_tool_calls_paired_with_results_and_retries():
     assert tools[0].tool_result == '{"id": 7}'
     assert tools[1].tool_args == {"document_id": 7, "title": "x"}
     assert tools[1].tool_result.startswith("rejected: ")
+
+
+def test_propose_result_yields_structural_proposal_id():
+    history = [
+        _response(
+            {
+                "part_kind": "tool-call",
+                "tool_name": "propose_update_document_metadata",
+                "args": {},
+                "tool_call_id": "c1",
+            },
+        ),
+        _request(
+            {
+                "part_kind": "tool-return",
+                "tool_call_id": "c1",
+                "content": "Proposal [[proposal:42]] (update_document_metadata) recorded for human review.",
+            }
+        ),
+    ]
+    t = derive_transcript(history)
+    tool = next(i for i in t if i.role == "tool")
+    assert tool.proposal_id == 42
 
 
 def test_thinking_surfaced_and_full_results_kept():

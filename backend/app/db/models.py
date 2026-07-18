@@ -70,6 +70,9 @@ class SessionPhase(enum.StrEnum):
 class ProposalStatus(enum.StrEnum):
     draft = "draft"  # emitted mid-run; run not finished yet
     pending = "pending"  # awaiting review
+    # Transitional: an apply is in flight (atomic claim; released back
+    # to pending if the apply fails before anything is journaled).
+    applying = "applying"
     applied = "applied"
     superseded = "superseded"  # replaced by a newer revision
     # Apply-time verdict: paperless already matches the proposal (state

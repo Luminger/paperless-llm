@@ -13,21 +13,17 @@ and therefore don't pollute user messages here.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
-# The pipeline's synthetic kickoff prompts (see pipeline._kickoff_prompt).
-_PIPELINE_PROMPT_PREFIXES = (
-    "Process document id=",
-    "Review ",
-    # Decision-loop continuations (see steps.continue_after_decision).
-    "The user accepted your proposal",
-    "The user edited your proposal",
-    "Paperless already matched your proposal",
-)
-
 _RESULT_LIMIT = 500
+
+# The propose_* tool result format is OWNED by app.agents.tools._persist
+# ("Proposal [[proposal:N]] (kind) recorded ..."): parsing it here is a
+# contract between two modules of this codebase, not string guessing.
+_PROPOSAL_TOKEN_RE = re.compile(r"\[\[proposal:(\d+)\]\]")
 
 
 class CallTiming(BaseModel):
@@ -58,6 +54,9 @@ class TranscriptItem(BaseModel):
     # can audit exactly what the model got back.
     tool_result_full: Any = None
     tool_rejected: bool = False
+    # For propose_* calls: the id of the proposal the call recorded, so
+    # the UI can render the proposal card in place of the call.
+    proposal_id: int | None = None
     # Per-LLM-call metrics. Every item derived from the same model
     # response shares that call's timing — a response with several tool
     # calls is still one LLM call.
@@ -99,7 +98,12 @@ def _parse_args(args: Any) -> dict[str, Any] | None:
     return None
 
 
-def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
+def derive_transcript(
+    history: list[Any], *, pipeline_first_user: bool = False
+) -> list[TranscriptItem]:
+    """``pipeline_first_user``: the caller KNOWS whether this slice's
+    first user prompt is synthetic (analysis kickoffs and auto
+    continuations always are) — structural fact, not string matching."""
     items: list[TranscriptItem] = []
     # tool_call_id -> transcript item, to attach results to their calls.
     calls: dict[str, TranscriptItem] = {}
@@ -126,9 +130,7 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
 
             if kind == "user-prompt":
                 text = _text_of(part.get("content"))
-                # Only the session's FIRST user prompt can be the
-                # pipeline's synthetic kickoff.
-                is_pipeline = first_user and text.startswith(_PIPELINE_PROMPT_PREFIXES)
+                is_pipeline = first_user and pipeline_first_user
                 first_user = False
                 items.append(
                     TranscriptItem(
@@ -160,6 +162,10 @@ def derive_transcript(history: list[Any]) -> list[TranscriptItem]:
                 if item is not None:
                     item.tool_result = _summarize(part.get("content"))
                     item.tool_result_full = part.get("content")
+                    if (item.tool_name or "").startswith("propose_"):
+                        m = _PROPOSAL_TOKEN_RE.search(str(part.get("content") or ""))
+                        if m:
+                            item.proposal_id = int(m.group(1))
             elif kind == "retry-prompt":
                 item = calls.get(str(part.get("tool_call_id")))
                 if item is not None:

@@ -116,24 +116,9 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
         raise HTTPException(404, "job not found")
     if job.status in (JobStatus.completed, JobStatus.cancelled):
         raise HTTPException(409, f"job is already {job.status}")
-    pending = (
-        await db.scalars(
-            select(Step)
-            .join(Session, Session.id == Step.session_id)
-            .where(Session.job_id == job_id, Step.state == StepState.pending)
-        )
-    ).all()
-    from app.services.steps import sync_session
+    from app.services.steps import cancel_job_steps
 
-    for step in pending:
-        step.state = StepState.cancelled
-        step.error = "cancelled with its job"
-        session = await db.get(Session, step.session_id)
-        if session is not None and session.phase != SessionPhase.done:
-            await sync_session(db, session)
-            if session.status != SessionStatus.failed:
-                session.status = SessionStatus.failed
-                session.error = "cancelled with its job"
+    await cancel_job_steps(db, job_id)
     job.status = JobStatus.cancelled
     await db.commit()
     return JobOut.model_validate(job)
