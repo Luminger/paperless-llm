@@ -26,17 +26,9 @@ import { entityHref } from "../../pages/EntityPage";
 export const REF_TOKEN_RE =
   /\[\[(document|tag|correspondent|document_type|storage_path|proposal):(\d+)\]\]/g;
 
-// Models (Qwen 3.6 notably) like to repeat the entity name in a quoted
-// parenthetical right after the token — '[[tag:5]] ("old-stuff-2019")'
-// — even though the chip renders the name. Strip exactly that shape:
-// a quoted parenthetical immediately following a token.
-const REDUNDANT_NAME_RE =
-  /(\[\[(?:document|tag|correspondent|document_type|storage_path|proposal):\d+\]\])\s*\(\s*["'“”‘][^)]*["'“”’]\s*\)/g;
-
 /** Rewrites [[type:id]] tokens into markdown links with a pllm://
  * scheme, which the markdown renderer maps onto RefChip. */
 export function tokenizeRefs(md: string): string {
-  md = md.replace(REDUNDANT_NAME_RE, "$1");
   return md.replace(REF_TOKEN_RE, (_m, type, id) => `[${type}](pllm://${type}/${id})`);
 }
 

@@ -8,18 +8,11 @@ describe("tokenizeRefs", () => {
     );
   });
 
-  it("strips the redundant quoted-name parenthetical models add", () => {
-    expect(tokenizeRefs('remove [[tag:5]] ("old-stuff-2019") from it')).toBe(
-      "remove [tag](pllm://tag/5) from it",
-    );
-    expect(tokenizeRefs("type [[document_type:2]] (“Brief”)")).toBe(
-      "type [document_type](pllm://document_type/2)",
-    );
-  });
-
-  it("keeps meaningful unquoted parentheticals", () => {
-    expect(tokenizeRefs("[[tag:5]] (already assigned)")).toBe(
-      "[tag](pllm://tag/5) (already assigned)",
+  // Name echoes after tokens are a PROMPT concern, not a rendering
+  // one: the renderer never mangles model prose.
+  it("leaves surrounding prose untouched", () => {
+    expect(tokenizeRefs('remove [[tag:5]] ("old-stuff-2019")')).toBe(
+      'remove [tag](pllm://tag/5) ("old-stuff-2019")',
     );
   });
 });
