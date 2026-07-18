@@ -150,8 +150,14 @@ async def _maybe_auto_apply(
         return
     # AUDIT SV-M5: the user may have archived the session while this
     # turn ran — archived means "refuse forward-apply", same as the
-    # human path enforces.
-    if session.archived_at is not None:
+    # human path enforces. Re-read from the DB: the ORM object was
+    # loaded at turn START (expire_on_commit=False), so the cached
+    # attribute misses an archive that landed during the LLM-minutes
+    # the turn took (reinspection finding).
+    archived = await db.scalar(
+        select(Session.archived_at).where(Session.id == session.id)
+    )
+    if archived is not None:
         return
     proposals = (
         await db.scalars(
@@ -213,7 +219,12 @@ async def continue_after_decision(
     ``exclude_step_id``: the auto-apply path calls this from INSIDE the
     executor of the step that produced the proposal — that step is
     still 'running' and must not count as in-flight work."""
-    if session.archived_at is not None:
+    # Fresh read, not the cached attribute — see the SV-M5 note in
+    # _maybe_auto_apply (the executor path passes a stale ORM object).
+    archived = await db.scalar(
+        select(Session.archived_at).where(Session.id == session.id)
+    )
+    if archived is not None:
         return None
     if proposal.step_id is None or is_internal(proposal.kind):
         return None

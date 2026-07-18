@@ -37,6 +37,12 @@ def _instrumented(fn: Callable) -> Callable:
             ctx.deps.session_id, "step_progress",
             step_id=ctx.deps.step_id, tool=fn.__name__, args=args_preview,
         )
+        # INVARIANT the frontend's live view relies on: `tool_done` is
+        # published synchronously after the tool_lock releases, with NO
+        # await in between — done order therefore equals start order,
+        # which lets the SSE reducer match tool_done to the FIRST
+        # unresolved same-name call (FIFO). Inserting an await between
+        # the lock exit and bus.publish silently breaks that matching.
         try:
             async with ctx.deps.tool_lock:
                 result = await fn(ctx, *args, **kwargs)

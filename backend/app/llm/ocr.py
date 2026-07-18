@@ -58,20 +58,6 @@ class OcrOutcome:
     previous_content: str = ""
 
 
-def render_pages(data: bytes, content_type: str, dpi: int, max_pages: int = 0) -> list[bytes]:
-    """Render an original document (PDF or image) to PNG page images."""
-    filetype = "pdf" if "pdf" in content_type else None
-    doc = fitz.open(stream=data, filetype=filetype)
-    try:
-        n = doc.page_count if max_pages <= 0 else min(doc.page_count, max_pages)
-        zoom = dpi / 72.0
-        return [
-            doc[i].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png") for i in range(n)
-        ]
-    finally:
-        doc.close()
-
-
 def page_count(data: bytes, content_type: str) -> int:
     doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
     try:
@@ -224,16 +210,6 @@ async def run_ocr(
 
     # Upsert: a force re-run must update the existing cache row, not
     # violate the unique key.
-    from app.services.counters import increment
-
-    await increment(
-        db,
-        ocr_runs=1,
-        ocr_pages=len(pages),
-        llm_requests=len(timings),
-        llm_input_tokens=sum(t.get("input_tokens") or 0 for t in timings),
-        llm_output_tokens=sum(t.get("output_tokens") or 0 for t in timings),
-    )
     if cached:
         cached.pages = pages
         cached.text = text
@@ -282,6 +258,21 @@ async def run_ocr(
                 row.truncated = truncated
                 row.total_pages = total
                 await db.commit()
+
+    # Counters AFTER the upsert settles (reinspection): they used to run
+    # before the insert commit, so the BC-F9 loser's rollback silently
+    # discarded the deltas — a full real OCR run went uncounted.
+    from app.services.counters import increment
+
+    await increment(
+        db,
+        ocr_runs=1,
+        ocr_pages=len(pages),
+        llm_requests=len(timings),
+        llm_input_tokens=sum(t.get("input_tokens") or 0 for t in timings),
+        llm_output_tokens=sum(t.get("output_tokens") or 0 for t in timings),
+    )
+    await db.commit()
 
     return OcrOutcome(
         document_id=document_id,

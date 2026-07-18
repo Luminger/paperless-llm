@@ -382,6 +382,28 @@ async def _apply_create_entity(
         "reused": reused,
     }
     if p.assign_to_documents:
+        # Reinspection (API-F1 follow-up): journal only the documents
+        # that actually GAIN the entity. For a REUSED entity some of the
+        # listed docs may already carry it (a human's assignment) —
+        # revert must undo OUR assignments only, so pre-check which docs
+        # already have it. Freshly created entities can't be on anything.
+        gained = p.assign_to_documents
+        if reused:
+            already: set[int] = set()
+            for i in range(0, len(p.assign_to_documents), 100):
+                chunk = p.assign_to_documents[i : i + 100]
+                kw: dict[str, Any] = {"document_ids": chunk, "page_size": 100}
+                if p.entity_type == "tag":
+                    kw["tag_ids"] = [created.id]
+                elif p.entity_type == "correspondent":
+                    kw["correspondent_id"] = created.id
+                elif p.entity_type == "document_type":
+                    kw["document_type_id"] = created.id
+                else:
+                    kw["storage_path_id"] = created.id
+                page_r = await paperless.search_documents(**kw)
+                already.update(d.id for d in page_r.results)
+            gained = [d for d in p.assign_to_documents if d not in already]
         if p.entity_type == "tag":
             await paperless.bulk_edit_documents(
                 p.assign_to_documents, "modify_tags", {"add_tags": [created.id], "remove_tags": []}
@@ -390,7 +412,7 @@ async def _apply_create_entity(
             await paperless.bulk_edit_documents(
                 p.assign_to_documents, _BULK_SET_METHOD[p.entity_type], {p.entity_type: created.id}
             )
-        after["assigned_documents"] = p.assign_to_documents
+        after["assigned_documents"] = gained
     return {
         "entity": existing.model_dump() if existing is not None else None,
         "entity_type": p.entity_type,
@@ -610,7 +632,29 @@ async def _revert_claimed(
             doc = dict(before["document"])
             doc_id = doc.pop("id")
             saved_tags = doc.pop("tags", None)
+            saved_cf = doc.pop("custom_fields", None)
             after_doc = change.paperless_after.get("document") or {}
+            touched_cf = (
+                getattr(typed, "custom_fields", None)
+                if isinstance(typed, UpdateDocumentMetadata)
+                else None
+            )
+            if saved_cf is not None and touched_cf:
+                # Reinspection (API-F6 follow-up): custom_fields revert as
+                # a DELTA too — restore only the fields THIS apply set,
+                # on top of the doc's CURRENT list, so field edits made
+                # in paperless since the apply survive.
+                before_map = {cf["field"]: cf["value"] for cf in saved_cf}
+                current_cf = (await paperless.get_document(doc_id)).custom_fields
+                merged = {cf.field: cf.value for cf in current_cf}
+                for f in touched_cf:
+                    if f in before_map:
+                        merged[f] = before_map[f]
+                    else:
+                        merged.pop(f, None)
+                doc["custom_fields"] = [
+                    {"field": k, "value": v} for k, v in merged.items() if v is not None
+                ]
             if saved_tags is not None and "tags" in after_doc:
                 # AUDIT API-F6: revert tags as a DELTA of what THIS apply
                 # changed — never overwrite with the full snapshot (tag

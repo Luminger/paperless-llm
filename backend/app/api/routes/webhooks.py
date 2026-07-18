@@ -62,8 +62,11 @@ async def paperless_webhook(
     cfg = get_settings().webhook
     if not cfg.secret:
         raise HTTPException(404, "webhook ingress not configured")
-    # Constant-time compare (AUDIT API-F11).
-    if not hmac.compare_digest(request.headers.get("X-PLLM-Token", ""), cfg.secret):
+    # Constant-time compare (AUDIT API-F11) on BYTES: the str overload
+    # raises TypeError on non-ASCII input — a garbage header must be a
+    # 403, not a 500 (reinspection).
+    supplied = request.headers.get("X-PLLM-Token", "").encode("utf-8", "replace")
+    if not hmac.compare_digest(supplied, cfg.secret.encode("utf-8", "replace")):
         raise HTTPException(403, "bad webhook token")
     # Machine-to-machine: not a user action.
     from app.services.actor import actor_var

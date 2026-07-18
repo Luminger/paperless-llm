@@ -226,6 +226,9 @@ async def test_apply_create_entity_reuses_existing_name(db, paperless_client):
         ]})
     )
     create_route = respx.post(f"{PAPERLESS_URL}/api/correspondents/")
+    respx.get(f"{PAPERLESS_URL}/api/documents/", params={"correspondent__id": "9"}).mock(
+        return_value=Response(200, json={"count": 0, "next": None, "results": []})
+    )
     respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
         return_value=Response(200, json=DOC)  # correspondent: None -> assign needed
     )
@@ -445,6 +448,9 @@ async def test_revert_of_reused_entity_never_deletes_it(db, paperless_client):
             "matching_algorithm": 0,
         })
     )
+    respx.get(f"{PAPERLESS_URL}/api/documents/", params={"correspondent__id": "9"}).mock(
+        return_value=Response(200, json={"count": 0, "next": None, "results": []})
+    )
     respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
         return_value=Response(200, json=DOC)
     )
@@ -561,3 +567,100 @@ async def test_second_revert_conflicts(db, paperless_client):
     await revert_change(paperless_client, db, change)
     with pytest.raises(ApplyError, match="already reverted"):
         await revert_change(paperless_client, db, change)
+
+@respx.mock
+async def test_custom_field_revert_is_a_delta(db, paperless_client):
+    """Reinspection (API-F6 follow-up): reverting a custom-field change
+    restores ONLY the fields this apply set — a field edited in
+    paperless since the apply survives."""
+    from app.proposals.apply import revert_change
+
+    doc_with_cf = DOC | {"custom_fields": [{"field": 1, "value": "keep-me"}]}
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=doc_with_cf)
+    )
+    patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=doc_with_cf | {
+            "custom_fields": [
+                {"field": 1, "value": "keep-me"},
+                {"field": 2, "value": "ours"},
+            ]
+        })
+    )
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "custom_fields": {"2": "ours"},
+        },
+    )
+    change = await apply_proposal(paperless_client, db, p)
+
+    # Since the apply, someone changed field 1 and added field 9.
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"custom_fields": [
+            {"field": 1, "value": "edited-since"},
+            {"field": 2, "value": "ours"},
+            {"field": 9, "value": "new-since"},
+        ]})
+    )
+    await revert_change(paperless_client, db, change)
+    body = json.loads(patch_route.calls[-1].request.content)
+    got = {cf["field"]: cf["value"] for cf in body["custom_fields"]}
+    # field 2 (set by us) gone; 1 keeps the LATER edit; 9 survives.
+    assert got == {1: "edited-since", 9: "new-since"}
+
+
+@respx.mock
+async def test_reused_entity_revert_spares_preexisting_assignments(db, paperless_client):
+    """Reinspection (API-F1 follow-up): when a REUSED entity is assigned
+    to documents, only the docs that actually GAINED it are journaled —
+    revert must not strip a pre-existing human assignment."""
+    from app.proposals.apply import revert_change
+
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/").mock(
+        return_value=Response(200, json={"count": 1, "next": None, "results": [
+            {"id": 9, "name": "Kraxi", "document_count": 3, "match": "",
+             "matching_algorithm": 0}
+        ]})
+    )
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/9/").mock(
+        return_value=Response(200, json={
+            "id": 9, "name": "Kraxi", "document_count": 3, "match": "",
+            "matching_algorithm": 0,
+        })
+    )
+    # Pre-check: of [7, 8], doc 8 ALREADY carries correspondent 9.
+    respx.get(
+        f"{PAPERLESS_URL}/api/documents/", params={"correspondent__id": "9"}
+    ).mock(
+        return_value=Response(200, json={"count": 1, "next": None, "results": [
+            DOC | {"id": 8, "correspondent": 9}
+        ]})
+    )
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
+    bulk = respx.post(f"{PAPERLESS_URL}/api/documents/bulk_edit/").mock(
+        return_value=Response(200, json={"result": "OK"})
+    )
+
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "create_entity",
+            "entity_type": "correspondent",
+            "name": "Kraxi",
+            "assign_to_documents": [7, 8],
+        },
+    )
+    change = await apply_proposal(paperless_client, db, p)
+    assert change is not None
+    # doc 8 already had it — only doc 7 is OURS to undo.
+    assert change.paperless_after["assigned_documents"] == [7]
+
+    await revert_change(paperless_client, db, change)
+    body = json.loads(bulk.calls[-1].request.content)
+    assert body["documents"] == [7]  # doc 8's assignment survives
+    assert change.reverted_at is not None

@@ -97,9 +97,15 @@ def ocr_model() -> tuple[Model, ModelSettings, OcrProfile, asyncio.Semaphore]:
     base_url, model, api_key, ocr = resolved_ocr_profile()
     # AUDIT BC-F10: the OCR endpoint's admission is tunable on its own
     # profile; only fall back to the agent's when unset.
-    sem = llm_semaphore(
-        base_url, ocr.max_concurrent or get_settings().llm.agent.max_concurrent
-    )
+    # Reinspection: honor ocr.max_concurrent ONLY when OCR has its own
+    # base_url. When OCR falls back to the agent's endpoint, a distinct
+    # size would make agent turns and OCR runs alternately REPLACE the
+    # shared semaphore — each replacement over-admits while holders of
+    # the previous object are still inside. Shared endpoint = shared
+    # admission.
+    agent_cap = get_settings().llm.agent.max_concurrent
+    cap = (ocr.max_concurrent or agent_cap) if ocr.base_url else agent_cap
+    sem = llm_semaphore(base_url, cap)
     # OCR is a plain completion; thinking adds latency for no benefit.
     return (
         _build_model(base_url, model, api_key),

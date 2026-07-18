@@ -176,9 +176,12 @@ class PaperlessClient:
         return resp
 
     async def _get_json(self, url: str, **params: Any) -> Any:
-        resp = await self._request(
-            "GET", url, params={k: v for k, v in params.items() if v is not None}
-        )
+        # NB: pass None, not {}, when there are no params — httpx treats
+        # an empty params dict as "replace the URL's query with nothing",
+        # which would strip the ?page=N off re-relativized `next` URLs
+        # (reinspection: this made _drain refetch page 1 forever).
+        clean = {k: v for k, v in params.items() if v is not None}
+        resp = await self._request("GET", url, params=clean or None)
         return resp.json()
 
     async def _drain[T](self, url: str, model: type[T], **params: Any) -> list[T]:
@@ -197,7 +200,14 @@ class PaperlessClient:
                 # token to a different host. Keep path+query, request
                 # relative to OUR base_url.
                 parsed = urlsplit(nxt)
-                nxt = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+                path = parsed.path
+                # Reinspection: for a subpath-hosted paperless the kept
+                # path still carries the base_url's prefix and httpx
+                # would prepend it AGAIN (…/paperless/paperless/api/…).
+                base_path = urlsplit(str(self._client.base_url)).path.rstrip("/")
+                if base_path and path.startswith(base_path):
+                    path = path[len(base_path) :]
+                nxt = path + (f"?{parsed.query}" if parsed.query else "")
             page_url = nxt
             params = {}  # `next` already carries the query string
         return out

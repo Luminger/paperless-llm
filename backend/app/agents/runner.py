@@ -203,7 +203,8 @@ async def run_agent_turn(
             # pydantic-ai's streaming part tracker (part_end_event) indexes
             # into get_parts(), which FILTERS ToolCallPartDeltas — certain
             # vLLM tool-call stream shapes make the list shorter than the
-            # tracked index (still present in 2.13.0). Deterministic per
+            # tracked index (verified through 2.13.0; we pin 2.12.0 —
+            # re-check when bumping). Deterministic per
             # response, so step retries can't help — but the non-streaming
             # path never touches that code. Trade live tokens for a
             # completed turn.
@@ -219,7 +220,12 @@ async def run_agent_turn(
             for p in deps.emitted:
                 await db.delete(p)
             deps.emitted.clear()
-            await db.flush()
+            # COMMIT, don't just flush (reinspection): _persist committed
+            # these drafts, so if the re-run fails AND the failure path's
+            # promotion commit also fails, a mere flush would roll the
+            # deletes back and strand the aborted attempt's drafts as
+            # permanent orphan rows.
+            await db.commit()
             result = await _run(stream=False)
     except Exception:
         # Keep any proposals drafted before the failure reviewable. A

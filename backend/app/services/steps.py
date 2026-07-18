@@ -26,7 +26,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession as DbSession
 from sqlalchemy.orm import aliased, defer
@@ -66,6 +66,13 @@ def _publish(step: Step) -> None:
     bus.publish(
         step.session_id, "step_changed", step_id=step.id, state=step.state.value
     )
+
+
+def publish_step_changed(steps: list[Step]) -> None:
+    """Public post-commit notifier for callers outside this module
+    (commit-then-publish stays the caller's responsibility)."""
+    for step in steps:
+        _publish(step)
 
 
 # ----- session phase/status derivation (single writer) ----------------
@@ -645,8 +652,28 @@ async def recover() -> dict[str, int]:
             session = await db.get(Session, sid)
             if session is not None:
                 await sync_session(db, session)
+        # Reinspection: `_persist` COMMITS drafts mid-turn (SV-H2), so a
+        # process kill strands status='draft' Proposal rows whose step is
+        # no longer running. They'd never be promoted or superseded —
+        # sweep them into `superseded` so they can't linger in listings.
+        from app.db.models import Proposal, ProposalStatus
+
+        swept = await db.execute(
+            sa_update(Proposal)
+            .where(
+                Proposal.status == ProposalStatus.draft,
+                ~exists().where(
+                    (Step.id == Proposal.step_id) & (Step.state == StepState.running)
+                ),
+            )
+            .values(status=ProposalStatus.superseded)
+        )
         await db.commit()
-        return {"retried": retried, "failed": failed}
+        return {
+            "retried": retried,
+            "failed": failed,
+            "drafts_swept": swept.rowcount or 0,
+        }
 
 
 workers = StepWorkers()

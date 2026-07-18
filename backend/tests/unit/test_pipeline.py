@@ -160,6 +160,52 @@ async def test_auto_apply_refuses_archived_sessions(db, monkeypatch):
     assert called["n"] == 0  # nothing applied
 
 
+async def test_auto_apply_sees_a_mid_turn_archive(db, monkeypatch):
+    """Reinspection (SV-M5 follow-up): the executor's Session object is
+    loaded at turn START — an archive committed while the LLM ran must
+    still be seen (fresh read, not the cached ORM attribute)."""
+    from sqlalchemy import update as sa_update
+
+    from app.db.models import Session as SessionModel
+
+    session = await _auto_session(db)  # not archived at load time
+    step = Step(
+        session_id=session.id, kind=StepKind.analysis, state=StepState.running
+    )
+    db.add(step)
+    await db.flush()
+    p = Proposal(
+        session_id=session.id,
+        step_id=step.id,
+        kind="update_document_metadata",
+        agent_payload={"document_id": 7, "title": "T"},
+        status=ProposalStatus.pending,
+        entity_type=EntityType.document,
+        entity_id=7,
+    )
+    db.add(p)
+    await db.commit()
+
+    # The user archives WHILE the turn is running — a raw UPDATE that the
+    # in-memory `session` object (expire_on_commit=False) never sees.
+    await db.execute(
+        sa_update(SessionModel)
+        .where(SessionModel.id == session.id)
+        .values(archived_at=datetime.now(UTC))
+    )
+    await db.commit()
+    assert session.archived_at is None  # the stale attribute lies
+
+    called = {"n": 0}
+
+    async def fake_apply(*a, **kw):
+        called["n"] += 1
+
+    monkeypatch.setattr("app.services.pipeline.apply_proposal", fake_apply)
+    await _maybe_auto_apply(db, None, session, step)
+    assert called["n"] == 0  # the fresh read refused anyway
+
+
 async def test_audit_failure_does_not_poison_the_session(db):
     """AUDIT SV-M4: a failed audit flush must roll back to a savepoint —
     the caller's transaction stays usable (previously every later

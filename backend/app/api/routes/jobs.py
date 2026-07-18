@@ -220,14 +220,13 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
     )
     if live_out.status in (JobStatus.completed, JobStatus.cancelled):
         raise HTTPException(409, f"job is already {live_out.status}")
-    from app.services.steps import _publish, cancel_job_steps
+    from app.services.steps import cancel_job_steps, publish_step_changed
 
     cancelled = await cancel_job_steps(db, job_id)
     job.status = JobStatus.cancelled
     await db.commit()
     # Announce only committed state (AUDIT SV-M2).
-    for s in cancelled:
-        _publish(s)
+    publish_step_changed(cancelled)
     return JobOut.model_validate(job)
 
 
