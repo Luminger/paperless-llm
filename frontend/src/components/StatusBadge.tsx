@@ -49,11 +49,13 @@ export function SessionStatusBadge({
   phase?: string | null;
 }) {
   const label =
-    phase && phase !== "done"
-      ? phase.replaceAll("_", " ")
-      : status === "idle"
-        ? "finished"
-        : status;
+    status === "failed"
+      ? "Error"
+      : phase && phase !== "done"
+        ? phase.replaceAll("_", " ")
+        : status === "idle"
+          ? "finished"
+          : status;
   return (
     <Badge
       variant="secondary"

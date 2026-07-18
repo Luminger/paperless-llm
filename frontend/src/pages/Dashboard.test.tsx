@@ -36,6 +36,7 @@ export function makeSession(overrides: Partial<Session> = {}): Session {
     updated_at: "2026-07-17T10:01:00Z",
     proposal_count: 0,
     pending_proposal_count: 0,
+    applied_proposal_count: 0,
     ...overrides,
   };
 }
@@ -76,12 +77,13 @@ describe("Dashboard", () => {
     expect(await screen.findByText("OCR review needed")).toBeInTheDocument();
   });
 
-  it("shows failures with their error", async () => {
+  it("failed sessions show an Error badge, never the error text", async () => {
     mocked.listSessions.mockResolvedValue(
       page([makeSession({ id: 2, status: "failed", error: "ModelAPIError: Connection error." })]),
     );
     renderWithProviders(<Dashboard />);
-    expect(await screen.findByText(/Connection error/)).toBeInTheDocument();
+    expect(await screen.findByText("Error")).toBeInTheDocument();
+    expect(screen.queryByText(/Connection error/)).toBeNull();
   });
 
   it("paginates: 5 per page with a generic pager", async () => {
@@ -156,9 +158,16 @@ describe("Dashboard corpus block", () => {
     expect(
       await screen.findByText(/118 of 2,400 analyzed/),
     ).toBeInTheDocument();
+    // Scheduling goes through a modal — nothing runs on first click.
     await userEvent.click(screen.getByRole("button", { name: /analyze next batch/i }));
+    expect(mocked.createJob).not.toHaveBeenCalled();
+    await userEvent.click(await screen.findByRole("button", { name: /start job/i }));
     await waitFor(() =>
-      expect(mocked.createJob).toHaveBeenCalledWith({ next_batch: 10 }),
+      expect(mocked.createJob).toHaveBeenCalledWith({
+        next_batch: 10,
+        apply_policy: "review",
+        instructions: undefined,
+      }),
     );
   });
 
@@ -213,7 +222,15 @@ describe("Dashboard inbox block", () => {
     expect(await screen.findByText("Kraxi")).toBeInTheDocument();
     expect(screen.getByText(/and 11 more/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /analyze the inbox/i }));
-    await waitFor(() => expect(mocked.createJob).toHaveBeenCalledWith({ inbox: true }));
+    expect(mocked.createJob).not.toHaveBeenCalled();
+    await userEvent.click(await screen.findByRole("button", { name: /start job/i }));
+    await waitFor(() =>
+      expect(mocked.createJob).toHaveBeenCalledWith({
+        inbox: true,
+        apply_policy: "review",
+        instructions: undefined,
+      }),
+    );
   });
 
   it("vanishes when the inbox is clear", async () => {

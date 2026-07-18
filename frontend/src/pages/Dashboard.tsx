@@ -4,10 +4,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { FramedCard } from "@/components/app/Framed";
+import { StartJobDialog } from "@/components/app/StartJobDialog";
 import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/components/app/PageHeader";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
-import { ErrorNotice } from "@/components/app/states";
 import { Link } from "react-router-dom";
 import {
   Table,
@@ -28,6 +28,7 @@ import { SessionList } from "../components/SessionList";
  * button sends the whole inbox through analysis. */
 function InboxBlock() {
   const navigate = useNavigate();
+  const [dialog, setDialog] = useState(false);
   const { data } = useQuery({
     queryKey: keys.inbox(),
     queryFn: api.getInbox,
@@ -35,7 +36,8 @@ function InboxBlock() {
   });
   const { data: correspondents } = useEntityList("correspondent");
   const start = useMutation({
-    mutationFn: () => api.createJob({ inbox: true }),
+    mutationFn: (opts: { apply_policy: "review" | "auto"; instructions?: string }) =>
+      api.createJob({ inbox: true, ...opts }),
     onSuccess: (job) => navigate(`/jobs/${job.id}`),
   });
   if (!data || data.count === 0) return null;
@@ -46,11 +48,19 @@ function InboxBlock() {
       meta={`${data.count} document${data.count === 1 ? "" : "s"} waiting`}
       footer={
         <>
-          <ErrorNotice error={start.error} />
           <span className="flex-1" />
-          <Button size="sm" disabled={start.isPending} onClick={() => start.mutate()}>
-            Analyze the inbox
+          <Button size="sm" onClick={() => setDialog(true)}>
+            Analyze the inbox…
           </Button>
+          <StartJobDialog
+            open={dialog}
+            onOpenChange={setDialog}
+            title="Analyze the inbox"
+            description={`Starts an analysis session for each of the ${data.count} waiting document${data.count === 1 ? "" : "s"}.`}
+            busy={start.isPending}
+            error={start.error}
+            onStart={(opts) => start.mutate(opts)}
+          />
         </>
       }
     >
@@ -99,13 +109,15 @@ function InboxBlock() {
 function CorpusBlock() {
   const navigate = useNavigate();
   const [size, setSize] = useState("10");
+  const [dialog, setDialog] = useState(false);
   const { data } = useQuery({
     queryKey: keys.corpus(),
     queryFn: api.getCorpus,
     refetchInterval: 30_000,
   });
   const start = useMutation({
-    mutationFn: () => api.createJob({ next_batch: Number(size) }),
+    mutationFn: (opts: { apply_policy: "review" | "auto"; instructions?: string }) =>
+      api.createJob({ next_batch: Number(size), ...opts }),
     onSuccess: (job) => navigate(`/jobs/${job.id}`),
   });
   if (!data || data.total === 0) return null;
@@ -123,20 +135,32 @@ function CorpusBlock() {
           </p>
         ) : (
           <>
-            <ErrorNotice error={start.error} />
             <span className="flex-1" />
-            <SimpleSelect
-              ariaLabel="batch size"
-              value={size}
-              onValueChange={setSize}
-              options={["10", "25", "50"].map((n) => ({
-                value: n,
-                label: `${n} documents`,
-              }))}
-            />
-            <Button size="sm" disabled={start.isPending} onClick={() => start.mutate()}>
-              Analyze next batch
+            <Button size="sm" onClick={() => setDialog(true)}>
+              Analyze next batch…
             </Button>
+            <StartJobDialog
+              open={dialog}
+              onOpenChange={setDialog}
+              title="Analyze the next corpus batch"
+              description="Review-first curation: the next never-analyzed documents, oldest first."
+              busy={start.isPending}
+              error={start.error}
+              onStart={(opts) => start.mutate(opts)}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">Batch size</span>
+                <SimpleSelect
+                  ariaLabel="batch size"
+                  value={size}
+                  onValueChange={setSize}
+                  options={["10", "25", "50"].map((n) => ({
+                    value: n,
+                    label: `${n} documents`,
+                  }))}
+                />
+              </div>
+            </StartJobDialog>
           </>
         )
       }

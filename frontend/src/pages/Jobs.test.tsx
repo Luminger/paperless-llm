@@ -48,7 +48,12 @@ describe("Jobs", () => {
     expect(await screen.findByText("Inbox")).toBeInTheDocument();
     expect(screen.getByText("1 ok / 3")).toBeInTheDocument();
 
+    // Cancellation is guarded: the button opens a confirm modal.
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(mocked.cancelJob).not.toHaveBeenCalled();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Cancel the job" }),
+    );
     await waitFor(() => expect(mocked.cancelJob).toHaveBeenCalledWith(1));
   });
 

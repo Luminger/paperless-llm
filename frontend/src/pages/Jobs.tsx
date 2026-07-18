@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
+import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Pager } from "@/components/app/Pager";
 import { useUrlNumber } from "../hooks/useUrlState";
@@ -200,9 +201,13 @@ export default function Jobs() {
         : false,
   });
   const jobs = data?.results;
+  const [cancelTarget, setCancelTarget] = useState<Job | null>(null);
   const cancel = useMutation({
     mutationFn: (id: number) => api.cancelJob(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.jobs() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.jobs() });
+      setCancelTarget(null);
+    },
   });
 
   return (
@@ -288,7 +293,11 @@ export default function Jobs() {
                 </TableCell>
                 <TableCell className="text-right">
                   {(j.status === "queued" || j.status === "running") && (
-                    <Button variant="secondary" size="sm" onClick={() => cancel.mutate(j.id)}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setCancelTarget(j)}
+                    >
                       Cancel
                     </Button>
                   )}
@@ -298,6 +307,19 @@ export default function Jobs() {
           </TableBody>
         </Table>
       )}
+      <ConfirmDialog
+        open={cancelTarget != null}
+        onOpenChange={(open) => !open && setCancelTarget(null)}
+        title="Cancel this job?"
+        description={
+          cancelTarget
+            ? `"${scopeLabel(cancelTarget)}" — pending sessions will be cancelled; running steps finish and keep their results. Already-applied changes stay (revertible from the journal).`
+            : ""
+        }
+        confirmLabel="Cancel the job"
+        busy={cancel.isPending}
+        onConfirm={() => cancelTarget && cancel.mutate(cancelTarget.id)}
+      />
       <Pager
         page={page}
         pageSize={pageSize}

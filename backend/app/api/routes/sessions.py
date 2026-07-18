@@ -104,8 +104,16 @@ async def list_sessions(
         ),
         else_=0,
     )
+    applied_case = case(
+        (
+            (Proposal.status == ProposalStatus.applied)
+            & (Proposal.kind != "replace_content"),
+            1,
+        ),
+        else_=0,
+    )
     q = (
-        select(Session, func.count(Proposal.id), func.sum(pending_case))
+        select(Session, func.count(Proposal.id), func.sum(pending_case), func.sum(applied_case))
         .outerjoin(Proposal, Proposal.session_id == Session.id)
         .where(*where)
         .group_by(Session.id)
@@ -119,10 +127,11 @@ async def list_sessions(
         max_page_size=100,
     )
     results: list[SessionOut] = []
-    for s, n, pending in (await db.execute(q)).all():
+    for s, n, pending, applied in (await db.execute(q)).all():
         item = SessionOut.model_validate(s)
         item.proposal_count = n
         item.pending_proposal_count = int(pending or 0)
+        item.applied_proposal_count = int(applied or 0)
         results.append(item)
     names = await entity_names(paperless, [(r.entity_type, r.entity_id) for r in results])
     for r in results:

@@ -62,9 +62,14 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
                   ? "proposal to review"
                   : `${s.pending_proposal_count} proposals to review`}
               </Badge>
+            ) : s.applied_proposal_count > 0 ? (
+              // Say what HAPPENED, not "decided" (reads like declined).
+              <Badge variant="secondary" className="font-normal text-muted-foreground">
+                {s.applied_proposal_count} applied
+              </Badge>
             ) : s.proposal_count > 0 ? (
               <Badge variant="secondary" className="font-normal text-muted-foreground">
-                {s.proposal_count} proposal{s.proposal_count > 1 ? "s" : ""} decided
+                nothing applied
               </Badge>
             ) : (
               s.phase === "done" && (
@@ -94,15 +99,7 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
           </Button>
         </TableCell>
       </TableRow>
-      {s.error && !s.archived_at && (
-        <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={5} className="py-1">
-            <p className="rounded-md bg-destructive/10 p-2 font-mono text-xs text-destructive">
-              {s.error}
-            </p>
-          </TableCell>
-        </TableRow>
-      )}
+
     </>
   );
 }

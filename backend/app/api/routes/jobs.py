@@ -249,11 +249,24 @@ async def get_job(
         ),
         else_=0,
     )
+    applied_case = case(
+        (
+            (Proposal.status == ProposalStatus.applied)
+            & (Proposal.kind != "replace_content"),
+            1,
+        ),
+        else_=0,
+    )
     counts = {
-        sid: (n, int(pending or 0))
-        for sid, n, pending in (
+        sid: (n, int(pending or 0), int(applied or 0))
+        for sid, n, pending, applied in (
             await db.execute(
-                select(Proposal.session_id, func.count(), func.sum(pending_case))
+                select(
+                    Proposal.session_id,
+                    func.count(),
+                    func.sum(pending_case),
+                    func.sum(applied_case),
+                )
                 .where(Proposal.session_id.in_([s.id for s in sessions] or [0]))
                 .group_by(Proposal.session_id)
             )
@@ -262,7 +275,11 @@ async def get_job(
     out.sessions = []
     for s in sessions:
         item = SessionOut.model_validate(s)
-        item.proposal_count, item.pending_proposal_count = counts.get(s.id, (0, 0))
+        (
+            item.proposal_count,
+            item.pending_proposal_count,
+            item.applied_proposal_count,
+        ) = counts.get(s.id, (0, 0, 0))
         out.sessions.append(item)
     names = await entity_names(
         paperless, [(i.entity_type, i.entity_id) for i in out.sessions]

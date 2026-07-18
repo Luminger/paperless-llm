@@ -1728,6 +1728,11 @@ export interface components {
         /** SessionDetailOut */
         SessionDetailOut: {
             agent_kind: components["schemas"]["AgentKind"];
+            /**
+             * Applied Proposal Count
+             * @default 0
+             */
+            applied_proposal_count: number;
             /** Archived At */
             archived_at?: string | null;
             /** Created At */
@@ -1783,6 +1788,11 @@ export interface components {
         /** SessionOut */
         SessionOut: {
             agent_kind: components["schemas"]["AgentKind"];
+            /**
+             * Applied Proposal Count
+             * @default 0
+             */
+            applied_proposal_count: number;
             /** Archived At */
             archived_at?: string | null;
             /** Created At */

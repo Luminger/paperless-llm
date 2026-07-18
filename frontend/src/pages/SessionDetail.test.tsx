@@ -93,6 +93,7 @@ function makeDetail(overrides: Partial<SessionDetailT> = {}): SessionDetailT {
     updated_at: "2026-07-17T10:01:00Z",
     proposal_count: 0,
     pending_proposal_count: 0,
+    applied_proposal_count: 0,
     steps: [
       mkStep({
         kind: "analysis",

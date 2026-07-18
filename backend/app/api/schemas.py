@@ -53,6 +53,8 @@ class SessionOut(BaseModel):
     proposal_count: int = 0
     # Proposals actually WAITING on the user — the attention signal.
     pending_proposal_count: int = 0
+    # Proposals applied to paperless (excluding the internal OCR write).
+    applied_proposal_count: int = 0
 
     model_config = {"from_attributes": True}
 

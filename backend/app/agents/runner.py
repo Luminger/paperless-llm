@@ -9,6 +9,7 @@ module only executes the turn and raises on failure.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 
@@ -26,6 +27,7 @@ from app.llm.factory import llm_semaphore
 from app.paperless import PaperlessClient
 from app.services.events import bus
 
+log = logging.getLogger(__name__)
 
 @dataclass
 class RunOutcome:
@@ -179,20 +181,37 @@ async def run_agent_turn(
     del history_exists
     history_start = len(session.message_history or [])
 
-    try:
+    async def _run(stream: bool):
         async with llm_semaphore(profile.base_url, profile.max_concurrent):
-            result = await agent.run(
+            return await agent.run(
                 user_message,
                 deps=deps,
                 instructions=preamble,
                 message_history=_load_history(session),
                 usage_limits=UsageLimits(request_limit=profile.max_tool_iterations),
                 event_stream_handler=(
-                    _progress_handler(session.id, deps.step_id)
-                    if profile.supports_streaming
-                    else None
+                    _progress_handler(session.id, deps.step_id) if stream else None
                 ),
             )
+
+    try:
+        try:
+            result = await _run(stream=profile.supports_streaming)
+        except IndexError:
+            if not profile.supports_streaming:
+                raise
+            # pydantic-ai's streaming part tracker (part_end_event) indexes
+            # into get_parts(), which FILTERS ToolCallPartDeltas — certain
+            # vLLM tool-call stream shapes make the list shorter than the
+            # tracked index (still present in 2.13.0). Deterministic per
+            # response, so step retries can't help — but the non-streaming
+            # path never touches that code. Trade live tokens for a
+            # completed turn.
+            log.warning(
+                "streaming part-tracking bug (pydantic-ai part_end_event "
+                "IndexError); re-running the turn without streaming"
+            )
+            result = await _run(stream=False)
     except Exception:
         # Keep any proposals drafted before the failure reviewable.
         for p in deps.emitted:

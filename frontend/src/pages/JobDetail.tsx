@@ -1,7 +1,9 @@
 import { Link, useParams } from "react-router-dom";
 import { SessionTable } from "../components/SessionList";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
@@ -12,6 +14,8 @@ import { scopeLabel } from "./Jobs";
 export default function JobDetail() {
   const { id } = useParams();
   const jobId = Number(id);
+  const qc = useQueryClient();
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const { data: job, error } = useQuery({
     queryKey: keys.job(jobId),
     queryFn: () => api.getJob(jobId),
@@ -31,6 +35,8 @@ export default function JobDetail() {
   if (error) return <ErrorNotice error={error} />;
   if (!job) return <LoadingState lines={4} />;
 
+  const cancellable = job.status === "queued" || job.status === "running";
+
   return (
     <div>
       <PageHeader
@@ -44,14 +50,57 @@ export default function JobDetail() {
                 </Link>
               </Button>
             )}
+            {cancellable && (
+              <Button variant="secondary" size="sm" onClick={() => setConfirmCancel(true)}>
+                Cancel job
+              </Button>
+            )}
             <StatusBadge status={job.status} />
           </div>
         }
+      />
+      <CancelJobDialog
+        job={job}
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        onDone={() => qc.invalidateQueries({ queryKey: keys.job(jobId) })}
       />
       <p className="-mt-2 mb-4 text-sm text-muted-foreground">
         {job.done} ok, {job.failed} failed of {job.total}
       </p>
       <SessionTable sessions={job.sessions} showEntity={false} />
     </div>
+  );
+}
+
+
+function CancelJobDialog({
+  job,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  job: { id: number };
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const cancel = useMutation({
+    mutationFn: () => api.cancelJob(job.id),
+    onSuccess: () => {
+      onDone();
+      onOpenChange(false);
+    },
+  });
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Cancel this job?"
+      description="Pending sessions will be cancelled; running steps finish and keep their results. Already-applied changes stay (revertible from the journal)."
+      confirmLabel="Cancel the job"
+      busy={cancel.isPending}
+      onConfirm={() => cancel.mutate()}
+    />
   );
 }
