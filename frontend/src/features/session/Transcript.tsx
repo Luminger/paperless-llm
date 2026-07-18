@@ -7,7 +7,7 @@
 // mono ONLY inside code/JSON. No asymmetric chat margins.
 
 import { useState } from "react";
-import Markdown from "react-markdown";
+import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Brain,
@@ -23,6 +23,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { MarkdownLink, tokenizeRefs } from "./RefChip";
 import type { TranscriptItem } from "../../api";
 import { timingLabel } from "./timing";
 
@@ -185,15 +186,28 @@ export function ThinkingItem({ item }: { item: TranscriptItem }) {
 const PROSE_CLASSES =
   "prose prose-sm dark:prose-invert max-w-none text-sm leading-6 prose-headings:mt-3 prose-headings:mb-1 prose-headings:text-sm prose-headings:font-semibold prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 [&>*:first-child]:mt-0";
 
+function Prose({ content }: { content: string }) {
+  return (
+    <div className={PROSE_CLASSES}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={{ a: MarkdownLink }}
+        // The sanitizer strips unknown schemes — our chip scheme is ours.
+        urlTransform={(url) => (url.startsWith("pllm://") ? url : defaultUrlTransform(url))}
+      >
+        {tokenizeRefs(content)}
+      </Markdown>
+    </div>
+  );
+}
+
 export function AgentProse({ item }: { item: TranscriptItem }) {
   return (
     <ItemRow
       icon={<Sparkles className="size-3.5 text-primary/80" />}
       meta={item.timing ? timingLabel(item.timing) : undefined}
     >
-      <div className={PROSE_CLASSES}>
-        <Markdown remarkPlugins={[remarkGfm]}>{item.content}</Markdown>
-      </div>
+      <Prose content={item.content} />
     </ItemRow>
   );
 }
@@ -207,11 +221,7 @@ export function ProseBody({ content }: { content: string }) {
   if (/^(#{1,6}\s*)?[*_]{0,2}(updated\s+)?summary[*_]{0,2}\s*:?\s*$/i.test(first)) {
     content = lines.slice(1).join("\n").trimStart();
   }
-  return (
-    <div className={PROSE_CLASSES}>
-      <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
-    </div>
-  );
+  return <Prose content={content} />;
 }
 
 export function UserMessage({ item }: { item: TranscriptItem }) {

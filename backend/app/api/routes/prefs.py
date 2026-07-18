@@ -7,7 +7,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import UserPref
@@ -34,10 +33,9 @@ class PrefsUpdate(BaseModel):
 
 
 async def _load(db: AsyncSession) -> PrefsOut:
-    rows = (await db.scalars(select(UserPref))).all()
-    stored = {r.key: r.value for r in rows}
-    known = {k: v for k, v in stored.items() if k in PrefsOut.model_fields}
-    return PrefsOut(**known)
+    from app.services.prefs import get_prefs
+
+    return PrefsOut(**await get_prefs(db))
 
 
 @router.get("/prefs")

@@ -324,9 +324,9 @@ function TurnBody({
       item.tool_name?.startsWith("propose_") &&
       !item.tool_rejected
     ) {
-      const m = /Proposal #(\d+)/.exec(String(item.tool_result ?? ""));
+      const m = /\[\[proposal:(\d+)\]\]|Proposal #(\d+)/.exec(String(item.tool_result ?? ""));
       const p =
-        (m && mine.find((x) => x.id === Number(m[1]))) || mine[cursor] || null;
+        (m && mine.find((x) => x.id === Number(m[1] ?? m[2]))) || mine[cursor] || null;
       if (p && !consumed.has(p.id)) {
         consumed.add(p.id);
         cursor = mine.indexOf(p) + 1;

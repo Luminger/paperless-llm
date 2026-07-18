@@ -280,9 +280,9 @@ async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
     await ctx.deps.db.flush()
     ctx.deps.emitted.append(proposal)
     return (
-        f"Proposal #{proposal.id} ({p.kind}) recorded for human review. "
-        "It is NOT applied yet. Do not repeat it; continue with your task "
-        "or finish with a short summary."
+        f"Proposal [[proposal:{proposal.id}]] ({p.kind}) recorded for human "
+        "review. It is NOT applied yet. Do not repeat it; continue with "
+        "your task or finish with a short summary."
     )
 
 

@@ -126,6 +126,12 @@ async def run_agent_turn(
     # instructions, NOT prompt prefix — keeps the stored user message
     # (and thus the derived transcript) clean.
     preamble = _steering_preamble(session, open_proposals)
+    # The model writes dates/times the way the user reads them — the UI
+    # and the agent must agree on formatting.
+    from app.services.prefs import format_instructions, get_prefs
+
+    fmt = format_instructions(await get_prefs(db))
+    preamble = f"{preamble}\n\n{fmt}" if preamble else fmt
     if history_exists := bool(session.message_history):
         # Follow-up turns: promises don't change proposals — tools do.
         followup = (

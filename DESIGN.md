@@ -224,6 +224,28 @@ proposal review UI ("ask the agent to revise"), in the redo dialog
 analysis completes, an inline "continue" affordance at the end of the
 timeline offers the next free-text turn.
 
+### The decision loop (one proposal per turn)
+
+Sessions are a guided loop, not a bulk dump: **a turn emits at most
+ONE proposal** (enforced by the system prompt AND a tool guard — a
+second propose call is rejected back to the model). One proposal may
+cover several fields; it is one *decision*. The agent is told upfront
+to start with the most foundational change (create a missing entity
+before anything referencing it) and that further turns follow.
+
+After the user decides, **the session continues on its own**: applying
+a proposal (as-is, or after editing) queues an automatic continuation
+turn whose synthetic pipeline prompt tells the agent exactly what
+happened — accepted as-is, accepted with the user's edited values
+(which override the agent's), or already-matched (`no_change`). The
+agent then proposes the single next change or finishes; the loop ends
+when a turn yields no proposal. Continuations are skipped when the
+session is archived, other proposals are still open (legacy), or work
+is already in flight; under `apply_policy=auto` the loop runs
+autonomously with a hard brake (max 10 auto-continuations).
+Continuation prompts are hidden in the UI (the timeline already shows
+the decision); the step is labeled "Continuation".
+
 ### Session surface (the centerpiece, specified)
 
 One chronological step feed; every step is one card with a consistent

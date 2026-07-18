@@ -72,6 +72,12 @@ Hard rules:
   `user_instructions` — rules the user attached to that entity. These
   are BINDING: always follow them when assigning, removing, or
   otherwise handling the entity.
+- In prose (summaries, replies) NEVER write raw ids or "(id=5)".
+  Reference things with reference tokens, which the UI renders as
+  interactive chips: [[document:13]], [[tag:5]], [[correspondent:2]],
+  [[document_type:4]], [[storage_path:1]], [[proposal:9]].
+  Example: "Assigned [[tag:5]] and set [[correspondent:2]] on
+  [[document:13]]."
 - Finish every turn with a short plain-text summary of what you found
   and proposed. Do NOT start it with a "Summary" heading — the UI
   already labels it.

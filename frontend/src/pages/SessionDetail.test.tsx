@@ -624,3 +624,55 @@ describe("Chronological turn rendering", () => {
     expect(screen.getByText("Old summary.")).toBeInTheDocument();
   });
 });
+
+describe("Reference tokens", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.listTags.mockResolvedValue([
+      makeEntity({ id: 5, name: "steuer", document_count: 3 }),
+    ]);
+    mocked.listCorrespondents.mockResolvedValue([]);
+    mocked.listDocumentTypes.mockResolvedValue([]);
+    mocked.listStoragePaths.mockResolvedValue([]);
+    mocked.getDocument.mockResolvedValue({
+      id: 13, title: "Campus Media Statement", correspondent: null,
+      document_type: null, storage_path: null, tags: [], created: "1971-03-01",
+      added: null, archive_serial_number: null,
+    });
+  });
+
+  it("expands [[type:id]] tokens in the summary into linked chips", async () => {
+    const step = mkStep({
+      kind: "analysis",
+      state: "succeeded",
+      result: { proposal_ids: [] },
+      transcript: [
+        mkItem({
+          role: "agent",
+          content: "Assigned [[tag:5]] to [[document:13]].",
+        }),
+      ],
+    });
+    mocked.getSession.mockResolvedValue(makeDetail({ steps: [step] }));
+    renderDetail();
+
+    // Names, not tokens — rendered as links to the entity pages.
+    const tagChip = await screen.findByRole("link", { name: "steuer" });
+    expect(tagChip.getAttribute("href")).toBe("/taxonomy/tag/5");
+    const docChip = await screen.findByRole("link", { name: "Campus Media Statement" });
+    expect(docChip.getAttribute("href")).toBe("/documents/13");
+    expect(screen.queryByText(/\[\[tag:5\]\]/)).not.toBeInTheDocument();
+  });
+
+  it("unknown token types fall back to the literal text", async () => {
+    const step = mkStep({
+      kind: "analysis",
+      state: "succeeded",
+      result: { proposal_ids: [] },
+      transcript: [mkItem({ role: "agent", content: "See [[wormhole:9]]." })],
+    });
+    mocked.getSession.mockResolvedValue(makeDetail({ steps: [step] }));
+    renderDetail();
+    expect(await screen.findByText(/\[\[wormhole:9\]\]/)).toBeInTheDocument();
+  });
+});
