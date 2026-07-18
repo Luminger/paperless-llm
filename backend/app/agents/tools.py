@@ -9,6 +9,7 @@ reviewed by a human (or auto-applied per job policy).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
@@ -27,6 +28,8 @@ from app.proposals.schemas import (
     UpdateEntity,
     dump_payload,
 )
+
+log = logging.getLogger(__name__)
 
 IntList = list[int] | str | int | None
 
@@ -131,11 +134,12 @@ async def search_documents(
     created_before: str | None = None,
     page: int = 1,
 ) -> dict[str, Any]:
-    """Search documents. `query` is full-text search over OCR content and
-    metadata (supports quoted phrases, AND/OR, field:value). All other
-    arguments are exact field filters and can be combined with `query`.
-    Dates are ISO (YYYY-MM-DD). Returns up to 25 results per page plus
-    the total count."""
+    """Search documents by exact criteria. `query` is full-text search
+    over OCR content and metadata (supports quoted phrases, AND/OR,
+    field:value); all other arguments are exact field filters and can
+    be combined with `query`. Dates are ISO (YYYY-MM-DD). Returns up to
+    25 results per page plus the total count. For "which document is
+    about X" relevance lookups prefer find_documents."""
     result = await ctx.deps.paperless.search_documents(
         query=query,
         title_contains=title_contains,
@@ -152,6 +156,43 @@ async def search_documents(
     return {"total": result.count, "page": page, "documents": [
         _doc_summary(d) for d in result.results
     ]}
+
+
+async def find_documents(
+    ctx: RunContext[AgentDeps], query: str, top_k: int = 8
+) -> dict[str, Any]:
+    """Find the documents most RELEVANT to a natural-language query, in
+    an archive of any size. Two stages: full-text recall across all
+    documents, then a semantic relevance rerank (when configured).
+    Returns at most top_k compact summaries with a short snippet each —
+    read a hit with get_document / get_document_content. Use this for
+    "the document about X"; use search_documents for exact field
+    filters and structured queries."""
+    from app.llm.rerank import rerank, rerank_enabled
+
+    top_k = max(1, min(int(top_k), 20))
+    page = await ctx.deps.paperless.search_documents(query=query, page_size=50)
+    docs = list(page.results)
+    order = list(range(len(docs)))
+    reranked = False
+    if docs and rerank_enabled():
+        # Title + head of content is what a reranker can actually use;
+        # full documents would drown it.
+        texts = [f"{d.title}\n{(d.content or '')[:1500]}" for d in docs]
+        try:
+            order = await rerank(query, texts, top_n=top_k)
+            reranked = True
+        except Exception:  # noqa: BLE001 — ranked order is a bonus, never fatal
+            log.warning("rerank failed; keeping full-text order", exc_info=True)
+    picked = [docs[i] for i in order[:top_k]]
+    return {
+        "total_matches": page.count,
+        "reranked": reranked,
+        "documents": [
+            _doc_summary(d) | {"snippet": clamp_text(d.content or "", 240)}
+            for d in picked
+        ],
+    }
 
 
 async def get_document(ctx: RunContext[AgentDeps], document_id: int) -> dict[str, Any]:
@@ -527,6 +568,7 @@ async def propose_delete_entity(
 
 READ_TOOLS = [
     search_documents,
+    find_documents,
     get_document,
     get_document_content,
     list_tags,

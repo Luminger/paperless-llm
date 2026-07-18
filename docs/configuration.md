@@ -61,6 +61,23 @@ Configuring `base_url` + `model` enables the semantic entity index
 (duplicate detection across tags/correspondents/types by embedding
 cosine, not just string distance).
 
+### `llm.reranker` — optional
+
+A Cohere-compatible `/v1/rerank` endpoint (TEI and Infinity both serve
+one). When configured, the agent's `find_documents` tool becomes a
+two-stage retrieval: paperless full-text search recalls candidates
+across the whole archive, the reranker re-orders them by actual
+relevance, and only the top hits (compact summaries + short snippets)
+enter the model's context — this is what keeps "find the document
+about X" workable over thousands of documents on a 32–64k context.
+Without a reranker the tool still works and keeps the full-text order.
+
+| Key | Meaning |
+| --- | --- |
+| `llm.reranker.base_url` | e.g. `https://hyperion.example.net` (with or without `/v1`) |
+| `llm.reranker.model` | Served model name, e.g. `bge-reranker-v2-m3` |
+| `llm.reranker.api_key` | Bearer token if the endpoint wants one |
+
 ## Paperless
 
 | Key | Meaning |
