@@ -267,7 +267,11 @@ async def run_agent_turn(
     )
 
     # Finalize proposals: draft -> pending, superseding older open
-    # revisions targeting the same (kind, entity).
+    # revisions targeting the same (kind, entity). AUDIT BC-F2: the
+    # supersede is a GUARDED UPDATE against current DB state —
+    # `open_proposals` was loaded at turn START and the user may have
+    # applied one mid-turn; overwriting `applied` with `superseded`
+    # from a stale in-memory status would falsify the journal.
     for p in deps.emitted:
         p.status = ProposalStatus.pending
         for old in open_proposals:
@@ -276,11 +280,20 @@ async def run_agent_turn(
                 and old.kind == p.kind
                 and old.entity_type == p.entity_type
                 and old.entity_id == p.entity_id
-                and old.status in (ProposalStatus.draft, ProposalStatus.pending)
             ):
-                old.status = ProposalStatus.superseded
-                p.supersedes_id = old.id
-                p.revision = old.revision + 1
+                res = await db.execute(
+                    update(Proposal)
+                    .where(
+                        Proposal.id == old.id,
+                        Proposal.status.in_(
+                            (ProposalStatus.draft, ProposalStatus.pending)
+                        ),
+                    )
+                    .values(status=ProposalStatus.superseded)
+                )
+                if res.rowcount:
+                    p.supersedes_id = old.id
+                    p.revision = old.revision + 1
 
     await db.commit()
     return RunOutcome(

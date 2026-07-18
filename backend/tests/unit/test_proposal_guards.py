@@ -310,3 +310,49 @@ async def test_setting_word_match_rule(db, paperless_client):
     (p,) = await _proposals(db)
     assert p.agent_payload["match"] == "telarko"
     assert p.agent_payload["matching_algorithm"] == 2
+
+
+@respx.mock
+async def test_create_entity_validates_assign_documents(db, paperless_client):
+    """AUDIT BC-F5: assign_to_documents ids are validated at propose
+    time — a nonexistent document bounces back to the model instead of
+    reaching a privileged bulk write under auto policy."""
+    _mock_paperless()
+    respx.get(f"{PAPERLESS_URL}/api/documents/999/").mock(
+        return_value=Response(404, json={"detail": "Not found."})
+    )
+    session = await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_create_entity",
+            args={
+                "entity_type": "correspondent",
+                "name": "Kraxi GmbH",
+                "assign_to_documents": [999],
+            },
+        ),
+    )
+    assert not await _proposals(db)
+    assert "999" in _retry_texts(session)
+
+
+@respx.mock
+async def test_entity_payloads_carry_only_provided_fields(db, paperless_client):
+    """AUDIT BC-F6: a rename-only update persists ONLY the name — no
+    null match/matching_algorithm claiming the agent proposed clearing
+    fields it never touched."""
+    _mock_paperless()
+    await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_update_entity",
+            args={"entity_type": "correspondent", "entity_id": 2,
+                  "name": "Telarko GmbH"},
+        ),
+    )
+    (p,) = await _proposals(db)
+    assert p.agent_payload["name"] == "Telarko GmbH"
+    for absent in ("match", "matching_algorithm", "is_insensitive"):
+        assert absent not in p.agent_payload

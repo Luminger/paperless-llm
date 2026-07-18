@@ -41,9 +41,12 @@ class AgentDeps:
 
     @property
     def max_chars(self) -> int:
-        """Approximate character clamp for tool results derived from the
-        configured input-token budget (≈4 chars/token, /4 so a single
-        tool result can't consume the whole context)."""
+        """Character clamp for a SINGLE tool result: token budget × ≈4
+        chars/token, ÷4 so one result can't consume the whole context —
+        net: max_input_tokens characters. AUDIT BC-F14: the division
+        lives HERE and nowhere else (callers used to divide again,
+        clamping reads to 1/16 of the budget — long documents became
+        unreadable within the tool-iteration cap)."""
         return self.settings.llm.agent.max_input_tokens
 
 

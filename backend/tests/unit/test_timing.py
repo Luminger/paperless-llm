@@ -60,3 +60,14 @@ def test_transcript_attaches_timing_to_every_item_of_its_response():
     assert tools[1].timing.model_dump(exclude_none=True) == timing
     agent_item = next(i for i in t if i.role == "agent")
     assert agent_item.timing.duration_s == 1.0
+
+
+def test_pydantic_ai_private_field_still_exists():
+    """AUDIT BC-F19: timing reads pydantic-ai's private
+    `_first_chunk_monotonic`. It degrades silently if upstream renames
+    it — this test turns a dependency bump into a loud failure."""
+    import inspect
+
+    import pydantic_ai.models as m
+
+    assert "_first_chunk_monotonic" in inspect.getsource(m)

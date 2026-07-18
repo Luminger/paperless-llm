@@ -43,7 +43,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #70
 
 ### BC-F2 — HIGH — finalize supersede-pass can overwrite a concurrently applied proposal
-- **Status:** OPEN
+- **Status:** FIXED — supersede is a guarded UPDATE (`WHERE status IN (draft,pending)`); revision link only on rowcount==1; test simulates the mid-turn apply
 - **Where:** `app/agents/runner.py:156-159` + finalize loop (~236-252);
   `app/api/routes/proposals.py:99-126`; `app/db/session.py:40`
 - **Detail:** `open_proposals` is loaded once at turn start; the turn can
@@ -75,7 +75,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #72
 
 ### BC-F4 — MEDIUM — `_int_list` raises bare `ValueError` on model garbage → whole turn fails instead of ModelRetry
-- **Status:** OPEN
+- **Status:** FIXED — coercion failures raise ModelRetry with a corrective message; test updated
 - **Where:** `app/agents/tools.py:37-52` (used at `:146,391,414-416,475`)
 - **Detail:** `int(part)` raises on `"1, 2 and 5"`, `"none"`, `"1.5"` —
   plausible outputs from exactly the small models the helper exists to
@@ -88,7 +88,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #73
 
 ### BC-F5 — MEDIUM — `assign_to_documents` ids never validated; reaches privileged bulk write under auto policy
-- **Status:** OPEN
+- **Status:** FIXED — every id `_require_document`-validated at propose time; test pins the 404-bounce
 - **Where:** `app/agents/tools.py:442-477`; apply path
   `app/proposals/apply.py:364-372`
 - **Detail:** `propose_update_document_metadata` validates every
@@ -103,7 +103,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #73
 
 ### BC-F6 — MEDIUM — `UpdateEntity`/`CreateEntity` built with explicit `None` kwargs defeats `exclude_unset`
-- **Status:** OPEN
+- **Status:** FIXED — both built via `model_validate` with only provided/changed keys; test asserts rename-only payload carries ONLY the name
 - **Where:** `app/agents/tools.py:519-526`, `:469-476` vs
   `app/proposals/schemas.py:4-6,126-129`
 - **Detail:** Passing `name=changes.get("name"), match=changes.get(...)`
@@ -136,7 +136,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #70
 
 ### BC-F8 — MEDIUM — unvalidated reranker indices → IndexError impersonating the pydantic-ai streaming bug
-- **Status:** OPEN
+- **Status:** FIXED — `rerank()` filters indices to range; test pins it
 - **Where:** `app/llm/rerank.py:278-280` + `app/agents/tools.py:185-189`
   + runner fallback
 - **Detail:** `rerank()` returns `int(r["index"])` straight from the
@@ -206,7 +206,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #72
 
 ### BC-F13 — LOW — non-ModelRetry tool exceptions emit no `tool_done` SSE event
-- **Status:** OPEN
+- **Status:** FIXED — hard failures publish a terminal `tool_done` (error text, rejected=True) before re-raising
 - **Where:** `app/agents/registry.py:40-49`
 - **Detail:** Wrapper publishes start, and done on success or ModelRetry
   — but a PaperlessError/ValueError escapes without a terminal event;
@@ -216,7 +216,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #73
 
 ### BC-F14 — LOW — max-chars budget divided by 4 twice; docstring matches neither site
-- **Status:** OPEN
+- **Status:** FIXED — the division lives in the `max_chars` property alone; callers stop dividing (reads now get the full per-result budget: max_input_tokens chars ≈ ¼ context)
 - **Where:** `app/agents/deps.py:43-48` + `app/agents/tools.py:220,300`
 - **Detail:** `max_chars` returns `max_input_tokens` verbatim while its
   docstring claims "≈4 chars/token, /4"; callers apply `// 4` again. Net:
@@ -229,7 +229,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #73
 
 ### BC-F15 — LOW — `search_documents` page overflow fails the turn
-- **Status:** OPEN
+- **Status:** FIXED — 404 on page>1 returns an empty page with an explanatory note instead of aborting the run
 - **Where:** `app/agents/tools.py:123-158`, `app/paperless/client.py:56-59`
 - **Detail:** paperless (DRF) returns 404 "Invalid page." beyond the last
   page; `_require_document` maps 404→ModelRetry but `search_documents`
@@ -270,7 +270,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #76
 
 ### BC-F19 — LOW — timing depends on a pydantic-ai private field
-- **Status:** OPEN
+- **Status:** FIXED — test asserts `_first_chunk_monotonic` exists in pydantic-ai source (dependency bumps fail loudly)
 - **Where:** `app/llm/timing.py:84` (`_first_chunk_monotonic`, verified
   present in 2.12.0)
 - **Detail:** Degrades gracefully (ttft=None) if upstream renames it, but

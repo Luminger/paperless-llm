@@ -56,4 +56,8 @@ async def rerank(query: str, texts: list[str], top_n: int | None = None) -> list
         resp.raise_for_status()
     results = resp.json().get("results", [])
     ranked = sorted(results, key=lambda r: r.get("relevance_score", 0), reverse=True)
-    return [int(r["index"]) for r in ranked]
+    # AUDIT BC-F8: never trust remote indices blindly — an out-of-range
+    # value would IndexError far away in tool code (and impersonate the
+    # pydantic-ai streaming bug the runner works around).
+    n = len(texts)
+    return [i for i in (int(r["index"]) for r in ranked) if 0 <= i < n]

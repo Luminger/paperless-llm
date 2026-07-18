@@ -42,14 +42,27 @@ def _int_list(v: IntList) -> list[int]:
     strings or bare ints. Accept all of it — observed live with
     Qwen3.6-27b, which otherwise gives up on list-typed args.
     """
-    if v is None:
-        return []
-    if isinstance(v, int):
-        return [v]
-    if isinstance(v, str):
-        cleaned = v.strip().strip("[]")
-        return [int(part) for part in cleaned.replace(";", ",").split(",") if part.strip()]
-    return [int(x) for x in v]
+    try:
+        if v is None:
+            return []
+        if isinstance(v, int):
+            return [v]
+        if isinstance(v, str):
+            cleaned = v.strip().strip("[]")
+            return [
+                int(part)
+                for part in cleaned.replace(";", ",").split(",")
+                if part.strip()
+            ]
+        return [int(x) for x in v]
+    except (ValueError, TypeError) as e:
+        # AUDIT BC-F4: garbage like "1, 2 and 5" must be a ModelRetry
+        # (the model can fix it in-turn), not a ValueError that fails
+        # the whole step deterministically through every retry.
+        raise ModelRetry(
+            f"Could not parse {v!r} as a list of integer ids. Use a JSON "
+            'array like [1, 2] or a comma-separated string "1,2".'
+        ) from e
 
 
 MATCHING_ALGORITHMS = {
@@ -140,19 +153,28 @@ async def search_documents(
     be combined with `query`. Dates are ISO (YYYY-MM-DD). Returns up to
     25 results per page plus the total count. For "which document is
     about X" relevance lookups prefer find_documents."""
-    result = await ctx.deps.paperless.search_documents(
-        query=query,
-        title_contains=title_contains,
-        tag_ids=_int_list(tag_ids) or None,
-        tags_none=True if untagged_only else None,
-        correspondent_none=True if without_correspondent else None,
-        correspondent_id=correspondent_id,
-        document_type_id=document_type_id,
-        document_type_none=True if without_document_type else None,
-        created_after=created_after,
-        created_before=created_before,
-        page=page,
-    )
+    try:
+        result = await ctx.deps.paperless.search_documents(
+            query=query,
+            title_contains=title_contains,
+            tag_ids=_int_list(tag_ids) or None,
+            tags_none=True if untagged_only else None,
+            correspondent_none=True if without_correspondent else None,
+            correspondent_id=correspondent_id,
+            document_type_id=document_type_id,
+            document_type_none=True if without_document_type else None,
+            created_after=created_after,
+            created_before=created_before,
+            page=page,
+        )
+    except PaperlessError as e:
+        # AUDIT BC-F15: paging past the last page is normal model
+        # behavior (DRF answers 404 "Invalid page."), not a turn
+        # failure.
+        if e.status_code == 404 and page > 1:
+            return {"total": 0, "page": page, "documents": [],
+                    "note": "page is beyond the last page of results"}
+        raise
     return {"total": result.count, "page": page, "documents": [
         _doc_summary(d) for d in result.results
     ]}
@@ -217,7 +239,7 @@ async def get_document_content(
     `offset`. Long content is truncated; call again with a higher offset
     to continue reading."""
     d = await ctx.deps.paperless.get_document(document_id)
-    return clamp_text(d.content[offset:], ctx.deps.max_chars // 4, note=f", offset={offset}")
+    return clamp_text(d.content[offset:], ctx.deps.max_chars, note=f", offset={offset}")
 
 
 async def _summaries_with_instructions(
@@ -297,7 +319,7 @@ async def ocr_document(
         "pages": len(outcome.pages),
         "similarity_to_existing": outcome.similarity,
         "from_cache": outcome.from_cache,
-        "text": clamp_text(outcome.text, ctx.deps.max_chars // 4),
+        "text": clamp_text(outcome.text, ctx.deps.max_chars),
         "text_length": len(outcome.text),
     }
 
@@ -471,14 +493,27 @@ async def propose_create_entity(
                 f"exists (id={e.id}). Assign the existing entity instead of "
                 "creating a duplicate."
             )
-    p = CreateEntity(
-        entity_type=entity_type,
-        name=name,
-        match=match,
-        matching_algorithm=matching_algorithm,
-        is_insensitive=is_insensitive,
-        assign_to_documents=_int_list(assign_to_documents),
-    )
+    # AUDIT BC-F5: every referenced document is validated — this is the
+    # one place model output used to reach a privileged bulk write
+    # unchecked (auto policy would tag a hallucinated-but-existing id).
+    assign_ids = _int_list(assign_to_documents)
+    for doc_id in assign_ids:
+        await _require_document(ctx, doc_id)
+    # AUDIT BC-F6: only PROVIDED fields enter the payload — explicit
+    # None kwargs would mark everything as set and defeat the
+    # exclude_unset persistence contract.
+    data: dict[str, Any] = {
+        "entity_type": entity_type,
+        "name": name,
+        "assign_to_documents": assign_ids,
+    }
+    if match is not None:
+        data["match"] = match
+    if matching_algorithm is not None:
+        data["matching_algorithm"] = matching_algorithm
+    if is_insensitive is not None:
+        data["is_insensitive"] = is_insensitive
+    p = CreateEntity.model_validate(data)
     return await _persist(ctx, p, EntityType(entity_type), None)
 
 
@@ -521,13 +556,10 @@ async def propose_update_entity(
             changes.get("match", entity.match or None),
             changes.get("matching_algorithm", entity.matching_algorithm),
         )
-    p = UpdateEntity(
-        entity_type=entity_type,
-        entity_id=entity_id,
-        name=changes.get("name"),
-        match=changes.get("match"),
-        matching_algorithm=changes.get("matching_algorithm"),
-        is_insensitive=changes.get("is_insensitive"),
+    # AUDIT BC-F6: only the CHANGED keys enter the payload (see
+    # propose_create_entity).
+    p = UpdateEntity.model_validate(
+        {"entity_type": entity_type, "entity_id": entity_id, **changes}
     )
     snapshot = {k: getattr(entity, k) for k in changes}
     return await _persist(ctx, p, EntityType(entity_type), entity_id, snapshot)

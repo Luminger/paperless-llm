@@ -109,3 +109,19 @@ async def test_find_documents_survives_rerank_outage(paperless_client, reranker_
     out = await find_documents(ctx, "insurance", top_k=2)
     assert out["reranked"] is False
     assert [d["id"] for d in out["documents"]] == [1, 2]
+
+
+@respx.mock
+async def test_rerank_filters_out_of_range_indices(reranker_enabled):
+    """AUDIT BC-F8: remote indices are validated — an out-of-range value
+    must never IndexError in tool code."""
+    respx.post(f"{RERANK_URL}/rerank").mock(
+        return_value=Response(200, json={"results": [
+            {"index": 1, "relevance_score": 0.9},
+            {"index": 7, "relevance_score": 0.8},   # out of range
+            {"index": -1, "relevance_score": 0.7},  # out of range
+            {"index": 0, "relevance_score": 0.5},
+        ]})
+    )
+    order = await rerank("q", ["a", "b"])
+    assert order == [1, 0]

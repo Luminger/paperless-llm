@@ -47,6 +47,16 @@ def _instrumented(fn: Callable) -> Callable:
                 result=str(e)[:500], rejected=True,
             )
             raise
+        except Exception as e:
+            # AUDIT BC-F13: a hard tool failure still terminates the
+            # live UI's tool row — without this the row spins until the
+            # step_changed failure invalidation arrives.
+            bus.publish(
+                ctx.deps.session_id, "step_progress",
+                step_id=ctx.deps.step_id, tool_done=fn.__name__,
+                result=f"error: {type(e).__name__}: {e}"[:500], rejected=True,
+            )
+            raise
         try:
             result_preview = (
                 result if isinstance(result, str) else json.dumps(result, default=str)

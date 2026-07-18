@@ -399,3 +399,66 @@ async def test_streaming_indexerror_fallback_discards_aborted_drafts(
     assert proposals[0].status == ProposalStatus.pending
     assert proposals[0].agent_payload["title"] == "Fixed"
     assert outcome.output == "Proposed a title fix."
+
+
+@respx.mock
+async def test_finalize_never_supersedes_a_concurrently_applied_proposal(
+    db, paperless_client
+):
+    """AUDIT BC-F2: the user applies the open proposal WHILE the next
+    turn runs — finalize must not overwrite `applied` with `superseded`
+    from its stale turn-start snapshot."""
+    from sqlalchemy import select, update
+
+    from app.db.models import EntityType, Proposal
+
+    _mock_doc7()
+    session = await _make_session(db)
+
+    old = Proposal(
+        session_id=session.id,
+        kind="update_document_metadata",
+        agent_payload={"kind": "update_document_metadata", "document_id": 7,
+                       "title": "Old title"},
+        status=ProposalStatus.pending,
+        entity_type=EntityType.document,
+        entity_id=7,
+    )
+    db.add(old)
+    await db.commit()
+
+    calls = {"n": 0}
+
+    async def fn(messages, info: AgentInfo) -> ModelResponse:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="propose_update_document_metadata",
+                        args={"document_id": 7, "title": "New title"},
+                    )
+                ]
+            )
+        # Mid-turn (between model requests): the user applies the OLD
+        # proposal in another request.
+        await db.execute(
+            update(Proposal)
+            .where(Proposal.id == old.id)
+            .values(status=ProposalStatus.applied)
+        )
+        await db.commit()
+        return ModelResponse(parts=[TextPart(content="done")])
+
+    agent = Agent(FunctionModel(fn), deps_type=AgentDeps, tools=list(ALL_TOOLS))
+    await run_agent_turn(paperless_client, db, session, "go", agent=agent)
+
+    rows = {
+        p.id: p for p in (await db.scalars(select(Proposal))).all()
+    }
+    await db.refresh(rows[old.id])
+    assert rows[old.id].status == ProposalStatus.applied  # journal intact
+    new = next(p for p in rows.values() if p.id != old.id)
+    assert new.status == ProposalStatus.pending
+    assert new.supersedes_id is None  # applied things are history, not revisions
+    assert new.revision == 1
