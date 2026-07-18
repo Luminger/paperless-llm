@@ -34,7 +34,7 @@ itself (now fixed). Ledger:
   query, so `_drain` refetched page 1 forever on any >100-entity listing.
   `_get_json` passes None for empty params; `_drain` strips the base-path
   prefix. Tests: subpath follow + foreign-host token guard.
-- **FP-L2 INCOMPLETE → FIXED** (`d0c7c1e`) — Taxonomy's clamp fired while
+- **FP-L2 INCOMPLETE → FIXED** (`9b677af`) — Taxonomy's clamp fired while
   the list was still loading, rewriting in-range ?page deep links to 1;
   now gated on `entities !== undefined`.
 - **New (backend, all fixed in `341bd6d`)**: OCR/agent shared-endpoint
@@ -46,7 +46,7 @@ itself (now fixed). Ledger:
   draft sweep in recover(); public publish_step_changed(); honest
   pydantic-ai version comment; dead render_pages deleted; tool_done
   ordering invariant pinned in registry.py.
-- **New (frontend, all fixed in `d0c7c1e`)**: scheduled retries pruned from
+- **New (frontend, all fixed in `9b677af`)**: scheduled retries pruned from
   live state (stale rows no longer bleed into the auto-retry's stream);
   remarkRefs never rewrites inside links (no nested anchors, test);
   keys.jobs carries pageSize; useClampPage error path 404-only (transient
@@ -462,7 +462,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #78
 
 ### SV-M5 — MEDIUM — auto-apply ignores `archived_at`
-- **Status:** FIXED — `_maybe_auto_apply` refuses archived sessions; test pins it
+- **Status:** FIXED — `_maybe_auto_apply` refuses archived sessions; test pins it — re-reads archived_at from the DB (reinspection: cached ORM attribute missed mid-turn archives)
 - **Where:** `app/services/pipeline.py:141-163`; contract in
   `db/models.py` (archived = "refuse forward-apply and new steps");
   human path enforces it (`routes/proposals.py:105-113`);
@@ -704,7 +704,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
   chunk `id__in`. Todo #81.
 
 ### API-F16 — LOW — `_drain` follows absolute `next` URLs from paperless
-- **Status:** FIXED — `next` re-relativized to path+query against our base_url — `client.py:183-193`: `next` is generated from
+- **Status:** FIXED — `next` re-relativized to path+query against our base_url — `client.py:183-193`: `next` is generated from — reinspection: base-path prefix stripped for subpath hosts AND empty-params query-stripping fixed (page-1-forever loop); two tests
   paperless's Host header; httpx sends the Authorization token to
   whatever host it names — split-horizon deployments leak the token or
   fail. Re-parse and keep path+query relative to base_url. Todo #81.
@@ -1006,7 +1006,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Status:** FIXED — comment states (and justifies) replace semantics
 
 ### FP-L2 — LOW — out-of-range page shows misleading "no results"
-- **Status:** FIXED — `useClampPage` wired into Documents (incl. the proxied-404 case; live-verified: ?page=99 snaps back with rows), AuditLog; Taxonomy clamps its client-side slice
+- **Status:** FIXED — `useClampPage` wired into Documents (incl. the proxied-404 case; live-verified: ?page=99 snaps back with rows), AuditLog; Taxonomy clamps its client-side slice — reinspection: Taxonomy clamp gated on loaded data (in-range deep links survive)
 
 ### FP-L3 — LOW — `SessionList`/`PagedList` page state never resets on entity change
 - **Status:** FIXED — SessionList keyed by `entityType:id` on EntityPage — `SessionList.tsx:152` local useState survives
