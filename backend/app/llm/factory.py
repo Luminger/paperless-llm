@@ -20,19 +20,30 @@ from app.llm.timing import TimedModel
 # One semaphore per endpoint URL, shared by every consumer in this
 # process (agent runs, OCR, interactive chat). Sized via config
 # `max_concurrent` to respect server-side limits (e.g. vLLM max-num-seqs
-# shared with other services).
-_semaphores: dict[str, asyncio.Semaphore] = {}
+# shared with other services). AUDIT BC-F10: keyed by base_url ONLY —
+# keying by size created a SECOND semaphore for the same endpoint when
+# max_concurrent changed at runtime (brief over-admission + stale
+# entries). A size change replaces the semaphore: old holders drain on
+# the old object, a bounded one-time overlap.
+_semaphores: dict[str, tuple[int, asyncio.Semaphore]] = {}
 
 
 def llm_semaphore(base_url: str, max_concurrent: int) -> asyncio.Semaphore:
-    key = f"{base_url}#{max_concurrent}"
-    if key not in _semaphores:
-        _semaphores[key] = asyncio.Semaphore(max_concurrent)
-    return _semaphores[key]
+    entry = _semaphores.get(base_url)
+    if entry is None or entry[0] != max_concurrent:
+        entry = (max_concurrent, asyncio.Semaphore(max_concurrent))
+        _semaphores[base_url] = entry
+    return entry[1]
 
 
-def _settings_from(sampling: SamplingOverrides, thinking: str = "server_default") -> ModelSettings:
+def _settings_from(
+    sampling: SamplingOverrides,
+    thinking: str = "server_default",
+    timeout: float | None = None,
+) -> ModelSettings:
     settings: dict[str, Any] = {}
+    if timeout is not None:
+        settings["timeout"] = timeout
     if sampling.temperature is not None:
         settings["temperature"] = sampling.temperature
     if sampling.top_p is not None:
@@ -64,7 +75,7 @@ def agent_model(profile: AgentProfile | None = None) -> Model:
 
 def agent_model_settings(profile: AgentProfile | None = None) -> ModelSettings:
     p = profile or get_settings().llm.agent
-    return _settings_from(p.sampling, p.thinking)
+    return _settings_from(p.sampling, p.thinking, p.timeout_seconds)
 
 
 def resolved_ocr_profile() -> tuple[str, str, str, OcrProfile]:
@@ -84,6 +95,15 @@ def resolved_ocr_profile() -> tuple[str, str, str, OcrProfile]:
 
 def ocr_model() -> tuple[Model, ModelSettings, OcrProfile, asyncio.Semaphore]:
     base_url, model, api_key, ocr = resolved_ocr_profile()
-    sem = llm_semaphore(base_url, get_settings().llm.agent.max_concurrent)
+    # AUDIT BC-F10: the OCR endpoint's admission is tunable on its own
+    # profile; only fall back to the agent's when unset.
+    sem = llm_semaphore(
+        base_url, ocr.max_concurrent or get_settings().llm.agent.max_concurrent
+    )
     # OCR is a plain completion; thinking adds latency for no benefit.
-    return _build_model(base_url, model, api_key), _settings_from(ocr.sampling, "off"), ocr, sem
+    return (
+        _build_model(base_url, model, api_key),
+        _settings_from(ocr.sampling, "off", ocr.timeout_seconds),
+        ocr,
+        sem,
+    )

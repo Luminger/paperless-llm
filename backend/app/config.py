@@ -65,6 +65,10 @@ class AgentProfile(BaseModel):
     max_input_tokens: int = 32768
     # Cap on agent tool-loop iterations (requests per run).
     max_tool_iterations: int = 12
+    # Per-request timeout (seconds); None = client default. A wedged
+    # server that accepts connections but never answers must not stall
+    # a worker forever (AUDIT BC-F12).
+    timeout_seconds: float | None = None
     sampling: SamplingOverrides = SamplingOverrides()
 
 
@@ -76,6 +80,11 @@ class OcrProfile(BaseModel):
     base_url: str | None = None
     model: str | None = None
     api_key: str | None = None
+    # Endpoint admission for OCR (a vision endpoint's safe concurrency
+    # rarely equals the chat endpoint's); None = the agent profile's.
+    max_concurrent: int | None = None
+    # Per-request timeout (seconds); None = client default.
+    timeout_seconds: float | None = None
     # Server-side multimodal limit, e.g. vLLM --limit-mm-per-prompt.
     max_images_per_request: int = 2
     # 0 = no limit.
@@ -339,12 +348,15 @@ EDITABLE_KEYS: tuple[str, ...] = (
     "llm.agent.thinking",
     "llm.agent.max_input_tokens",
     "llm.agent.max_tool_iterations",
+    "llm.agent.timeout_seconds",
     "llm.ocr.base_url",
     "llm.ocr.model",
     "llm.ocr.api_key",
     "llm.ocr.max_images_per_request",
     "llm.ocr.max_pages",
     "llm.ocr.render_dpi",
+    "llm.ocr.max_concurrent",
+    "llm.ocr.timeout_seconds",
     "llm.embeddings.base_url",
     "llm.embeddings.model",
     "llm.embeddings.api_key",

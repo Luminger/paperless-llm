@@ -8,6 +8,7 @@ markdown -> similarity vs. existing paperless `content` -> cache.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 import fitz  # PyMuPDF
 from pydantic_ai import Agent, BinaryContent
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import OcrResult
@@ -48,6 +50,9 @@ class OcrOutcome:
     similarity: float | None  # vs. paperless `content` at run time; None if no content
     from_cache: bool
     timings: list[dict] | None = None  # per-batch LLM call metrics
+    # Partial run (max_pages limit hit): pages/text cover only the head.
+    truncated: bool = False
+    total_pages: int | None = None
     # Paperless `content` at run time — kept so superseded OCR steps can
     # still show the diff they produced back then.
     previous_content: str = ""
@@ -62,6 +67,31 @@ def render_pages(data: bytes, content_type: str, dpi: int, max_pages: int = 0) -
         zoom = dpi / 72.0
         return [
             doc[i].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png") for i in range(n)
+        ]
+    finally:
+        doc.close()
+
+
+def page_count(data: bytes, content_type: str) -> int:
+    doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
+    try:
+        return doc.page_count
+    finally:
+        doc.close()
+
+
+def render_page_range(
+    data: bytes, content_type: str, dpi: int, start: int, count: int
+) -> list[bytes]:
+    """Render pages [start, start+count) — AUDIT BC-F3: batches render
+    lazily so peak memory is ONE batch, not the whole document."""
+    doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
+    try:
+        zoom = dpi / 72.0
+        end = min(doc.page_count, start + count)
+        return [
+            doc[i].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
+            for i in range(start, end)
         ]
     finally:
         doc.close()
@@ -137,10 +167,18 @@ async def run_ocr(
                 similarity=cached.similarity,
                 from_cache=True,
                 timings=list(cached.timings or []),
+                truncated=bool(cached.truncated),
+                total_pages=cached.total_pages,
                 previous_content=doc.content,
             )
 
-    images = render_pages(data, content_type, dpi or profile.render_dpi, profile.max_pages)
+    # AUDIT BC-F3: PyMuPDF is pure CPU — everything renders in worker
+    # threads, and only ONE batch of PNGs is in memory at a time (a
+    # 100-page scan at 150 DPI is hundreds of MB fully materialized).
+    total = await asyncio.to_thread(page_count, data, content_type)
+    n_pages = total if profile.max_pages <= 0 else min(total, profile.max_pages)
+    truncated = n_pages < total
+    effective_dpi = dpi or profile.render_dpi
 
     prompt = base_prompt
     if instructions:
@@ -149,10 +187,13 @@ async def run_ocr(
     batch = max(1, profile.max_images_per_request)
     pages: list[str] = []
     timings: list[dict] = []
-    for i in range(0, len(images), batch):
-        chunk = images[i : i + batch]
+    for i in range(0, n_pages, batch):
+        chunk = await asyncio.to_thread(
+            render_page_range, data, content_type, effective_dpi, i,
+            min(batch, n_pages - i),
+        )
         parts: list[str | BinaryContent] = [
-            f"Transcribe page(s) {i + 1}-{i + len(chunk)} of {len(images)}."
+            f"Transcribe page(s) {i + 1}-{i + len(chunk)} of {n_pages}."
         ]
         parts += [BinaryContent(data=png, media_type="image/png") for png in chunk]
         async with semaphore:
@@ -173,7 +214,14 @@ async def run_ocr(
             pages.append(out)
 
     text = "\n\n".join(pages).strip()
-    similarity = content_similarity(text, doc.content) if doc.content.strip() else None
+    # AUDIT BC-F17: similarity vs. the FULL existing content is
+    # meaningless for a partial transcription — report unknown instead
+    # of "artificially low".
+    similarity = (
+        content_similarity(text, doc.content)
+        if doc.content.strip() and not truncated
+        else None
+    )
 
     # Upsert: a force re-run must update the existing cache row, not
     # violate the unique key.
@@ -192,6 +240,9 @@ async def run_ocr(
         cached.text = text
         cached.similarity = similarity
         cached.timings = timings
+        cached.truncated = truncated
+        cached.total_pages = total
+        await db.commit()
     else:
         db.add(
             OcrResult(
@@ -204,9 +255,34 @@ async def run_ocr(
                 text=text,
                 similarity=similarity,
                 timings=timings,
+                truncated=truncated,
+                total_pages=total,
             )
         )
-    await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            # AUDIT BC-F9: two workers OCRed the same document
+            # concurrently — the loser updates the winner's row instead
+            # of failing the step (and re-running the whole OCR).
+            await db.rollback()
+            row = await db.scalar(
+                select(OcrResult).where(
+                    OcrResult.document_id == document_id,
+                    OcrResult.checksum == checksum,
+                    OcrResult.model == model.model_name,
+                    OcrResult.prompt_version == profile.prompt_version,
+                    OcrResult.prompt_fingerprint == fingerprint,
+                )
+            )
+            if row is not None:
+                row.pages = pages
+                row.text = text
+                row.similarity = similarity
+                row.timings = timings
+                row.truncated = truncated
+                row.total_pages = total
+                await db.commit()
 
     return OcrOutcome(
         document_id=document_id,
@@ -217,5 +293,7 @@ async def run_ocr(
         similarity=similarity,
         from_cache=False,
         timings=timings,
+        truncated=truncated,
+        total_pages=total,
         previous_content=doc.content,
     )

@@ -62,7 +62,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #71
 
 ### BC-F3 — HIGH — `render_pages` blocks the event loop and holds every page PNG in memory
-- **Status:** PARTIAL — preview endpoint now renders a SINGLE page via `asyncio.to_thread`; the OCR path (all pages, in-loop) is still open (#72)
+- **Status:** FIXED — OCR renders lazily per batch via `asyncio.to_thread` (`render_page_range`; peak memory = one batch); preview renders single pages off-loop
 - **Where:** `app/llm/ocr.py:56-67`, called at `:143`
 - **Detail:** PyMuPDF rendering + PNG encoding is pure CPU, run
   synchronously in the async path. At 150 DPI a page is ~2–8 MB PNG; a
@@ -151,7 +151,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #73
 
 ### BC-F9 — MEDIUM — OCR cache upsert race across workers
-- **Status:** OPEN
+- **Status:** FIXED — IntegrityError on the insert → rollback → update the winner's row (loser no longer fails the step + re-runs the whole OCR)
 - **Where:** `app/llm/ocr.py:120-141,190-209`, unique `ix_ocr_key`
 - **Detail:** Two steps OCRing the same document concurrently both miss
   the cache and both `db.add(OcrResult)` → second commit violates the
@@ -165,7 +165,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #72
 
 ### BC-F10 — MEDIUM — OCR endpoint semaphore sized by the *agent* profile; semaphore keyed on size
-- **Status:** OPEN
+- **Status:** FIXED — `OcrProfile.max_concurrent` (fallback agent's); semaphores keyed by base_url only, replaced on size change (bounded one-time overlap instead of permanent stale entries)
 - **Where:** `app/llm/factory.py:24-31,85-89`, `app/config.py:70-87`
 - **Detail:** `OcrProfile` has no `max_concurrent`; `ocr_model()` sizes
   the OCR endpoint's semaphore with `llm.agent.max_concurrent` — wrong
@@ -179,7 +179,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #72
 
 ### BC-F11 — MEDIUM (latent) — `ocr_document` tool would deadlock the endpoint semaphore if ever registered
-- **Status:** OPEN
+- **Status:** FIXED — removed from READ_TOOLS entirely; a warning comment at the list explains the deadlock and the precondition for re-adding
 - **Where:** `app/agents/runner.py` run-level semaphore +
   `app/llm/ocr.py:101,158` + `app/agents/tools.py:286-302,596-608`
 - **Detail:** `run_agent_turn` holds an endpoint-semaphore permit for the
@@ -195,7 +195,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #72 (note)
 
 ### BC-F12 — LOW — no timeout on OCR/agent LLM calls
-- **Status:** OPEN
+- **Status:** FIXED — `timeout_seconds` on AgentProfile + OcrProfile wired into ModelSettings (None = client default); both UI-editable. Reranker keeps its explicit 60s
 - **Where:** `app/llm/ocr.py:158-159`, runner `_run`
 - **Detail:** No request timeout on either path; a wedged local vLLM
   that accepts connections but never answers stalls a worker until
@@ -248,7 +248,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #82 (with token-module work)
 
 ### BC-F17 — LOW — `max_pages`-truncated OCR cached as if complete
-- **Status:** OPEN
+- **Status:** FIXED — `truncated`/`total_pages` columns (alembic a1b2c3d4e5f6) + OcrOutcome fields; similarity reported as unknown (None) for partial runs instead of artificially low
 - **Where:** `app/llm/ocr.py:143,175-176,190-208`
 - **Detail:** With `max_pages > 0` the first-N-pages text is cached and
   similarity computed against the *full* existing content — similarity

@@ -614,7 +614,12 @@ READ_TOOLS = [
     list_correspondents,
     list_document_types,
     find_similar_entities,
-    ocr_document,
+    # NOTE ocr_document is deliberately NOT here (AUDIT BC-F11): the
+    # runner holds an endpoint-semaphore permit for the whole agent.run;
+    # run_ocr acquires from the SAME semaphore when the OCR profile
+    # falls back to the agent endpoint — registering the tool would arm
+    # a two-turn deadlock. Release the run-level permit around tool
+    # execution before ever adding it back.
 ]
 
 PROPOSE_TOOLS = [

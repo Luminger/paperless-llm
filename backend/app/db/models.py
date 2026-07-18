@@ -383,6 +383,11 @@ class OcrResult(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     # Similarity vs. the paperless `content` at OCR time (0..1).
     similarity: Mapped[float | None] = mapped_column(nullable=True)
+    # AUDIT BC-F17: a max_pages-limited run is PARTIAL — cached as such,
+    # never mistaken for a full transcription (similarity vs. the full
+    # existing content would read artificially low).
+    truncated: Mapped[bool] = mapped_column(default=False)
+    total_pages: Mapped[int | None] = mapped_column(nullable=True)
     # Per-batch LLM call metrics (duration, tokens, tps, ...).
     timings: Mapped[list[Any]] = mapped_column(default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
