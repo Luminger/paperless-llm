@@ -26,3 +26,4 @@ result
 .vscode/
 paperless-llm.toml
 deploy/playground/.env
+site/

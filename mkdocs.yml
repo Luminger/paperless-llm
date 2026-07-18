@@ -1,0 +1,61 @@
+site_name: paperless-llm
+site_description: >-
+  A local-LLM metadata assistant for paperless-ngx — OCR, metadata
+  proposals, and taxonomy governance without a single byte leaving your
+  network.
+# Set to your fork's Pages URL, e.g. https://OWNER.github.io/paperless-llm/
+site_url: ""
+repo_url: https://github.com/dhs/paperless-llm
+repo_name: paperless-llm
+docs_dir: docs
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.sections
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - toc.integrate
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Configuration: configuration.md
+  - Using it:
+      - Analysis sessions: usage/sessions.md
+      - Proposals & the journal: usage/proposals.md
+      - Jobs & automation: usage/jobs.md
+      - Taxonomy governance: usage/taxonomy.md
+      - Settings & prompts: usage/settings.md
+  - Reference:
+      - Architecture: architecture.md
+      - Privacy model: privacy.md
+      - Development: development.md
