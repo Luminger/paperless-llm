@@ -7,6 +7,7 @@ proposals")."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_paperless
@@ -18,6 +19,7 @@ from app.api.schemas import (
     InstructionsUpdate,
     MergeCandidateOut,
 )
+from app.db.models import EntityType, Session, SessionStatus
 from app.db.session import get_session
 from app.paperless import PaperlessClient
 from app.paperless.taxonomy import TAXONOMY, TAXONOMY_TYPES
@@ -56,6 +58,44 @@ async def list_documents(
         results=[
             DocumentOut(**d.model_dump(exclude={"content"}))
             for d in result.results
+        ],
+    )
+
+
+@router.get("/inbox")
+async def inbox_backlog(
+    limit: int = 8,
+    db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> DocumentSearchPage:
+    """The inbox WITHOUT documents that already have an active session
+    — the dashboard's "waiting to be looked at" list. ``count`` is the
+    full backlog; ``results`` are the first ``limit`` entries."""
+    from app.services.jobs import ACTIVE_PHASES
+
+    inbox_tags = [t.id for t in await paperless.list_tags() if t.is_inbox_tag]
+    if not inbox_tags:
+        return DocumentSearchPage(count=0, results=[])
+    page = await paperless.search_documents(tag_ids=inbox_tags, page_size=100)
+    docs = list(page.results)
+    active = set(
+        (
+            await db.scalars(
+                select(Session.entity_id).where(
+                    Session.entity_type == EntityType.document,
+                    Session.entity_id.in_([d.id for d in docs] or [0]),
+                    Session.phase.in_(ACTIVE_PHASES),
+                    Session.status != SessionStatus.failed,
+                )
+            )
+        ).all()
+    )
+    waiting = [d for d in docs if d.id not in active]
+    return DocumentSearchPage(
+        count=len(waiting),
+        results=[
+            DocumentOut(**d.model_dump(exclude={"content"}))
+            for d in waiting[:limit]
         ],
     )
 

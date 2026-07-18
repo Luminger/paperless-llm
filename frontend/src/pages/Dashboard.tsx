@@ -7,9 +7,91 @@ import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/components/app/PageHeader";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { ErrorNotice } from "@/components/app/states";
+import { Link } from "react-router-dom";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { api } from "../api";
 import { keys } from "../lib/keys";
+import { formatDate } from "../lib/format";
+import { entityName, useEntityList } from "../hooks/useTaxonomy";
 import { SessionList } from "../components/SessionList";
+
+/** The inbox backlog: documents waiting to be looked at (fresh
+ * arrivals without an active session). The list IS the work — one
+ * button sends the whole inbox through analysis. */
+function InboxBlock() {
+  const navigate = useNavigate();
+  const { data } = useQuery({
+    queryKey: keys.inbox(),
+    queryFn: api.getInbox,
+    refetchInterval: 30_000,
+  });
+  const { data: correspondents } = useEntityList("correspondent");
+  const start = useMutation({
+    mutationFn: () => api.createJob({ inbox: true }),
+    onSuccess: (job) => navigate(`/jobs/${job.id}`),
+  });
+  if (!data || data.count === 0) return null;
+  return (
+    <Card className="mb-6 py-4">
+      <CardContent className="px-4">
+        <div className="mb-1 flex items-center justify-between gap-4">
+          <p className="text-sm font-medium">
+            Inbox — {data.count} document{data.count === 1 ? "" : "s"} waiting
+          </p>
+          <Button
+            size="sm"
+            disabled={start.isPending}
+            onClick={() => start.mutate()}
+          >
+            Analyze the inbox
+          </Button>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Title</TableHead>
+              <TableHead className="w-56">Correspondent</TableHead>
+              <TableHead className="w-32 text-right">Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.results.map((d) => (
+              <TableRow key={d.id}>
+                <TableCell className="max-w-0">
+                  <Link
+                    className="truncate font-medium hover:text-primary hover:underline"
+                    to={`/documents/${d.id}`}
+                  >
+                    {d.title || "(untitled)"}
+                  </Link>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {entityName(correspondents, d.correspondent) || "—"}
+                </TableCell>
+                <TableCell className="text-right text-muted-foreground">
+                  {d.created ? formatDate(d.created) : "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {data.count > data.results.length && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            …and {data.count - data.results.length} more.
+          </p>
+        )}
+        <ErrorNotice error={start.error} />
+      </CardContent>
+    </Card>
+  );
+}
 
 /** Batch-by-batch corpus curation: how much of the archive has been
  * analyzed, and one button that always means "give me the next slice".
@@ -127,6 +209,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      <InboxBlock />
       <CorpusBlock />
 
       <h2 className="mb-2 text-sm font-medium text-muted-foreground">Needs attention</h2>

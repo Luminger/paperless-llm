@@ -5,7 +5,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
@@ -92,8 +92,16 @@ async def list_sessions(
             raise HTTPException(422, f"unknown entity type {entity_type!r}") from e
     if entity_id is not None:
         where.append(Session.entity_id == entity_id)
+    pending_case = case(
+        (
+            (Proposal.status == ProposalStatus.pending)
+            & (Proposal.kind != "replace_content"),
+            1,
+        ),
+        else_=0,
+    )
     q = (
-        select(Session, func.count(Proposal.id))
+        select(Session, func.count(Proposal.id), func.sum(pending_case))
         .outerjoin(Proposal, Proposal.session_id == Session.id)
         .where(*where)
         .group_by(Session.id)
@@ -107,9 +115,10 @@ async def list_sessions(
         max_page_size=100,
     )
     results: list[SessionOut] = []
-    for s, n in (await db.execute(q)).all():
+    for s, n, pending in (await db.execute(q)).all():
         item = SessionOut.model_validate(s)
         item.proposal_count = n
+        item.pending_proposal_count = int(pending or 0)
         results.append(item)
     return SessionPage(
         count=win.count, page=win.page, page_size=win.page_size, results=results

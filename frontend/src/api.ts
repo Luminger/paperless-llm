@@ -173,6 +173,7 @@ export const api = {
     request<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   getStats: () => request<Stats>("/api/stats"),
   getCorpus: () => request<Corpus>("/api/corpus"),
+  getInbox: () => request<DocumentSearchPage>("/api/entities/inbox"),
   getJobAttention: (jobId: number, after?: number) =>
     request<JobAttention>(
       `/api/jobs/${jobId}/attention${after ? `?after=${after}` : ""}`,

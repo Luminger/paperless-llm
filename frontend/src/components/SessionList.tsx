@@ -46,13 +46,19 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
         <TableCell>
           <span className="flex items-center gap-2">
             {s.phase === "ocr_review" && !s.archived_at && <OcrReviewBadge />}
-            {s.proposal_count > 0 ? (
+            {s.pending_proposal_count > 0 ? (
               <Badge variant="secondary" className="text-primary">
-                {s.proposal_count} proposal{s.proposal_count > 1 ? "s" : ""}
+                {s.pending_proposal_count === 1
+                  ? "proposal to review"
+                  : `${s.pending_proposal_count} proposals to review`}
+              </Badge>
+            ) : s.proposal_count > 0 ? (
+              <Badge variant="secondary" className="font-normal text-muted-foreground">
+                {s.proposal_count} proposal{s.proposal_count > 1 ? "s" : ""} decided
               </Badge>
             ) : (
               s.phase === "done" && (
-                <Badge variant="secondary" className="text-muted-foreground">
+                <Badge variant="secondary" className="font-normal text-muted-foreground">
                   no changes proposed
                 </Badge>
               )

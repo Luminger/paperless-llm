@@ -628,6 +628,36 @@ async def test_job_attention_walks_waiting_sessions(client, db):
     assert r.json() == {"next_session_id": sessions[0].id, "remaining": 2}
 
 
+@respx.mock
+async def test_inbox_backlog_excludes_active_sessions(client, db):
+    from app.db.models import EntityType, SessionPhase
+
+    respx.get(f"{PAPERLESS_URL}/api/tags/").mock(
+        return_value=Response(200, json={"count": 1, "next": None, "results": [
+            {"id": 9, "name": "Inbox", "match": "", "matching_algorithm": 0,
+             "is_inbox_tag": True},
+        ]})
+    )
+    docs = [DOC | {"id": i, "title": f"doc {i}", "tags": [9]} for i in (1, 2, 3)]
+    respx.get(f"{PAPERLESS_URL}/api/documents/").mock(
+        return_value=Response(200, json={
+            "count": 3, "next": None, "previous": None, "results": docs,
+        })
+    )
+    # doc 2 has an analysis in flight -> not part of the backlog.
+    db.add(Session(
+        agent_kind=AgentKind.document, entity_type=EntityType.document,
+        entity_id=2, phase=SessionPhase.analyzing,
+    ))
+    await db.commit()
+
+    r = await client.get("/api/entities/inbox")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 2
+    assert [d["id"] for d in body["results"]] == [1, 3]
+
+
 def _entity_page(*items):
     return Response(200, json={"count": len(items), "next": None, "results": list(items)})
 

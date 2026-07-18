@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
@@ -182,19 +182,28 @@ async def get_job(job_id: int, db: AsyncSession = Depends(get_session)) -> JobDe
             .order_by(Session.id)
         )
     ).all()
-    counts = dict(
+    pending_case = case(
         (
+            (Proposal.status == ProposalStatus.pending)
+            & (Proposal.kind != "replace_content"),
+            1,
+        ),
+        else_=0,
+    )
+    counts = {
+        sid: (n, int(pending or 0))
+        for sid, n, pending in (
             await db.execute(
-                select(Proposal.session_id, func.count())
+                select(Proposal.session_id, func.count(), func.sum(pending_case))
                 .where(Proposal.session_id.in_([s.id for s in sessions] or [0]))
                 .group_by(Proposal.session_id)
             )
         ).all()
-    )
+    }
     out.sessions = []
     for s in sessions:
         item = SessionOut.model_validate(s)
-        item.proposal_count = counts.get(s.id, 0)
+        item.proposal_count, item.pending_proposal_count = counts.get(s.id, (0, 0))
         out.sessions.append(item)
     return out
 

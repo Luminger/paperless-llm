@@ -48,6 +48,8 @@ class SessionOut(BaseModel):
     created_at: UtcDateTime
     updated_at: UtcDateTime
     proposal_count: int = 0
+    # Proposals actually WAITING on the user — the attention signal.
+    pending_proposal_count: int = 0
 
     model_config = {"from_attributes": True}
 

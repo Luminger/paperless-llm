@@ -178,6 +178,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/entities/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inbox Backlog
+         * @description The inbox WITHOUT documents that already have an active session
+         *     — the dashboard's "waiting to be looked at" list. ``count`` is the
+         *     full backlog; ``results`` are the first ``limit`` entries.
+         */
+        get: operations["inbox_backlog_api_entities_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/entities/storage_paths": {
         parameters: {
             query?: never;
@@ -1537,6 +1559,11 @@ export interface components {
             params: {
                 [key: string]: unknown;
             };
+            /**
+             * Pending Proposal Count
+             * @default 0
+             */
+            pending_proposal_count: number;
             phase: components["schemas"]["SessionPhase"] | null;
             /**
              * Proposal Count
@@ -1582,6 +1609,11 @@ export interface components {
             params: {
                 [key: string]: unknown;
             };
+            /**
+             * Pending Proposal Count
+             * @default 0
+             */
+            pending_proposal_count: number;
             phase: components["schemas"]["SessionPhase"] | null;
             /**
              * Proposal Count
@@ -2051,6 +2083,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inbox_backlog_api_entities_inbox_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSearchPage"];
                 };
             };
             /** @description Validation Error */

@@ -10,7 +10,9 @@ vi.mock("../api", () => ({
     listSessions: vi.fn(),
     getStats: vi.fn(),
     getCorpus: vi.fn(),
+    getInbox: vi.fn(),
     createJob: vi.fn(),
+    listCorrespondents: vi.fn(),
     archiveSession: vi.fn(),
     unarchiveSession: vi.fn(),
   },
@@ -32,6 +34,7 @@ export function makeSession(overrides: Partial<Session> = {}): Session {
     created_at: "2026-07-17T10:00:00Z",
     updated_at: "2026-07-17T10:01:00Z",
     proposal_count: 0,
+    pending_proposal_count: 0,
     ...overrides,
   };
 }
@@ -44,6 +47,8 @@ describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.getCorpus.mockResolvedValue({ total: 2400, processed: 118 });
+    mocked.getInbox.mockResolvedValue({ count: 0, page_size: 25, all: null, results: [] });
+    mocked.listCorrespondents.mockResolvedValue([]);
     mocked.getStats.mockResolvedValue({
       pending_proposals: 1,
       active_sessions: 0,
@@ -129,6 +134,8 @@ describe("Dashboard", () => {
 describe("Dashboard corpus block", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocked.getInbox.mockResolvedValue({ count: 0, page_size: 25, all: null, results: [] });
+    mocked.listCorrespondents.mockResolvedValue([]);
     mocked.getStats.mockResolvedValue({
       pending_proposals: 0,
       active_sessions: 0,
@@ -141,6 +148,8 @@ describe("Dashboard corpus block", () => {
 
   it("shows curation progress and starts the next batch", async () => {
     mocked.getCorpus.mockResolvedValue({ total: 2400, processed: 118 });
+    mocked.getInbox.mockResolvedValue({ count: 0, page_size: 25, all: null, results: [] });
+    mocked.listCorrespondents.mockResolvedValue([]);
     mocked.createJob.mockResolvedValue({ id: 9 } as never);
     renderWithProviders(<Dashboard />);
     expect(
@@ -159,5 +168,56 @@ describe("Dashboard corpus block", () => {
       await screen.findByText(/every document has been analyzed/i),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /analyze next batch/i })).toBeNull();
+  });
+});
+
+describe("Dashboard inbox block", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.getStats.mockResolvedValue({
+      pending_proposals: 0,
+      active_sessions: 0,
+      queue_pending: {},
+      active_jobs: 0,
+      lifetime: {},
+    });
+    mocked.listSessions.mockResolvedValue({ count: 0, page: 1, page_size: 5, results: [] });
+    mocked.getCorpus.mockResolvedValue({ total: 13, processed: 13 });
+    mocked.listCorrespondents.mockResolvedValue([{ id: 2, name: "Kraxi" } as never]);
+  });
+
+  it("lists waiting documents and starts the inbox job", async () => {
+    mocked.getInbox.mockResolvedValue({
+      count: 12,
+      page_size: 25,
+      all: null,
+      results: [
+        {
+          id: 7,
+          title: "scan_0234",
+          tags: [9],
+          correspondent: 2,
+          document_type: null,
+          storage_path: null,
+          created: "2026-07-01",
+          content: null,
+        } as never,
+      ],
+    });
+    mocked.createJob.mockResolvedValue({ id: 4 } as never);
+    renderWithProviders(<Dashboard />);
+    expect(await screen.findByText(/Inbox — 12 documents waiting/)).toBeInTheDocument();
+    expect(screen.getByText("scan_0234")).toBeInTheDocument();
+    expect(await screen.findByText("Kraxi")).toBeInTheDocument();
+    expect(screen.getByText(/and 11 more/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /analyze the inbox/i }));
+    await waitFor(() => expect(mocked.createJob).toHaveBeenCalledWith({ inbox: true }));
+  });
+
+  it("vanishes when the inbox is clear", async () => {
+    mocked.getInbox.mockResolvedValue({ count: 0, page_size: 25, all: null, results: [] });
+    renderWithProviders(<Dashboard />);
+    await screen.findByText(/every document has been analyzed/i);
+    expect(screen.queryByText(/documents waiting/)).toBeNull();
   });
 });
