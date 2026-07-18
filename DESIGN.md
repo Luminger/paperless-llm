@@ -534,7 +534,7 @@ Tesseract OCR on consumption, providing the authentic "existing OCR" that
 the re-OCR comparison runs against.
 
 Frontend: vitest + React Testing Library for proposal editor and chat
-panel; Playwright e2e deferred to M6.
+panel; e2e smoke deferred to M6 (shipped there via puppeteer-core).
 
 ## Possible future extensions (explicitly OUT of the current milestones)
 
@@ -646,7 +646,25 @@ scenarios accumulate from M1 on.
    - Definition of done: no color literals outside primitives, no
      unschema'd route, no raw `String(error)` in the UI, no
      hand-maintained API types.
-6. **M6 — authentication, packaging & docs**: auth modes
-   (none/proxy/paperless — see Authentication) wired into the M5 user
-   menu, security hardening, production compose + Containerfile
-   polish, Playwright e2e smoke suite, user documentation.
+6. **M6 — authentication, packaging & docs** *(shipped)*: auth modes
+   (none/proxy/paperless — see Authentication) with signed-cookie
+   sessions and per-user paperless tokens, wired into the user menu +
+   login page; production compose (`deploy/production`) and hardened
+   Containerfile (non-root, healthcheck, /data volume); e2e smoke
+   suite (`frontend/scripts/e2e-smoke.mjs`, puppeteer-core against a
+   running instance — chosen over Playwright since the harness already
+   existed with zero new dependencies); documentation site (MkDocs
+   Material in `docs/`, published to GitHub Pages via Actions).
+
+Preceding M6, a full-codebase **architecture review** was applied:
+engine/domain split (`services/steps.py` = generic step queue,
+`services/pipeline.py` = document domain), atomic step claims and
+atomic proposal applies, the taxonomy registry
+(`app/paperless/taxonomy.py`) replacing six hand-rolled maps, one
+pagination helper, central domain-exception handlers, hot-path DB
+indices + a migration-chain-vs-models drift test, structural (not
+string-matched) transcript classification with `proposal_id` links,
+URL-backed list state, the background-location settings modal, a
+query-key registry sweep with one proposal-invalidation helper, typed
+payload field editors, SSE outage fallback, and a dependency diet
+(one icon system, no unused packages).

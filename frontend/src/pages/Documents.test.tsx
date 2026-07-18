@@ -67,7 +67,7 @@ describe("Documents", () => {
     await screen.findByText("Invoice 4-8");
 
     await userEvent.click(screen.getByRole("button", { name: "Select…" }));
-    await userEvent.click(screen.getByLabelText("select document 7"));
+    await userEvent.click(screen.getByLabelText("select scan_0001"));
     expect(screen.getByText("1 selected")).toBeInTheDocument();
 
     // Select all uses the cross-page id list from paperless (3 ids).

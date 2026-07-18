@@ -169,7 +169,7 @@ export default function Documents() {
             <li key={d.id} className="flex items-center gap-3 p-3">
               {ms.active && (
                 <Checkbox
-                  aria-label={`select document ${d.id}`}
+                  aria-label={`select ${d.title}`}
                   checked={ms.selected.has(d.id)}
                   onCheckedChange={() => ms.toggle(d.id)}
                 />

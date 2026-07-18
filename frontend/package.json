@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "tsc -b --noEmit",
-    "gen:api": "cd ../backend && uv run python -m app.openapi_export ../frontend/openapi.json && cd ../frontend && openapi-typescript openapi.json -o src/api/schema.gen.ts && rm openapi.json"
+    "gen:api": "cd ../backend && uv run python -m app.openapi_export ../frontend/openapi.json && cd ../frontend && openapi-typescript openapi.json -o src/api/schema.gen.ts && rm openapi.json",
+    "e2e": "node scripts/e2e-smoke.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
