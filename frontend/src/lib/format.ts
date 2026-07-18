@@ -70,12 +70,18 @@ export function getDateTimePrefs(): {
   timeZone: string; // "system" or an IANA zone
 } {
   const storedDate = localStorage.getItem(DATE_KEY);
+  const storedZone = localStorage.getItem(TZ_KEY);
   return {
     // Legacy "system" (device-locale) collapses to ISO — concrete
     // formats only, now that prefs are server-shared.
     date: storedDate === "eu" || storedDate === "us" ? storedDate : "iso",
     time: (localStorage.getItem(TIME_KEY) as TimePref) || "24h-seconds",
-    timeZone: localStorage.getItem(TZ_KEY) || "system",
+    // Concrete zones only; anything unset/legacy reads as the browser's
+    // zone (and becomes explicit on the next save).
+    timeZone:
+      storedZone && storedZone !== "system"
+        ? storedZone
+        : Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
 
@@ -215,4 +221,32 @@ export function matchingRule(e: {
   const label = MATCHING_LABELS[algo] ?? `algorithm ${algo}`;
   const cased = e.is_insensitive === false ? " (case-sensitive)" : "";
   return `${label} · “${e.match}”${cased}`;
+}
+
+/** What "use this browser's settings" would set: its IANA zone, the
+ * locale's day/month/year order, and its 12/24-hour convention. */
+export function browserDateTimeDefaults(): {
+  timeZone: string;
+  date: DatePref;
+  time: TimePref;
+} {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const parts = new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(2001, 11, 31));
+  const order = parts
+    .filter((p) => p.type === "year" || p.type === "month" || p.type === "day")
+    .map((p) => p.type)
+    .join("-");
+  const date: DatePref = order.startsWith("year")
+    ? "iso"
+    : order.startsWith("month")
+      ? "us"
+      : "eu";
+  const hour12 =
+    new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions()
+      .hour12 ?? false;
+  return { timeZone, date, time: hour12 ? "12h" : "24h" };
 }

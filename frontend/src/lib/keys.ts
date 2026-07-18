@@ -32,6 +32,7 @@ export const keys = {
   auth: () => ["auth"] as const,
   settings: () => ["settings"] as const,
   config: () => ["settings", "config"] as const,
+  webhookStatus: () => ["settings", "webhook"] as const,
   prefs: () => ["prefs"] as const,
 } as const;
 

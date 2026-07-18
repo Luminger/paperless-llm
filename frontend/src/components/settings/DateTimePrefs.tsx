@@ -2,8 +2,10 @@
 // examples, and a timezone list labeled with GMT offsets. Stored on
 // the server (shared workspace), cached locally for instant rendering.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { MonitorSmartphone } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
@@ -12,11 +14,11 @@ import { keys } from "../../lib/keys";
 import {
   DATE_PREFS,
   TIME_PREFS,
+  browserDateTimeDefaults,
   formatClock,
   formatDate,
   formatDateTime,
   getDateTimePrefs,
-  gmtOffset,
   setDateTimePrefs,
   timeZoneOptions,
   type DatePref,
@@ -56,7 +58,19 @@ export function DateTimePrefs() {
     save.mutate({ date, time, timeZone }); // persisted server-side
   };
   const zones = useMemo(timeZoneOptions, []);
-  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const browser = browserDateTimeDefaults();
+  const matchesBrowser =
+    prefs.timeZone === browser.timeZone &&
+    prefs.date === browser.date &&
+    // Seconds are a taste on top of the 12/24 convention — the browser
+    // can only speak to the convention.
+    prefs.time.startsWith(browser.time);
+  // The preview is a clock, not a snapshot.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <Card>
@@ -70,13 +84,7 @@ export function DateTimePrefs() {
             ariaLabel="timezone"
             value={prefs.timeZone}
             onValueChange={(v) => update(prefs.date, prefs.time, v)}
-            options={[
-              {
-                value: "system",
-                label: `Automatic — this browser's zone (${browserZone}, ${gmtOffset(browserZone)})`,
-              },
-              ...zones,
-            ]}
+            options={zones}
           />
           <Label className="font-normal text-muted-foreground">Date format</Label>
           <SimpleSelect
@@ -99,9 +107,25 @@ export function DateTimePrefs() {
             }))}
           />
         </div>
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={matchesBrowser}
+            title={
+              matchesBrowser
+                ? "Already matching this browser's settings"
+                : `Sets ${browser.timeZone}, ${browser.date === "iso" ? "Year-Month-Day" : browser.date === "eu" ? "Day.Month.Year" : "Month/Day/Year"}, ${browser.time === "12h" ? "12-hour" : "24-hour"}`
+            }
+            onClick={() => update(browser.date, browser.time, browser.timeZone)}
+          >
+            <MonitorSmartphone className="size-3.5" />
+            Use this browser's settings
+          </Button>
+        </div>
         <div className="rounded-lg border bg-muted/40 p-3 text-sm">
           <span className="text-muted-foreground">Right now: </span>
-          {formatDateTime(new Date().toISOString())}
+          {formatDateTime(now.toISOString())}
         </div>
         <p className="text-xs text-muted-foreground/70">
           Saved on the server — every browser and device shows the same

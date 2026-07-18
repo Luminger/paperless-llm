@@ -1536,3 +1536,27 @@ async def test_config_write_needs_admin(client, db):
         await client.put("/api/prefs", json={"agent_prompt_addition": "x"})
     ).status_code == 403
     assert (await client.put("/api/prefs", json={"date_format": "iso"})).status_code == 200
+
+
+@respx.mock
+async def test_webhook_status_detects_paperless_workflow(client):
+    """Deterministic: the paperless workflows API tells whether anything
+    actually posts to our webhook; unsupported instances stay unknown."""
+    route = respx.get(f"{PAPERLESS_URL}/api/workflows/")
+    route.mock(return_value=Response(200, json={"count": 1, "next": None, "results": [{
+        "id": 3, "name": "Send to paperless-llm", "enabled": True,
+        "actions": [{"type": 4, "webhook": {
+            "url": "http://apphost:8100/api/webhooks/paperless"}}],
+    }]}))
+    r = await client.get("/api/settings/webhook")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["workflow_found"] is True
+    assert body["workflow_name"] == "Send to paperless-llm"
+    assert body["workflows_url"].endswith("/workflows")
+
+    route.mock(return_value=Response(200, json={"count": 0, "next": None, "results": []}))
+    assert (await client.get("/api/settings/webhook")).json()["workflow_found"] is False
+
+    route.mock(return_value=Response(404))
+    assert (await client.get("/api/settings/webhook")).json()["workflow_found"] is None

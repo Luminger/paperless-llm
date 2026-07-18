@@ -14,7 +14,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.registry import DEFAULT_BASE_PROMPT
-from app.api.deps import require_admin
+from app.api.deps import get_paperless, require_admin
 from app.config import (
     EDITABLE_KEYS,
     Settings,
@@ -27,6 +27,7 @@ from app.config import (
 )
 from app.db.session import get_session
 from app.llm.ocr import OCR_PROMPT
+from app.paperless import PaperlessClient
 from app.services.audit import record
 from app.services.auth import CurrentUser
 from app.services.runtime_config import save_overrides
@@ -146,6 +147,48 @@ async def get_settings_overview() -> SettingsOut:
             agent_base=DEFAULT_BASE_PROMPT, ocr_base=OCR_PROMPT
         ),
     )
+
+
+class WebhookStatusOut(BaseModel):
+    """Deterministic webhook state: the app side (secret configured)
+    AND the paperless side (a workflow that actually posts to us)."""
+
+    secret_configured: bool
+    # None = this paperless doesn't expose the workflows API (or the
+    # app's credentials can't read it) — honestly unknown.
+    workflow_found: bool | None = None
+    workflow_name: str = ""
+    workflow_enabled: bool = True
+    # Where the super administrator manages workflows in paperless.
+    workflows_url: str
+
+
+@router.get("/settings/webhook")
+async def webhook_status(
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> WebhookStatusOut:
+    import json as _json
+
+    s = get_settings()
+    external = (s.paperless.external_url or s.paperless.base_url).rstrip("/")
+    out = WebhookStatusOut(
+        secret_configured=bool(s.webhook.secret),
+        workflows_url=f"{external}/workflows",
+    )
+    try:
+        flows = await paperless.list_workflows()
+    except Exception:  # noqa: BLE001 — older paperless / missing permission
+        return out
+    out.workflow_found = False
+    for flow in flows:
+        # Version-tolerant: a webhook action carries our URL somewhere in
+        # its serialized form.
+        if "/api/webhooks/paperless" in _json.dumps(flow.get("actions", [])):
+            out.workflow_found = True
+            out.workflow_name = str(flow.get("name", ""))
+            out.workflow_enabled = bool(flow.get("enabled", True))
+            break
+    return out
 
 
 # ----- the runtime override layer --------------------------------------

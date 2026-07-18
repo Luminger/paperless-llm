@@ -246,6 +246,13 @@ class PaperlessClient:
         data = await self._get_json("/api/documents/", **params)
         return Page[Document].model_validate(data)
 
+    async def list_workflows(self) -> list[dict]:
+        """Raw workflow objects — used to detect whether any workflow
+        actually posts to our webhook (kept version-tolerant: shapes
+        differ across paperless releases)."""
+        data = await self._get_json("/api/workflows/", page_size=100)
+        return list(data.get("results", []))
+
     async def get_document(self, doc_id: int) -> Document:
         return Document.model_validate(await self._get_json(f"/api/documents/{doc_id}/"))
 

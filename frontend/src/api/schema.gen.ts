@@ -814,6 +814,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Webhook Status */
+        get: operations["webhook_status_api_settings_webhook_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stats": {
         parameters: {
             query?: never;
@@ -1883,6 +1900,29 @@ export interface components {
             enabled: boolean;
             /** Redo Ocr */
             redo_ocr: boolean;
+        };
+        /**
+         * WebhookStatusOut
+         * @description Deterministic webhook state: the app side (secret configured)
+         *     AND the paperless side (a workflow that actually posts to us).
+         */
+        WebhookStatusOut: {
+            /** Secret Configured */
+            secret_configured: boolean;
+            /**
+             * Workflow Enabled
+             * @default true
+             */
+            workflow_enabled: boolean;
+            /** Workflow Found */
+            workflow_found?: boolean | null;
+            /**
+             * Workflow Name
+             * @default
+             */
+            workflow_name: string;
+            /** Workflows Url */
+            workflows_url: string;
         };
     };
     responses: never;
@@ -3243,6 +3283,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    webhook_status_api_settings_webhook_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookStatusOut"];
                 };
             };
         };
