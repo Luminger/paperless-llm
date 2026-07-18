@@ -165,10 +165,13 @@ class JobCreate(BaseModel):
     tag_id: int | None = None
     inbox: bool = False
     untagged_only: bool = False
+    all_documents: bool = False
     # Taxonomy scope: review these entities (one session per entity).
     entity_type: Literal["tag", "correspondent", "document_type"] | None = None
     entity_ids: list[int] | None = None
     redo_ocr: bool = False
+    # Re-OCR each document and STOP there — no analysis follows.
+    ocr_only: bool = False
     apply_policy: Literal["review", "auto"] = "review"
     instructions: str | None = None
 

@@ -53,7 +53,13 @@ async def create_job(
             instructions=body.instructions,
         )
         return JobOut.model_validate(job)
-    if not (body.document_ids or body.tag_id or body.inbox or body.untagged_only):
+    if not (
+        body.document_ids
+        or body.tag_id
+        or body.inbox
+        or body.untagged_only
+        or body.all_documents
+    ):
         raise HTTPException(422, "empty selection")
     job, ids = await create_job_service(
         db,
@@ -62,7 +68,9 @@ async def create_job(
         tag_id=body.tag_id,
         inbox=body.inbox,
         untagged_only=body.untagged_only,
+        all_documents=body.all_documents,
         redo_ocr=body.redo_ocr,
+        ocr_only=body.ocr_only,
         apply_policy=body.apply_policy,
         instructions=body.instructions,
     )

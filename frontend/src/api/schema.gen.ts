@@ -1027,6 +1027,11 @@ export interface components {
          */
         JobCreate: {
             /**
+             * All Documents
+             * @default false
+             */
+            all_documents: boolean;
+            /**
              * Apply Policy
              * @default review
              * @enum {string}
@@ -1045,6 +1050,11 @@ export interface components {
             inbox: boolean;
             /** Instructions */
             instructions?: string | null;
+            /**
+             * Ocr Only
+             * @default false
+             */
+            ocr_only: boolean;
             /**
              * Redo Ocr
              * @default false

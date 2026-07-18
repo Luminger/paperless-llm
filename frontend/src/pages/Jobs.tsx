@@ -50,11 +50,13 @@ export function scopeLabel(job: Job): string {
 }
 
 function NewJob({ onDone }: { onDone: () => void }) {
-  const [scope, setScope] = useState<"inbox" | "tag" | "untagged">("inbox");
+  const [mode, setMode] = useState<"analyze" | "ocr">("analyze");
+  const [scope, setScope] = useState<"inbox" | "tag" | "untagged" | "all">("inbox");
   const [tagId, setTagId] = useState<number | undefined>();
   const [redoOcr, setRedoOcr] = useState(false);
   const [auto, setAuto] = useState(false);
   const [instructions, setInstructions] = useState("");
+  const ocrOnly = mode === "ocr";
   const { data: tags } = useQuery({
     queryKey: keys.entities("tag"),
     queryFn: api.listTags,
@@ -74,14 +76,33 @@ function NewJob({ onDone }: { onDone: () => void }) {
           create.mutate({
             inbox: scope === "inbox",
             untagged_only: scope === "untagged",
+            all_documents: scope === "all",
             tag_id: scope === "tag" ? tagId : undefined,
-            redo_ocr: redoOcr,
+            redo_ocr: ocrOnly ? undefined : redoOcr,
+            ocr_only: ocrOnly || undefined,
             apply_policy: auto ? "auto" : "review",
             instructions: instructions.trim() || undefined,
           });
         }}
       >
         <p className="font-medium">New job</p>
+        <RadioGroup
+          value={mode}
+          onValueChange={(v) => {
+            setMode(v as typeof mode);
+            if (v === "analyze" && scope === "all") setScope("inbox");
+          }}
+          className="flex flex-wrap gap-4"
+        >
+          <Label className="flex items-center gap-1.5 font-normal">
+            <RadioGroupItem value="analyze" />
+            Analyze metadata
+          </Label>
+          <Label className="flex items-center gap-1.5 font-normal">
+            <RadioGroupItem value="ocr" />
+            Re-do OCR only (no analysis)
+          </Label>
+        </RadioGroup>
         <RadioGroup
           value={scope}
           onValueChange={(v) => setScope(v as typeof scope)}
@@ -92,6 +113,7 @@ function NewJob({ onDone }: { onDone: () => void }) {
               ["inbox", "Inbox documents"],
               ["untagged", "Untagged documents"],
               ["tag", "Documents with tag"],
+              ...(ocrOnly ? ([["all", "All documents"]] as const) : []),
             ] as const
           ).map(([key, label]) => (
             <Label key={key} className="flex items-center gap-1.5 font-normal">
@@ -113,22 +135,30 @@ function NewJob({ onDone }: { onDone: () => void }) {
           />
         )}
         <div className="flex flex-wrap gap-4 text-sm">
-          <Label className="flex items-center gap-1.5 font-normal">
-            <Checkbox
-              checked={redoOcr}
-              onCheckedChange={(v) => setRedoOcr(v === true)}
-            />
-            re-do OCR (each document gates for review)
-          </Label>
+          {!ocrOnly && (
+            <Label className="flex items-center gap-1.5 font-normal">
+              <Checkbox
+                checked={redoOcr}
+                onCheckedChange={(v) => setRedoOcr(v === true)}
+              />
+              re-do OCR first (each document gates for review)
+            </Label>
+          )}
           <Label className="flex items-center gap-1.5 font-normal">
             <Checkbox checked={auto} onCheckedChange={(v) => setAuto(v === true)} />
-            auto-apply proposals (journaled &amp; revertible)
+            {ocrOnly
+              ? "auto-apply the new text (journaled & revertible)"
+              : "auto-apply proposals (journaled & revertible)"}
           </Label>
         </div>
         <Textarea
           aria-label="job instructions"
           rows={2}
-          placeholder="Optional instructions for the agent…"
+          placeholder={
+            ocrOnly
+              ? "Optional OCR instructions (layout hints, language…)"
+              : "Optional instructions for the agent…"
+          }
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
         />
@@ -215,6 +245,11 @@ export default function Jobs() {
                   {j.kind === "webhook_analyze" && (
                     <Badge variant="secondary" className="ml-2 text-blue-700 dark:text-blue-300">
                       webhook
+                    </Badge>
+                  )}
+                  {j.kind === "bulk_ocr" && (
+                    <Badge variant="outline" className="ml-2">
+                      OCR only
                     </Badge>
                   )}
                   {j.params.apply_policy === "auto" && (

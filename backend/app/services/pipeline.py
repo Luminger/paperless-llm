@@ -54,6 +54,32 @@ async def _exec_ocr(
         "text": outcome.text,
         "previous_content": outcome.previous_content,
     }
+    # OCR-only + auto policy: no gate — the new text is written straight
+    # away (journaled, revertible) and the pipeline ends here.
+    if session.params.get("ocr_only") and session.params.get("apply_policy") == "auto":
+        text = (outcome.text or "").strip()
+        prev = (outcome.previous_content or "").strip()
+        if text and text != prev:
+            proposal = Proposal(
+                session_id=session.id,
+                step_id=step.id,
+                kind="replace_content",
+                agent_payload=dump_payload(
+                    ReplaceContent(document_id=session.entity_id, content=outcome.text)
+                ),
+                status=ProposalStatus.pending,
+                entity_type=session.entity_type,
+                entity_id=session.entity_id,
+            )
+            db.add(proposal)
+            await db.flush()
+            await apply_proposal(paperless, db, proposal)
+            resolution = "auto_applied"
+        else:
+            resolution = "unchanged"
+        step.result = {**step.result, "resolution": resolution, "edited": False}
+        session.params = {**session.params, "ocr_gate": resolution}
+        return None
     return AWAIT_USER  # the gate: user reviews the diff
 
 
@@ -281,6 +307,8 @@ async def _resolve_ocr(
     ).strip()
     step.result = {**step.result, "resolution": resolution, "edited": edited}
     session.params = {**session.params, "ocr_gate": resolution}
+    if session.params.get("ocr_only"):
+        return  # the pipeline ENDS at the gate — no analysis follows
     analysis_input: dict[str, Any] = {"gate": resolution}
     if session.params.get("instructions"):
         analysis_input["instructions"] = session.params["instructions"]

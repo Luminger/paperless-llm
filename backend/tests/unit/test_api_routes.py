@@ -474,6 +474,77 @@ async def test_ocr_gate_keep_existing(client, db):
     assert (await db.scalar(select(Proposal).where(Proposal.session_id == s.id))) is None
 
 
+@respx.mock
+async def test_ocr_only_gate_ends_pipeline(client, db):
+    """bulk_ocr sessions stop at the gate: resolving it writes content
+    but schedules NO analysis, and the session derives to done."""
+    from app.db.models import (
+        EntityType,
+        OcrResult,
+        SessionPhase,
+        Step,
+        StepKind,
+        StepState,
+    )
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"content": "ocr text"})
+    )
+
+    s = Session(
+        agent_kind=AgentKind.document,
+        entity_type=EntityType.document,
+        entity_id=7,
+        phase=SessionPhase.ocr_review,
+        params={"redo_ocr": True, "ocr_only": True},
+    )
+    db.add(s)
+    db.add(
+        OcrResult(
+            document_id=7, checksum="x", model="m", prompt_version=1,
+            pages=["ocr text"], text="ocr text",
+        )
+    )
+    await db.commit()
+    gate = Step(
+        session_id=s.id, kind=StepKind.ocr, state=StepState.awaiting_user,
+        input={"ocr_only": True},
+    )
+    db.add(gate)
+    await db.commit()
+
+    r = await client.post(
+        f"/api/sessions/{s.id}/steps/{gate.id}/resolve", json={"content": "ocr text"}
+    )
+    assert r.status_code == 200
+    assert await _steps(db, "analysis") == []
+    await db.refresh(s)
+    assert s.phase == SessionPhase.done
+
+
+@respx.mock
+async def test_ocr_only_job_creation(client, db):
+    """POST /api/jobs with ocr_only makes a bulk_ocr job whose steps are
+    OCR-only-marked, never followed by analysis."""
+    from sqlalchemy import select
+
+    from app.db.models import Job, Step, StepKind
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    r = await client.post("/api/jobs", json={"document_ids": [7], "ocr_only": True})
+    assert r.status_code == 200
+    assert r.json()["kind"] == "bulk_ocr"
+
+    job = await db.get(Job, r.json()["id"])
+    assert job.params["ocr_only"] is True
+    session = await db.scalar(select(Session).where(Session.job_id == job.id))
+    assert session.params["ocr_only"] is True
+    step = await db.scalar(select(Step).where(Step.session_id == session.id))
+    assert step.kind == StepKind.ocr
+    assert step.input["ocr_only"] is True
+
+
 def _entity_page(*items):
     return Response(200, json={"count": len(items), "next": None, "results": list(items)})
 

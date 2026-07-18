@@ -53,11 +53,12 @@ async def resolve_documents(
     tag_id: int | None = None,
     inbox: bool = False,
     untagged_only: bool = False,
+    all_documents: bool = False,
 ) -> tuple[list[int], dict[int, str]]:
     """Deliberately deterministic scopes only — explicit ids, a tag, the
-    inbox, or untagged. Jobs are never defined by a full-text search.
-    Returns (ids, titles) — titles feed human session names; ids never
-    surface in the UI."""
+    inbox, untagged, or the whole archive. Jobs are never defined by a
+    full-text search. Returns (ids, titles) — titles feed human session
+    names; ids never surface in the UI."""
     if document_ids:
         return list(dict.fromkeys(document_ids)), {}
     if inbox:
@@ -67,6 +68,8 @@ async def resolve_documents(
         page = await paperless.search_documents(tag_ids=inbox_tags, page_size=100)
     elif tag_id:
         page = await paperless.search_documents(tag_ids=[tag_id], page_size=100)
+    elif all_documents:
+        page = await paperless.search_documents(page_size=100)
     else:
         page = await paperless.search_documents(
             tags_none=True if untagged_only else None,
@@ -85,7 +88,9 @@ async def create_job(
     tag_id: int | None = None,
     inbox: bool = False,
     untagged_only: bool = False,
+    all_documents: bool = False,
     redo_ocr: bool = False,
+    ocr_only: bool = False,
     apply_policy: Literal["review", "auto"] = "review",
     instructions: str | None = None,
     skip_active: bool = True,
@@ -93,13 +98,21 @@ async def create_job(
     lane: QueueLane = QueueLane.batch,
     trigger: str | None = None,
 ) -> tuple[Job, list[int]]:
-    """Create the job + sessions + queue items. Returns (job, doc_ids)."""
+    """Create the job + sessions + queue items. Returns (job, doc_ids).
+
+    ``ocr_only``: the corpus-rehab job — each document is re-OCRed and
+    the pipeline STOPS there (gate in review mode, direct journaled
+    write in auto mode). No analysis follows."""
+    if ocr_only:
+        kind = "bulk_ocr"
+        redo_ocr = True
     ids, titles = await resolve_documents(
         paperless,
         document_ids=document_ids,
         tag_id=tag_id,
         inbox=inbox,
         untagged_only=untagged_only,
+        all_documents=all_documents,
     )
 
     skipped: list[int] = []
@@ -124,7 +137,9 @@ async def create_job(
         "tag_id": tag_id,
         "inbox": inbox,
         "untagged_only": untagged_only,
+        "all_documents": all_documents,
         "redo_ocr": redo_ocr,
+        "ocr_only": ocr_only,
         "apply_policy": apply_policy,
         "skipped_active": skipped,
     }
@@ -138,6 +153,8 @@ async def create_job(
                 titles[doc_id] = ""
     if inbox:
         label = "Inbox"
+    elif all_documents:
+        label = "All documents"
     elif untagged_only:
         label = "Untagged documents"
     elif tag_id:
@@ -170,6 +187,7 @@ async def create_job(
             job_id=job.id,
             params={
                 "redo_ocr": redo_ocr,
+                **({"ocr_only": True} if ocr_only else {}),
                 "apply_policy": apply_policy,
                 **({"instructions": instructions} if instructions else {}),
                 **({"trigger": trigger} if trigger else {}),
@@ -181,12 +199,19 @@ async def create_job(
         # Analysis steps carry the user's instructions in their INPUT —
         # the UI renders them as the user's own box on the turn. (An
         # OCR-first pipeline stamps them on the analysis step at gate
-        # resolution instead.)
-        step_input = (
-            {"instructions": instructions}
-            if instructions and not redo_ocr
-            else None
-        )
+        # resolution instead.) OCR-only steps take them as OCR guidance
+        # directly, and are marked so phase derivation knows the
+        # pipeline ENDS at the gate.
+        step_input: dict[str, Any] | None
+        if ocr_only:
+            step_input = {
+                "ocr_only": True,
+                **({"instructions": instructions} if instructions else {}),
+            }
+        elif instructions and not redo_ocr:
+            step_input = {"instructions": instructions}
+        else:
+            step_input = None
         steps.append(
             await create_step(
                 db, session, StepKind.ocr if redo_ocr else StepKind.analysis,
@@ -198,7 +223,7 @@ async def create_job(
         job_id=job.id, job_kind=kind, documents=ids, skipped_active=skipped,
         apply_policy=apply_policy, redo_ocr=redo_ocr,
         scope={"inbox": inbox, "tag_id": tag_id, "untagged_only": untagged_only,
-               "document_ids": document_ids},
+               "all_documents": all_documents, "document_ids": document_ids},
     )
     await db.commit()
     notify_steps(steps)

@@ -91,9 +91,15 @@ def _derive(steps: list[Step]) -> tuple[SessionPhase | None, SessionStatus, str 
                 StepState.succeeded: SessionPhase.ocr_review,
                 StepState.cancelled: SessionPhase.ocr_running,
             }[p.state]
-            # A succeeded+resolved gate means analysis follows/finished.
+            # A succeeded+resolved gate means analysis follows/finished
+            # — unless the step is marked OCR-only, where the pipeline
+            # deliberately ends at the gate.
             if p.state == StepState.succeeded and p.result.get("resolution"):
-                phase = SessionPhase.analyzing
+                phase = (
+                    SessionPhase.done
+                    if p.input.get("ocr_only")
+                    else SessionPhase.analyzing
+                )
         else:
             phase = {
                 StepState.pending: SessionPhase.queued,
