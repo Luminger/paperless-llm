@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.deps import AgentDeps
@@ -211,12 +211,45 @@ async def run_agent_turn(
                 "streaming part-tracking bug (pydantic-ai part_end_event "
                 "IndexError); re-running the turn without streaming"
             )
+            # The aborted attempt may already have executed tools —
+            # including a propose_* call. Those drafts have no transcript
+            # provenance (only the re-run's messages are persisted) and
+            # would trip the one-proposal-per-turn guard on the re-run,
+            # so discard them: the re-run re-proposes if still warranted.
+            for p in deps.emitted:
+                await db.delete(p)
+            deps.emitted.clear()
+            await db.flush()
             result = await _run(stream=False)
     except Exception:
-        # Keep any proposals drafted before the failure reviewable.
-        for p in deps.emitted:
-            p.status = ProposalStatus.pending
-        await db.commit()
+        # Keep any proposals drafted before the failure reviewable. A
+        # tool-level DB error may have poisoned the session — in that
+        # case commit raises PendingRollbackError; roll back and retry
+        # the promotion on a clean transaction. Whatever happens here,
+        # the ORIGINAL exception is the one that propagates.
+        draft_ids = [p.id for p in deps.emitted if p.id is not None]
+        try:
+            for p in deps.emitted:
+                p.status = ProposalStatus.pending
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            try:
+                if draft_ids:
+                    await db.execute(
+                        update(Proposal)
+                        .where(
+                            Proposal.id.in_(draft_ids),
+                            Proposal.status == ProposalStatus.draft,
+                        )
+                        .values(status=ProposalStatus.pending)
+                    )
+                    await db.commit()
+            except Exception:
+                log.exception(
+                    "could not promote draft proposals after turn failure"
+                )
+                await db.rollback()
         raise
 
     session.message_history = _dump_history(result.all_messages())

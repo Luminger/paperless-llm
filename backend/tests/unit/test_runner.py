@@ -340,3 +340,62 @@ def test_prompt_composition():
     assert DEFAULT_BASE_PROMPT not in tuned
     assert "review ONE tag" in tuned
     assert "Nur Deutsch." in tuned
+
+
+@respx.mock
+async def test_streaming_indexerror_fallback_discards_aborted_drafts(
+    db, paperless_client, monkeypatch
+):
+    """AUDIT BC-F1: the no-stream re-run must start clean. The aborted
+    streaming attempt may already have persisted a draft proposal via a
+    propose_* tool; reusing it would trip the one-proposal-per-turn
+    guard (or leak a proposal with no transcript provenance)."""
+    _mock_doc7()
+    session = await _make_session(db)
+
+    from app.config import get_settings
+    from app.db.models import EntityType, Proposal
+
+    # The fallback only exists on streaming profiles.
+    monkeypatch.setattr(get_settings().llm.agent, "supports_streaming", True)
+
+    inner = _scripted_agent(_propose_title_script("Fixed"))
+    calls = {"n": 0}
+
+    class FlakyAgent:
+        """First run: emits a draft (as a tool would), then dies with the
+        pydantic-ai part-tracker IndexError. Second run: delegates to a
+        real scripted agent."""
+
+        async def run(self, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                deps = kwargs["deps"]
+                p = Proposal(
+                    session_id=deps.session_id,
+                    step_id=deps.step_id,
+                    kind="update_document_metadata",
+                    agent_payload={"document_id": 7, "title": "aborted"},
+                    status=ProposalStatus.draft,
+                    entity_type=EntityType.document,
+                    entity_id=7,
+                )
+                deps.db.add(p)
+                await deps.db.flush()
+                deps.emitted.append(p)
+                raise IndexError("list index out of range")
+            return await inner.run(*args, **kwargs)
+
+    outcome = await run_agent_turn(
+        paperless_client, db, session, "go", agent=FlakyAgent()
+    )
+    assert calls["n"] == 2  # fallback actually re-ran
+
+    from sqlalchemy import select
+
+    proposals = list((await db.scalars(select(Proposal))).all())
+    # ONE proposal: the re-run's. The aborted attempt's draft is gone.
+    assert len(proposals) == 1
+    assert proposals[0].status == ProposalStatus.pending
+    assert proposals[0].agent_payload["title"] == "Fixed"
+    assert outcome.output == "Proposed a title fix."
