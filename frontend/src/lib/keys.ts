@@ -7,6 +7,7 @@ export const keys = {
   session: (id: number) => ["session", id] as const,
   sessionOcr: (id: number) => ["session-ocr", id] as const,
   proposals: () => ["proposals"] as const,
+  proposal: (id: number) => ["proposal", id] as const,
   revertCheck: (id: number) => ["revert-check", id] as const,
   documents: (filter?: object, page?: number) =>
     filter !== undefined
@@ -41,4 +42,23 @@ export function invalidateEntities(qc: QueryClient, type?: string) {
   if (type) qc.invalidateQueries({ queryKey: keys.entities(type) });
   else qc.invalidateQueries({ queryKey: ["entities"] });
   qc.invalidateQueries({ queryKey: keys.documents() });
+}
+
+/** Everything an apply/revert of a proposal can touch — proposals,
+ * the owning session, lists, stats, documents, and (for taxonomy
+ * proposals) the affected entity lists. One helper so no mutation
+ * hand-picks a subset and goes stale. */
+export function invalidateProposalEffects(
+  qc: QueryClient,
+  p?: { entity_type?: string | null } | null,
+) {
+  qc.invalidateQueries({ queryKey: ["proposal"] });
+  qc.invalidateQueries({ queryKey: keys.proposals() });
+  qc.invalidateQueries({ queryKey: ["session"] });
+  qc.invalidateQueries({ queryKey: keys.sessions() });
+  qc.invalidateQueries({ queryKey: keys.stats() });
+  qc.invalidateQueries({ queryKey: ["document"] });
+  qc.invalidateQueries({ queryKey: keys.documents() });
+  const t = p?.entity_type;
+  if (t && t !== "document") invalidateEntities(qc, t);
 }

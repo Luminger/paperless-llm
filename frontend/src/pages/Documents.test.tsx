@@ -19,6 +19,7 @@ const mocked = vi.mocked(api);
 
 const DOCS = {
   count: 2,
+  page_size: 25,
   all: [7, 12, 99],
   results: [
     { id: 7, title: "scan_0001", correspondent: null, document_type: null,

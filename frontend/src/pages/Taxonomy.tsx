@@ -1,7 +1,7 @@
 import { useState } from "react";
+import { InboxBadge } from "../components/StatusBadge";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -212,9 +212,9 @@ export default function Taxonomy() {
                     {e.name}
                   </Link>
                   {e.is_inbox_tag && (
-                    <Badge variant="secondary" className="ml-2 text-blue-700 dark:text-blue-300">
-                      inbox
-                    </Badge>
+                    <span className="ml-2 inline-flex">
+                      <InboxBadge />
+                    </span>
                   )}
                 </TableCell>
                 <TableCell className="text-muted-foreground">

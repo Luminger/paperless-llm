@@ -3,6 +3,12 @@
 // on hover, click navigates.
 
 import { Link } from "react-router-dom";
+import {
+  entityName,
+  isTaxonomyType,
+  useEntityList,
+  type TaxonomyType,
+} from "../../hooks/useTaxonomy";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,13 +31,6 @@ export const REF_TOKEN_RE =
 export function tokenizeRefs(md: string): string {
   return md.replace(REF_TOKEN_RE, (_m, type, id) => `[${type}](pllm://${type}/${id})`);
 }
-
-const LISTERS: Record<string, (() => Promise<{ id: number; name: string; document_count?: number | null }[]>) | undefined> = {
-  tag: api.listTags,
-  correspondent: api.listCorrespondents,
-  document_type: api.listDocumentTypes,
-  storage_path: api.listStoragePaths,
-};
 
 function Chip({
   to,
@@ -62,16 +61,13 @@ function Chip({
 }
 
 function TaxonomyChip({ type, id }: { type: string; id: number }) {
-  const { data } = useQuery({
-    queryKey: keys.entities(type),
-    queryFn: LISTERS[type]!,
-  });
+  const { data } = useEntityList(type as TaxonomyType);
   const entity = data?.find((e) => e.id === id);
   const typeLabel = type.replaceAll("_", " ");
   return (
     <Chip
       to={entityHref(type, id)}
-      label={entity?.name ?? (data ? "(unknown)" : "…")}
+      label={entityName(data, id)}
       tooltip={
         <span className="capitalize">
           {typeLabel}
@@ -98,7 +94,7 @@ function DocumentChip({ id }: { id: number }) {
 
 function ProposalChip({ id }: { id: number }) {
   const { data } = useQuery({
-    queryKey: ["proposal", id],
+    queryKey: keys.proposal(id),
     queryFn: () => api.getProposal(id),
   });
   return (
@@ -117,7 +113,7 @@ function ProposalChip({ id }: { id: number }) {
 export function RefChip({ type, id }: { type: string; id: number }) {
   if (type === "document") return <DocumentChip id={id} />;
   if (type === "proposal") return <ProposalChip id={id} />;
-  if (LISTERS[type]) return <TaxonomyChip type={type} id={id} />;
+  if (isTaxonomyType(type)) return <TaxonomyChip type={type} id={id} />;
   return <span>{`[[${type}:${id}]]`}</span>;
 }
 

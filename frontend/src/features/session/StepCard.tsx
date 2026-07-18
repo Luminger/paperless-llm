@@ -312,9 +312,13 @@ function TurnBody({
       item.tool_name?.startsWith("propose_") &&
       !item.tool_rejected
     ) {
-      const m = /\[\[proposal:(\d+)\]\]|Proposal #(\d+)/.exec(String(item.tool_result ?? ""));
+      // Structural link from the backend transcript; the positional
+      // cursor only covers legacy histories persisted before it existed.
       const p =
-        (m && mine.find((x) => x.id === Number(m[1] ?? m[2]))) || mine[cursor] || null;
+        (item.proposal_id != null &&
+          mine.find((x) => x.id === item.proposal_id)) ||
+        mine[cursor] ||
+        null;
       if (p && !consumed.has(p.id)) {
         consumed.add(p.id);
         cursor = mine.indexOf(p) + 1;

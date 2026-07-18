@@ -1,11 +1,10 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
 import { keys } from "../lib/keys";
-import { StatusBadge } from "../components/StatusBadge";
+import { OcrReviewBadge, StatusBadge } from "../components/StatusBadge";
 import { scopeLabel } from "./Jobs";
 
 export default function JobDetail() {
@@ -35,14 +34,10 @@ export default function JobDetail() {
       <ul className="divide-y rounded-lg border bg-card">
         {job.sessions.map((s) => (
           <li key={s.id} className="flex items-center gap-3 p-2.5 text-sm">
-            <span className="flex-1">{s.title || `Session #${s.id}`}</span>
+            <span className="flex-1">{s.title || "(untitled)"}</span>
             <span className="text-xs text-muted-foreground">{s.phase}</span>
             <StatusBadge status={s.status} />
-            {s.phase === "ocr_review" && (
-              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                OCR review needed
-              </Badge>
-            )}
+            {s.phase === "ocr_review" && <OcrReviewBadge />}
             <Link className="text-xs text-primary hover:underline" to={`/sessions/${s.id}`}>
               open
             </Link>

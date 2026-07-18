@@ -39,3 +39,43 @@ export function StatusBadge({ status }: { status: string }) {
     </Badge>
   );
 }
+
+/** Session badge: color follows the STATUS, text shows the PHASE. */
+export function SessionStatusBadge({
+  status,
+  phase,
+}: {
+  status: string;
+  phase?: string | null;
+}) {
+  const label =
+    phase && phase !== "done"
+      ? phase.replaceAll("_", " ")
+      : status === "idle"
+        ? "finished"
+        : status;
+  return (
+    <Badge
+      variant="secondary"
+      className={cn("capitalize", colors[status] ?? "bg-muted")}
+    >
+      {label}
+    </Badge>
+  );
+}
+
+export function OcrReviewBadge() {
+  return (
+    <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+      OCR review needed
+    </Badge>
+  );
+}
+
+export function InboxBadge({ children = "inbox" }: { children?: React.ReactNode }) {
+  return (
+    <Badge variant="secondary" className="text-blue-700 dark:text-blue-300">
+      {children}
+    </Badge>
+  );
+}

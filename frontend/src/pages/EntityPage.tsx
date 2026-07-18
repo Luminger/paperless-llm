@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
+import { InboxBadge } from "../components/StatusBadge";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
@@ -64,7 +66,7 @@ function EntityLink({
   list: EntityRef[] | undefined;
 }) {
   if (id == null) return <span className="text-muted-foreground/60">—</span>;
-  const name = list?.find((e) => e.id === id)?.name ?? (list ? "(unknown)" : "…");
+  const name = entityName(list, id);
   return (
     <Link className="text-primary hover:underline" to={entityHref(entityType, id)}>
       {name}
@@ -73,22 +75,7 @@ function EntityLink({
 }
 
 function DocumentFacts({ doc }: { doc: PaperlessDocument }) {
-  const { data: tags } = useQuery({
-    queryKey: keys.entities("tag"),
-    queryFn: api.listTags,
-  });
-  const { data: correspondents } = useQuery({
-    queryKey: keys.entities("correspondent"),
-    queryFn: api.listCorrespondents,
-  });
-  const { data: docTypes } = useQuery({
-    queryKey: keys.entities("document_type"),
-    queryFn: api.listDocumentTypes,
-  });
-  const { data: storagePaths } = useQuery({
-    queryKey: keys.entities("storage_path"),
-    queryFn: api.listStoragePaths,
-  });
+  const { tags, correspondents, docTypes, storagePaths } = useTaxonomyLists();
   return (
     <div className="flex gap-6">
       <img
@@ -155,9 +142,7 @@ function TaxonomyFacts({ entity }: { entity: EntityRef }) {
       </FactRow>
       {entity.is_inbox_tag && (
         <FactRow label="Inbox tag">
-          <Badge variant="secondary" className="text-blue-700 dark:text-blue-300">
-            yes
-          </Badge>
+          <InboxBadge>yes</InboxBadge>
         </FactRow>
       )}
     </div>

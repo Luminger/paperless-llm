@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { OcrReviewBadge, SessionStatusBadge } from "./StatusBadge";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -9,13 +10,6 @@ import { api, type Session } from "../api";
 import { keys } from "../lib/keys";
 import { Pager } from "./Pager";
 
-// Session badge color follows the STATUS; its text shows the PHASE.
-const statusColors: Record<string, string> = {
-  idle: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  running: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  failed: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-};
-
 function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
   const qc = useQueryClient();
   const archive = useMutation({
@@ -23,12 +17,6 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
       s.archived_at ? api.unarchiveSession(s.id) : api.archiveSession(s.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions() }),
   });
-  const phaseLabel =
-    s.phase && s.phase !== "done"
-      ? s.phase.replaceAll("_", " ")
-      : s.status === "idle"
-        ? "finished"
-        : s.status;
   return (
     <Card
       className={`p-3 transition-colors ${
@@ -45,11 +33,7 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
           )}
         </Link>
         <span className="flex shrink-0 items-center gap-2">
-          {s.phase === "ocr_review" && !s.archived_at && (
-            <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-              OCR review needed
-            </Badge>
-          )}
+          {s.phase === "ocr_review" && !s.archived_at && <OcrReviewBadge />}
           {s.proposal_count > 0 ? (
             <Badge variant="secondary" className="text-primary">
               {s.proposal_count} proposal{s.proposal_count > 1 ? "s" : ""}
@@ -61,12 +45,7 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
               </Badge>
             )
           )}
-          <Badge
-            variant="secondary"
-            className={`capitalize ${statusColors[s.status] ?? "bg-muted"}`}
-          >
-            {phaseLabel}
-          </Badge>
+          <SessionStatusBadge status={s.status} phase={s.phase} />
           <Button
             variant="ghost"
             size="sm"

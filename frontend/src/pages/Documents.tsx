@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEntityList } from "../hooks/useTaxonomy";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -50,18 +51,9 @@ export default function Documents() {
   const navigate = useNavigate();
   const ms = useMultiSelect();
 
-  const { data: tags } = useQuery({
-    queryKey: keys.entities("tag"),
-    queryFn: api.listTags,
-  });
-  const { data: correspondents } = useQuery({
-    queryKey: keys.entities("correspondent"),
-    queryFn: api.listCorrespondents,
-  });
-  const { data: docTypes } = useQuery({
-    queryKey: keys.entities("document_type"),
-    queryFn: api.listDocumentTypes,
-  });
+  const { data: tags } = useEntityList("tag");
+  const { data: correspondents } = useEntityList("correspondent");
+  const { data: docTypes } = useEntityList("document_type");
 
   const filters = {
     query: submitted || undefined,

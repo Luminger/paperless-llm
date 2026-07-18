@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { keys } from "../lib/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import type { TranscriptItem } from "../api";
 
@@ -131,8 +132,8 @@ export function useSessionEvents(sessionId: number) {
           });
         }
       }
-      qc.invalidateQueries({ queryKey: ["session", sessionId] });
-      qc.invalidateQueries({ queryKey: ["session-ocr", sessionId] });
+      qc.invalidateQueries({ queryKey: keys.session(sessionId) });
+      qc.invalidateQueries({ queryKey: keys.sessionOcr(sessionId) });
     };
     return () => es.close();
   }, [sessionId, qc]);

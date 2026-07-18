@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquareText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +10,7 @@ import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice } from "@/components/app/states";
 import { api, type EntityRef, type PaperlessDocument, type Proposal } from "../api";
-import { keys as qk } from "../lib/keys";
+import { keys as qk, invalidateProposalEffects } from "../lib/keys";
 import { formatDate } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
 import { errorMessage } from "../lib/errors";
@@ -77,7 +78,7 @@ function buildPayload(
 }
 
 const name = (list: EntityRef[] | undefined, id: number | null | undefined) =>
-  id == null ? "—" : (list?.find((e) => e.id === id)?.name ?? (list ? "(unknown)" : "…"));
+  id == null ? "—" : entityName(list, id);
 
 function Row({
   label,
@@ -191,19 +192,7 @@ function MetadataEditor({
     queryKey: qk.document(docId),
     queryFn: () => api.getDocument(docId),
   });
-  const { data: tags } = useQuery({ queryKey: qk.entities("tag"), queryFn: api.listTags });
-  const { data: correspondents } = useQuery({
-    queryKey: qk.entities("correspondent"),
-    queryFn: api.listCorrespondents,
-  });
-  const { data: docTypes } = useQuery({
-    queryKey: qk.entities("document_type"),
-    queryFn: api.listDocumentTypes,
-  });
-  const { data: storagePaths } = useQuery({
-    queryKey: qk.entities("storage_path"),
-    queryFn: api.listStoragePaths,
-  });
+  const { tags, correspondents, docTypes, storagePaths } = useTaxonomyLists();
   const [edited, setEdited] = useState<Desired | null>(null);
 
   const initial = useMemo(
@@ -546,12 +535,7 @@ export function ProposalCard({
   const [pending, setPending] = useState<Record<string, unknown> | null>(null);
   const [editorKey, setEditorKey] = useState(0);
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["proposal"] });
-    qc.invalidateQueries({ queryKey: qk.proposals() });
-    qc.invalidateQueries({ queryKey: ["session"] });
-    qc.invalidateQueries({ queryKey: ["document"] });
-  };
+  const invalidate = () => invalidateProposalEffects(qc, p);
   const resetEditor = () => {
     setPending(null);
     setEditorKey((k) => k + 1);

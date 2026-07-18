@@ -867,6 +867,11 @@ export interface components {
             all?: number[] | null;
             /** Count */
             count: number;
+            /**
+             * Page Size
+             * @default 25
+             */
+            page_size: number;
             /** Results */
             results: components["schemas"]["DocumentOut"][];
         };
@@ -950,8 +955,9 @@ export interface components {
         };
         /**
          * JobCreate
-         * @description Bulk job. Document set is deterministic: explicit ids, a tag,
-         *     the inbox, or all untagged documents — never a full-text search.
+         * @description Bulk job. The work set is deterministic: explicit document ids,
+         *     a tag, the inbox, all untagged documents — or a set of taxonomy
+         *     entities (entity_type + entity_ids) — never a full-text search.
          */
         JobCreate: {
             /**
@@ -962,6 +968,10 @@ export interface components {
             apply_policy: "review" | "auto";
             /** Document Ids */
             document_ids?: number[] | null;
+            /** Entity Ids */
+            entity_ids?: number[] | null;
+            /** Entity Type */
+            entity_type?: ("tag" | "correspondent" | "document_type") | null;
             /**
              * Inbox
              * @default false
@@ -1285,7 +1295,7 @@ export interface components {
          * ProposalStatus
          * @enum {string}
          */
-        ProposalStatus: "draft" | "pending" | "applied" | "superseded" | "no_change";
+        ProposalStatus: "draft" | "pending" | "applying" | "applied" | "superseded" | "no_change";
         /**
          * QueueLane
          * @description Two lanes so chat turns never wait behind bulk work.
@@ -1444,7 +1454,7 @@ export interface components {
          * SessionStatus
          * @enum {string}
          */
-        SessionStatus: "idle" | "running" | "failed" | "archived";
+        SessionStatus: "idle" | "running" | "failed";
         /** SettingsOut */
         SettingsOut: {
             /** Database */
@@ -1564,6 +1574,8 @@ export interface components {
              * @enum {string}
              */
             origin: "chat" | "pipeline";
+            /** Proposal Id */
+            proposal_id?: number | null;
             /**
              * Role
              * @enum {string}
