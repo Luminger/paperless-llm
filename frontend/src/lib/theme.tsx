@@ -9,27 +9,36 @@ const STORAGE_KEY = "pllm.theme";
 
 const ThemeContext = createContext<{
   theme: Theme;
+  /** Resolved: is dark mode active right now (incl. system)? */
+  dark: boolean;
   setTheme: (t: Theme) => void;
-}>({ theme: "system", setTheme: () => {} });
+}>({ theme: "system", dark: false, setTheme: () => {} });
 
-function apply(theme: Theme) {
-  const dark =
+function resolveDark(theme: Theme): boolean {
+  return (
     theme === "dark" ||
     (theme === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
+      window.matchMedia("(prefers-color-scheme: dark)").matches)
+  );
+}
+
+function apply(theme: Theme): boolean {
+  const dark = resolveDark(theme);
   document.documentElement.classList.toggle("dark", dark);
+  return dark;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(
     () => (localStorage.getItem(STORAGE_KEY) as Theme) || "system",
   );
+  const [dark, setDark] = useState(() => resolveDark(theme));
 
   useEffect(() => {
-    apply(theme);
+    setDark(apply(theme));
     if (theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => apply("system");
+    const onChange = () => setDark(apply("system"));
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, [theme]);
@@ -40,7 +49,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, dark, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );

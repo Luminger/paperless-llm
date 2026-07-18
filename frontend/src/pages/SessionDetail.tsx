@@ -43,10 +43,14 @@ export default function SessionDetail() {
   const { id } = useParams();
   const sessionId = Number(id);
   const qc = useQueryClient();
-  const { live } = useSessionEvents(sessionId);
+  const { live, connected } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: keys.session(sessionId),
     queryFn: () => api.getSession(sessionId),
+    // SSE is the primary update channel; when it is down (buffering
+    // reverse proxy, network hiccup) a slow poll keeps running
+    // sessions from appearing frozen forever.
+    refetchInterval: connected ? false : 10_000,
   });
 
   if (error) return <ErrorNotice error={error} />;
@@ -74,6 +78,11 @@ export default function SessionDetail() {
         </nav>
       )}
       <h1 className="mb-4 text-xl font-semibold tracking-tight">{s.title}</h1>
+      {!connected && (
+        <p className="mb-3 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+          Live updates unavailable — refreshing every 10 seconds instead.
+        </p>
+      )}
       {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
 
       <div className="space-y-3">

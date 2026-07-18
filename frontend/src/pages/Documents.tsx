@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { useEntityList } from "../hooks/useTaxonomy";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -42,12 +43,17 @@ function FilterSelect({
 }
 
 export default function Documents() {
-  const [query, setQuery] = useState("");
-  const [submitted, setSubmitted] = useState("");
-  const [tagId, setTagId] = useState<number | undefined>();
-  const [correspondentId, setCorrespondentId] = useState<number | undefined>();
-  const [docTypeId, setDocTypeId] = useState<number | undefined>();
-  const [page, setPage] = useState(1);
+  // Filters and page live in the URL: deep-linkable, refresh-proof.
+  const [submitted] = useUrlParam("q");
+  const [tagIdRaw] = useUrlNumber("tag");
+  const [correspondentIdRaw] = useUrlNumber("correspondent");
+  const [docTypeIdRaw] = useUrlNumber("type");
+  const [page, setPage] = useUrlNumber("page", 1);
+  const tagId = tagIdRaw || undefined;
+  const correspondentId = correspondentIdRaw || undefined;
+  const docTypeId = docTypeIdRaw || undefined;
+  const [query, setQuery] = useState(submitted);
+  const patchUrl = useUrlPatch();
   const navigate = useNavigate();
   const ms = useMultiSelect();
 
@@ -94,8 +100,7 @@ export default function Documents() {
               className="flex gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                setSubmitted(query);
-                setPage(1);
+                patchUrl({ q: query, page: null });
               }}
             >
               <Input
@@ -112,28 +117,19 @@ export default function Documents() {
               label="tag"
               value={tagId}
               options={tags}
-              onChange={(v) => {
-                setTagId(v);
-                setPage(1);
-              }}
+              onChange={(v) => patchUrl({ tag: v, page: null })}
             />
             <FilterSelect
               label="correspondent"
               value={correspondentId}
               options={correspondents}
-              onChange={(v) => {
-                setCorrespondentId(v);
-                setPage(1);
-              }}
+              onChange={(v) => patchUrl({ correspondent: v, page: null })}
             />
             <FilterSelect
               label="document type"
               value={docTypeId}
               options={docTypes}
-              onChange={(v) => {
-                setDocTypeId(v);
-                setPage(1);
-              }}
+              onChange={(v) => patchUrl({ type: v, page: null })}
             />
           </>
         }
@@ -190,7 +186,12 @@ export default function Documents() {
         </ul>
       )}
       <div className="mt-2 flex items-center justify-between">
-        <Pager page={page} pageSize={25} count={data?.count ?? 0} onPage={setPage} />
+        <Pager
+          page={page}
+          pageSize={data?.page_size ?? 25}
+          count={data?.count ?? 0}
+          onPage={setPage}
+        />
         {data && (
           <p className="text-xs text-muted-foreground">{data.count} documents</p>
         )}

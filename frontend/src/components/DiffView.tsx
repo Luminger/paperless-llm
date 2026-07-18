@@ -1,5 +1,6 @@
 import { useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
+import { useTheme } from "../lib/theme";
 
 type Mode = "side-by-side" | "unified";
 
@@ -18,6 +19,7 @@ export function DiffView({
   // Omit for read-only diffs (e.g. superseded OCR runs).
   onNewTextChange?: (t: string) => void;
 }) {
+  const { dark } = useTheme();
   const [mode, setMode] = useState<Mode>(
     () => (localStorage.getItem(MODE_KEY) as Mode) || "side-by-side",
   );
@@ -35,8 +37,11 @@ export function DiffView({
           <button
             key={m}
             onClick={() => switchMode(m)}
+            aria-pressed={mode === m}
             className={`rounded px-2 py-1 ${
-              mode === m ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600"
+              mode === m
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground"
             }`}
           >
             {m}
@@ -45,8 +50,11 @@ export function DiffView({
         {onNewTextChange && (
           <button
             onClick={() => setEditing(!editing)}
+            aria-pressed={editing}
             className={`ml-auto rounded px-2 py-1 ${
-              editing ? "bg-amber-600 text-white" : "bg-zinc-100 text-zinc-600"
+              editing
+                ? "bg-amber-600 text-white"
+                : "bg-muted text-muted-foreground"
             }`}
           >
             {editing ? "done editing" : "edit new text"}
@@ -62,10 +70,11 @@ export function DiffView({
           onChange={(e) => onNewTextChange(e.target.value)}
         />
       ) : (
-        <div className="max-h-96 overflow-auto rounded border border-zinc-200">
+        <div className="max-h-96 overflow-auto rounded border border-border">
           <ReactDiffViewer
             oldValue={oldText}
             newValue={newText}
+            useDarkTheme={dark}
             splitView={mode === "side-by-side"}
             leftTitle="Current content (paperless)"
             rightTitle="New content (OCR)"

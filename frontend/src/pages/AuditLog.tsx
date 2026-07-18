@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -172,8 +172,11 @@ const FILTERS = [
 ] as const;
 
 export default function AuditLog() {
-  const [page, setPage] = useState(1);
-  const [filter, setFilter] = useState<string>("");
+  const [page, setPage] = useUrlNumber("page", 1);
+  const [filter] = useUrlParam("kind");
+  const patchUrl = useUrlPatch();
+  // Filter changes reset the page in the SAME URL update.
+  const setFilter = (v: string) => patchUrl({ kind: v, page: null });
   const pageSize = 20;
   const { data, error } = useQuery({
     queryKey: keys.audit(filter, page),
@@ -190,10 +193,7 @@ export default function AuditLog() {
             key={f.key}
             size="sm"
             variant={filter === f.key ? "default" : "secondary"}
-            onClick={() => {
-              setFilter(f.key);
-              setPage(1);
-            }}
+            onClick={() => setFilter(f.key)}
           >
             {f.label}
           </Button>

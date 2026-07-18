@@ -12,6 +12,7 @@ vi.mock("../api", () => ({
     listDocumentTypes: vi.fn(),
     mergeCandidates: vi.fn(),
     analyzeEntity: vi.fn(),
+    createJob: vi.fn(),
     getSyncStatus: vi.fn(),
   },
 }));
@@ -48,8 +49,8 @@ describe("Taxonomy", () => {
     expect(screen.getByText("Versicherung")).toBeInTheDocument();
   });
 
-  it("multiselect: select all skips inbox, bulk analyze fires per entity", async () => {
-    mocked.analyzeEntity.mockResolvedValue({ id: 9 } as never);
+  it("multiselect: select all skips inbox, bulk analyze is ONE job", async () => {
+    mocked.createJob.mockResolvedValue({ id: 9 } as never);
     renderWithProviders(<Taxonomy />);
     await screen.findByText("Steuern");
 
@@ -60,9 +61,12 @@ describe("Taxonomy", () => {
     expect(screen.getByText("2 selected")).toBeInTheDocument(); // inbox skipped
 
     await userEvent.click(screen.getByRole("button", { name: /Analyze 2 tag/ }));
-    await waitFor(() => expect(mocked.analyzeEntity).toHaveBeenCalledTimes(2));
-    expect(mocked.analyzeEntity).toHaveBeenCalledWith("tag", 1);
-    expect(mocked.analyzeEntity).toHaveBeenCalledWith("tag", 3);
+    // One server-side job with the entity scope — never a POST loop.
+    await waitFor(() => expect(mocked.createJob).toHaveBeenCalledTimes(1));
+    expect(mocked.createJob).toHaveBeenCalledWith({
+      entity_type: "tag",
+      entity_ids: [1, 3],
+    });
   });
 
   it("multiselect can be cancelled", async () => {

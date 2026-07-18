@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useUrlParam } from "../hooks/useUrlState";
 import { InboxBadge } from "../components/StatusBadge";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -53,8 +53,13 @@ function CandidateRow({ c, onReview }: { c: MergeCandidate; onReview: () => void
 }
 
 export default function Taxonomy() {
-  const [type, setType] = useState<TypeKey>("tag");
-  const [filter, setFilter] = useState("");
+  const [typeRaw, setType] = useUrlParam("type", "tag");
+  const type = (["tag", "correspondent", "document_type"] as const).includes(
+    typeRaw as TypeKey,
+  )
+    ? (typeRaw as TypeKey)
+    : "tag";
+  const [filter, setFilter] = useUrlParam("name");
   const navigate = useNavigate();
   const ms = useMultiSelect();
 
@@ -85,14 +90,13 @@ export default function Taxonomy() {
   });
 
   const bulkAnalyze = useMutation({
-    mutationFn: async () => {
-      for (const id of ms.selected) {
-        await api.analyzeEntity(type, id);
-      }
-    },
-    onSuccess: () => {
+    // One server-side job (progress, cancellation, retries) — never a
+    // client-side POST loop with undefined partial-failure semantics.
+    mutationFn: () =>
+      api.createJob({ entity_type: type, entity_ids: [...ms.selected] }),
+    onSuccess: (job) => {
       ms.cancel();
-      navigate("/");
+      navigate(`/jobs/${job.id}`);
     },
   });
 

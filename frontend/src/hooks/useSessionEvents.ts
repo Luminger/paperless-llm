@@ -107,9 +107,18 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
 export function useSessionEvents(sessionId: number) {
   const qc = useQueryClient();
   const [live, setLive] = useState<Record<number, LiveActivity>>({});
+  // False while the EventSource is failing — surfaces "live updates
+  // unavailable" (buffering reverse proxies are a classic self-hosting
+  // misconfiguration); consumers fall back to polling.
+  const [connected, setConnected] = useState(true);
   useEffect(() => {
     if (!Number.isFinite(sessionId)) return;
+    // A new session means new step ids: stale live state must not leak.
+    setLive({});
+    setConnected(true);
     const es = new EventSource(`/api/sessions/${sessionId}/events`);
+    es.onopen = () => setConnected(true);
+    es.onerror = () => setConnected(false);
     es.onmessage = (raw) => {
       let ev: ProgressEvent = {};
       try {
@@ -137,5 +146,5 @@ export function useSessionEvents(sessionId: number) {
     };
     return () => es.close();
   }, [sessionId, qc]);
-  return { live };
+  return { live, connected };
 }

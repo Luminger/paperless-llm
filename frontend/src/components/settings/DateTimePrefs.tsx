@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { api } from "../../api";
+import { keys } from "../../lib/keys";
 import {
   DATE_PREFS,
   TIME_PREFS,
@@ -15,9 +16,10 @@ import {
   type TimePref,
 } from "../../lib/format";
 
-/** Client-side preference (stored locally, like the theme): how dates
- * and times render everywhere in the app. */
+/** Server-persisted preference (localStorage is only a warm cache):
+ * how dates and times render everywhere in the app. */
 export function DateTimePrefs() {
+  const qc = useQueryClient();
   const [prefs, setPrefs] = useState(getDateTimePrefs);
   const save = useMutation({
     mutationFn: (p: { date: DatePref; time: TimePref; timeZone: string }) =>
@@ -26,6 +28,9 @@ export function DateTimePrefs() {
         time_format: p.time,
         time_zone: p.timeZone,
       }),
+    // The prefs cache feeds other consumers (PromptTuning shares the
+    // same PrefsOut) — keep it honest.
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.prefs() }),
   });
   const update = (date: DatePref, time: TimePref, timeZone: string) => {
     setDateTimePrefs(date, time, timeZone);   // instant, local cache

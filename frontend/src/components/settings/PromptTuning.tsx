@@ -5,7 +5,7 @@
 // flowing until the user really forks the prompt.
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,8 +80,10 @@ export function PromptTuning({
 }) {
   const { data: prefs } = useQuery({ queryKey: keys.prefs(), queryFn: api.getPrefs });
   const [draft, setDraft] = useState<Record<string, string> | null>(null);
+  const qc = useQueryClient();
   const save = useMutation({
     mutationFn: (body: Record<string, string>) => api.putPrefs(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.prefs() }),
   });
   if (!prefs) return null;
 

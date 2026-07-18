@@ -1,4 +1,11 @@
-import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import {
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  type Location,
+} from "react-router-dom";
 import { CircleUser, Monitor, Moon, Settings2, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,20 +79,24 @@ const SECTION_VALUES = ["preferences", "prompts", "system"] as const;
 
 export default function App() {
   // Settings is a routable modal: /settings opens it, the section
-  // travels in the #fragment (/settings#prompts). Closing returns to
-  // the page the user came from (or home on direct entry).
+  // travels in the #fragment (/settings#prompts). The page the user
+  // came from stays MOUNTED underneath (backgroundLocation pattern:
+  // <Routes> renders the remembered background while the URL shows
+  // /settings) — open/close never resets list state.
   const location = useLocation();
   const navigate = useNavigate();
+  const state = location.state as { background?: Location } | null;
+  const background = state?.background;
   const settingsOpen = location.pathname === "/settings";
   const hash = location.hash.replace("#", "");
   const section: SettingsSection = (SECTION_VALUES as readonly string[]).includes(hash)
     ? (hash as SettingsSection)
     : "preferences";
   const openSettings = () =>
-    navigate("/settings", { state: { from: location.pathname + location.search } });
+    navigate("/settings", { state: { background: location } });
   const closeSettings = () => {
-    const from = (location.state as { from?: string } | null)?.from;
-    navigate(from ?? "/");
+    if (background) navigate(-1);
+    else navigate("/");
   };
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -116,7 +127,7 @@ export default function App() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">
-        <Routes>
+        <Routes location={(settingsOpen && background) || location}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           {/* Proposals live on their session's timeline; old links redirect. */}
@@ -128,7 +139,8 @@ export default function App() {
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/log" element={<AuditLog />} />
-          {/* Backdrop for the settings modal on direct entry. */}
+          {/* Backdrop for the settings modal on DIRECT entry only
+              (in-app opens keep the origin page as background). */}
           <Route path="/settings" element={<Dashboard />} />
         </Routes>
       </main>
