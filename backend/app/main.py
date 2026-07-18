@@ -37,6 +37,13 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     get_settings().data_dir.mkdir(parents=True, exist_ok=True)
     await run_migrations()
+    # Config layering: UI overrides from the DB become active, and any
+    # config-file value shadowed by the environment gets called out.
+    from app.config import warn_env_file_collisions
+    from app.services.runtime_config import init_from_db
+
+    await init_from_db()
+    warn_env_file_collisions()
     stats = await recover()
     if any(stats.values()):
         log.warning("startup recovery: %s", stats)

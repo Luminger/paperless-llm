@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.db.models import Base
+# Unit tests must not read the developer's local paperless-llm.toml —
+# the config-file layer is exercised explicitly where it matters.
+os.environ.setdefault("PAPERLESS_LLM_CONFIG", "/nonexistent/paperless-llm.toml")
+
+from app.db.models import Base  # noqa: E402
 
 pytest_plugins = ["tests.paperless_fixtures"]
 

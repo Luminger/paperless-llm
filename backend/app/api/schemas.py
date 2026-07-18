@@ -297,6 +297,7 @@ class MetaOut(BaseModel):
 
 class AuthMeOut(BaseModel):
     user: str | None = None
+    role: Literal["admin", "user"] = "user"
 
 
 class HealthOut(BaseModel):

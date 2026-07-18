@@ -1,8 +1,18 @@
 """Application configuration.
 
-Layered: defaults < TOML file (``PAPERLESS_LLM_CONFIG``, default
-``./paperless-llm.toml``) < environment variables (``PLLM_`` prefix,
-``__`` as nested delimiter, e.g. ``PLLM_LLM__AGENT__BASE_URL``).
+Layered (first wins): environment variables (``PLLM_`` prefix, ``__``
+as nested delimiter) > runtime overrides set in the Settings UI
+(DB-persisted, whitelisted keys only) > TOML file
+(``PAPERLESS_LLM_CONFIG``, default ``./paperless-llm.toml``) >
+defaults.
+
+Environment variables are authoritative: a key set there cannot be
+overridden by the config file (the startup log warns about the
+shadowed value) or the UI (the key shows as locked). Only a curated
+whitelist is UI-editable at all — anything whose misconfiguration
+could brick the app (paperless connection, database, auth) stays
+file/env-only, because a broken value there would take down the very
+UI needed to fix it.
 
 Every serving-setup quirk (image limits, concurrency, streaming support,
 thinking mode, sampling) is configuration here — never a hardcode.
@@ -120,6 +130,10 @@ class PaperlessConfig(BaseModel):
     username: str = ""
     password: str = ""
     timeout_seconds: float = 30.0
+    # TLS certificate/host verification for the paperless connection.
+    # On by default; turning it off is for self-signed setups and is
+    # deliberately NOT UI-editable (config/env only).
+    verify_tls: bool = True
 
 
 class AuthConfig(BaseModel):
@@ -194,8 +208,14 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Priority (first wins): init kwargs > env > TOML file > defaults.
-        return (init_settings, env_settings, _TomlSource(settings_cls))
+        # Priority (first wins): init kwargs > env > UI overrides (DB)
+        # > TOML file > defaults.
+        return (
+            init_settings,
+            env_settings,
+            _OverridesSource(settings_cls),
+            _TomlSource(settings_cls),
+        )
 
 
 class _TomlSource(PydanticBaseSettingsSource):
@@ -215,11 +235,134 @@ class _TomlSource(PydanticBaseSettingsSource):
         return dict(self._data)
 
 
+# ----- runtime overrides (the Settings UI's layer) ---------------------
+
+# Dotted key -> raw value, e.g. {"llm.agent.model": "qwen3.6-27b"}.
+# Loaded from the DB at startup, replaced on every UI save.
+_runtime_overrides: dict[str, object] = {}
+
+
+def set_runtime_overrides(values: dict[str, object]) -> None:
+    global _runtime_overrides
+    _runtime_overrides = dict(values)
+    reset_settings_cache()
+
+
+def runtime_overrides() -> dict[str, object]:
+    return dict(_runtime_overrides)
+
+
+def _nest(flat: dict[str, object]) -> dict:
+    out: dict = {}
+    for dotted, value in flat.items():
+        node = out
+        parts = dotted.split(".")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = value
+    return out
+
+
+def _flatten(data: dict, prefix: str = "") -> dict[str, object]:
+    out: dict[str, object] = {}
+    for k, v in data.items():
+        dotted = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(_flatten(v, f"{dotted}."))
+        else:
+            out[dotted] = v
+    return out
+
+
+class _OverridesSource(PydanticBaseSettingsSource):
+    """UI-set values, below env, above the config file."""
+
+    def __init__(self, settings_cls: type[BaseSettings]) -> None:
+        super().__init__(settings_cls)
+        self._data = _nest(_runtime_overrides)
+
+    def get_field_value(self, field, field_name):  # type: ignore[override]
+        return self._data.get(field_name), field_name, False
+
+    def __call__(self) -> dict:
+        return dict(self._data)
+
+
+# ----- source inspection (who set what) --------------------------------
+
+
+def env_provided_keys() -> set[str]:
+    """Dotted keys the environment sets (PLLM_LLM__AGENT__MODEL ->
+    "llm.agent.model"). These are locked everywhere else."""
+    out = set()
+    for k in os.environ:
+        if k.startswith("PLLM_") and k != "PLLM_":
+            out.add(k[len("PLLM_"):].lower().replace("__", "."))
+    return out
+
+
+def file_provided_keys() -> set[str]:
+    return set(_flatten(_TomlSource(Settings)._data))
+
+
+def warn_env_file_collisions() -> list[str]:
+    """Precedence is environment > config file; when the file sets a key
+    the environment also sets, the file value silently loses — except it
+    must not be silent. Called at startup."""
+    import logging
+
+    shadowed = sorted(env_provided_keys() & file_provided_keys())
+    for key in shadowed:
+        logging.getLogger(__name__).warning(
+            "config file value for %r is ignored — the environment variable "
+            "sets it (precedence: environment > settings UI > config file)",
+            key,
+        )
+    return shadowed
+
+
+# ----- the UI-editable whitelist ---------------------------------------
+
+# Keys the Settings UI may override at runtime. Deliberately excludes
+# everything whose misconfiguration would take the app down with no way
+# to recover from the UI (paperless connection, database, auth, worker
+# pool sizes fixed at startup).
+EDITABLE_KEYS: tuple[str, ...] = (
+    "llm.agent.base_url",
+    "llm.agent.model",
+    "llm.agent.api_key",
+    "llm.agent.max_concurrent",
+    "llm.agent.supports_streaming",
+    "llm.agent.thinking",
+    "llm.agent.max_input_tokens",
+    "llm.agent.max_tool_iterations",
+    "llm.ocr.base_url",
+    "llm.ocr.model",
+    "llm.ocr.api_key",
+    "llm.ocr.max_images_per_request",
+    "llm.ocr.max_pages",
+    "llm.ocr.render_dpi",
+    "llm.embeddings.base_url",
+    "llm.embeddings.model",
+    "llm.embeddings.api_key",
+    "llm.reranker.base_url",
+    "llm.reranker.model",
+    "llm.reranker.api_key",
+    "queue.auto_continuation_limit",
+    "webhook.redo_ocr",
+    "webhook.apply_policy",
+)
+
+
+def is_secret_key(key: str) -> bool:
+    return key.rsplit(".", 1)[-1] in ("api_key", "token", "password", "secret")
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
 
 
 def reset_settings_cache() -> None:
-    """For tests."""
+    """For tests and after runtime-override changes."""
     get_settings.cache_clear()

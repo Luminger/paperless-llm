@@ -73,6 +73,7 @@ class PaperlessClient:
         *,
         username: str = "",
         password: str = "",
+        verify_tls: bool = True,
     ):
         self._username = username
         self._password = password
@@ -82,6 +83,9 @@ class PaperlessClient:
             headers={"Authorization": f"Token {token}"} if token else {},
             timeout=timeout,
             follow_redirects=True,
+            # Self-signed paperless setups can opt out of verification
+            # ([paperless] verify_tls = false) — on by default.
+            verify=verify_tls,
         )
 
     async def aclose(self) -> None:

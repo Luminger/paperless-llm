@@ -17,6 +17,7 @@ from app.services.auth import (
     CurrentUser,
     make_cookie,
     parse_cookie,
+    resolve_role,
     session_secret,
     validate_paperless_credentials,
 )
@@ -39,7 +40,10 @@ async def resolve_user(request: Request) -> CurrentUser | None:
 @router.get("/me")
 async def me(request: Request) -> AuthMeOut:
     user = await resolve_user(request)
-    return AuthMeOut(user=user.name if user else None)
+    return AuthMeOut(
+        user=user.name if user else None,
+        role=user.role if user else "user",
+    )
 
 
 @router.post("/login")
@@ -57,7 +61,8 @@ async def login(
             401,
             {"code": "bad_credentials", "message": "invalid username or password"},
         )
-    user = CurrentUser(name=body.username, paperless_token=token)
+    role = await resolve_role(body.username)
+    user = CurrentUser(name=body.username, paperless_token=token, role=role)
     response.set_cookie(
         COOKIE_NAME,
         make_cookie(user, await session_secret()),
@@ -66,9 +71,9 @@ async def login(
         samesite="lax",
         path="/",
     )
-    await record(db, "auth", "login", user=body.username)
+    await record(db, "auth", "login", user=body.username, role=role)
     await db.commit()
-    return AuthMeOut(user=user.name)
+    return AuthMeOut(user=user.name, role=user.role)
 
 
 @router.post("/logout")

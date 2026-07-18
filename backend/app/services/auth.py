@@ -36,9 +36,17 @@ _secret_cache: str | None = None
 @dataclass(frozen=True)
 class CurrentUser:
     name: str
-    # The user's own paperless token (paperless mode) — their applied
-    # changes run under THEIR paperless identity.
+    # The user's own paperless token — their applied changes run under
+    # THEIR paperless identity.
     paperless_token: str | None = None
+    # "admin" | "user". Derived from paperless at login time: whoever
+    # holds superuser rights THERE administers this app. Carried in the
+    # signed cookie for the session's lifetime.
+    role: str = "user"
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
 
 
 async def session_secret() -> str:
@@ -67,7 +75,7 @@ def make_cookie(user: CurrentUser, secret: str) -> str:
     exp = int(time.time()) + get_settings().auth.session_hours * 3600
     payload = base64.urlsafe_b64encode(
         json.dumps(
-            {"u": user.name, "t": user.paperless_token, "exp": exp}
+            {"u": user.name, "t": user.paperless_token, "r": user.role, "exp": exp}
         ).encode()
     ).decode()
     return f"{payload}.{_sign(payload.encode(), secret)}"
@@ -90,7 +98,12 @@ def parse_cookie(value: str, secret: str) -> CurrentUser | None:
     if not isinstance(name, str) or not name:
         return None
     token = data.get("t")
-    return CurrentUser(name=name, paperless_token=token if isinstance(token, str) else None)
+    role = data.get("r")
+    return CurrentUser(
+        name=name,
+        paperless_token=token if isinstance(token, str) else None,
+        role="admin" if role == "admin" else "user",
+    )
 
 
 async def validate_paperless_credentials(
@@ -114,3 +127,41 @@ async def validate_paperless_credentials(
         return None
     token = resp.json().get("token")
     return token if isinstance(token, str) and token else None
+
+
+async def resolve_role(username: str) -> str:
+    """Ask paperless (via the app's background credentials) whether this
+    user holds superuser rights — permissions decide, not the account
+    name. A plain user cannot query their own permissions (/api/users/
+    and /api/ui_settings/ 403 without extra grants — verified against a
+    live instance), so the lookup runs under the app's own token; if
+    THAT lacks the rights, everyone is a regular user and the log says
+    why."""
+    from app.paperless import PaperlessClient
+
+    cfg = get_settings().paperless
+    try:
+        async with PaperlessClient(
+            cfg.base_url, cfg.token, username=cfg.username,
+            password=cfg.password, verify_tls=cfg.verify_tls,
+        ) as client:
+            data = await client._get_json(  # noqa: SLF001 — same package, thin proxy
+                "/api/users/", username__iexact=username, page_size=2
+            )
+    except Exception as e:  # noqa: BLE001 — degrade to non-admin, loudly
+        log.warning(
+            "cannot determine admin status for %r via paperless "
+            "(/api/users/ failed: %r) — treating as regular user. The "
+            "app's background credentials must belong to a paperless "
+            "superuser for role resolution to work.",
+            username, e,
+        )
+        return "user"
+    matches = [
+        u for u in data.get("results", [])
+        if str(u.get("username", "")).lower() == username.lower()
+    ]
+    if not matches:
+        log.warning("paperless knows no user %r during role resolution", username)
+        return "user"
+    return "admin" if matches[0].get("is_superuser") else "user"

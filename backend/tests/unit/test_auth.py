@@ -49,12 +49,19 @@ async def test_login_flow(client, respx_mock, monkeypatch):
             else httpx.Response(400, json={})
         )
     )
+    # Role lookup runs under the app's own credentials.
+    respx_mock.get("http://paperless.test/api/users/").mock(
+        return_value=httpx.Response(200, json={"count": 1, "next": None, "results": [
+            {"id": 2, "username": "simon", "is_superuser": True},
+        ]})
+    )
     get_settings().paperless.base_url = "http://paperless.test"
+    get_settings().paperless.token = "app-token"  # role lookup runs with this
     # No cookie: protected routes 401, me shows nobody, open routes stay open.
     r = await client.get("/api/stats")
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "unauthorized"
-    assert (await client.get("/api/auth/me")).json() == {"user": None}
+    assert (await client.get("/api/auth/me")).json() == {"user": None, "role": "user"}
     assert (await client.get("/api/health")).status_code == 200
     # Bad credentials rejected.
     r = await client.post("/api/auth/login", json={"username": "evil", "password": "x"})
@@ -62,9 +69,30 @@ async def test_login_flow(client, respx_mock, monkeypatch):
     # Good credentials: cookie set, protected routes open.
     r = await client.post("/api/auth/login", json={"username": "simon", "password": "pw"})
     assert r.status_code == 200
-    assert r.json() == {"user": "simon"}
+    assert r.json() == {"user": "simon", "role": "admin"}
     assert (await client.get("/api/stats")).status_code == 200
     assert (await client.get("/api/auth/me")).json()["user"] == "simon"
     # Logout clears the cookie.
     await client.post("/api/auth/logout")
     assert (await client.get("/api/stats")).status_code == 401
+
+
+async def test_role_falls_back_to_user_on_lookup_failure(
+    client, respx_mock, monkeypatch, caplog
+):
+    """Background token can't read /api/users/ -> everyone is a regular
+    user, and the log names the fix (superuser background credentials)."""
+    from app.services import auth as auth_service
+
+    monkeypatch.setattr(auth_service, "_secret_cache", "test-secret")
+    respx_mock.post("http://paperless.test/api/token/").mock(
+        return_value=httpx.Response(200, json={"token": "user-token"})
+    )
+    respx_mock.get("http://paperless.test/api/users/").mock(
+        return_value=httpx.Response(403, json={})
+    )
+    get_settings().paperless.base_url = "http://paperless.test"
+    r = await client.post("/api/auth/login", json={"username": "simon", "password": "pw"})
+    assert r.status_code == 200
+    assert r.json() == {"user": "simon", "role": "user"}
+    assert "cannot determine admin status" in caplog.text

@@ -60,6 +60,7 @@ def _paperless_client() -> PaperlessClient:
     return PaperlessClient(
         s.base_url, s.token,
         timeout=s.timeout_seconds, username=s.username, password=s.password,
+        verify_tls=s.verify_tls,
     )
 
 

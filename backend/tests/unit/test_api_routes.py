@@ -38,7 +38,7 @@ async def client(db, paperless_client):
     app.dependency_overrides[get_paperless] = lambda: paperless_client
     # Routes are exercised as an authenticated user; the login flow
     # itself is covered in test_auth.py.
-    app.dependency_overrides[require_user] = lambda: CurrentUser(name="test")
+    app.dependency_overrides[require_user] = lambda: CurrentUser(name="test", role="admin")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -1462,3 +1462,77 @@ async def test_entity_scope_creates_one_job_with_sessions(client, respx_mock, db
     from app.db.models import Session as Sess
     sessions = (await db.scalars(select(Sess).where(Sess.job_id == job["id"]))).all()
     assert [s.title for s in sessions] == ["alpha", "beta"]
+
+
+async def test_config_rows_and_admin_override(client, db, monkeypatch):
+    """The runtime config layer: rows carry source + lock state; admin
+    writes validate, persist, and refuse env-locked keys."""
+    from app.config import get_settings, set_runtime_overrides
+
+    set_runtime_overrides({})
+    r = await client.get("/api/settings/config")
+    assert r.status_code == 200
+    rows = {row["key"]: row for row in r.json()}
+    assert rows["llm.agent.model"]["source"] == "default"
+    assert rows["llm.agent.api_key"]["secret"] is True
+    assert rows["llm.agent.api_key"]["value"] is None
+
+    # UI override wins over default and survives as source "ui".
+    r = await client.put(
+        "/api/settings/config",
+        json={"values": {"llm.agent.model": "other-model",
+                          "queue.auto_continuation_limit": 3}},
+    )
+    assert r.status_code == 200
+    rows = {row["key"]: row for row in r.json()}
+    assert rows["llm.agent.model"] == rows["llm.agent.model"] | {
+        "value": "other-model", "source": "ui"}
+    assert get_settings().llm.agent.model == "other-model"
+    assert get_settings().queue.auto_continuation_limit == 3
+
+    # Bad value: rejected, nothing changes.
+    r = await client.put(
+        "/api/settings/config",
+        json={"values": {"queue.auto_continuation_limit": "banana"}},
+    )
+    assert r.status_code == 422
+    assert get_settings().queue.auto_continuation_limit == 3
+
+    # Env-locked key: refused with a clear code.
+    monkeypatch.setenv("PLLM_LLM__AGENT__MODEL", "env-model")
+    r = await client.put(
+        "/api/settings/config", json={"values": {"llm.agent.model": "x"}}
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "locked_by_environment"
+    r = await client.get("/api/settings/config")
+    row = next(x for x in r.json() if x["key"] == "llm.agent.model")
+    assert row["source"] == "environment" and row["editable"] is False
+
+    # Non-whitelisted key: never editable (recovery safety).
+    monkeypatch.delenv("PLLM_LLM__AGENT__MODEL")
+    r = await client.put(
+        "/api/settings/config", json={"values": {"paperless.base_url": "http://x"}}
+    )
+    assert r.status_code == 422
+    set_runtime_overrides({})
+
+
+async def test_config_write_needs_admin(client, db):
+    """Non-admins can read the config rows but not change them."""
+    from app.api.deps import require_user
+    from app.services.auth import CurrentUser
+
+    client._transport.app.dependency_overrides[require_user] = lambda: CurrentUser(
+        name="clerk", role="user"
+    )
+    assert (await client.get("/api/settings/config")).status_code == 200
+    r = await client.put(
+        "/api/settings/config", json={"values": {"llm.agent.model": "x"}}
+    )
+    assert r.status_code == 403
+    # Prompt tuning is admin-only too; display prefs are not.
+    assert (
+        await client.put("/api/prefs", json={"agent_prompt_addition": "x"})
+    ).status_code == 403
+    assert (await client.put("/api/prefs", json={"date_format": "iso"})).status_code == 200

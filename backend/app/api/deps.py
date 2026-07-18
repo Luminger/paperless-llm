@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from app.config import get_settings
 from app.paperless import PaperlessClient
@@ -28,6 +28,17 @@ async def require_user(request: Request) -> CurrentUser:
     return user
 
 
+async def require_admin(user: CurrentUser = Depends(require_user)) -> CurrentUser:
+    """Settings and other system-shaping writes are for admins — i.e.
+    paperless superusers (see services.auth.resolve_role)."""
+    if not user.is_admin:
+        raise HTTPException(
+            403,
+            {"code": "forbidden", "message": "administrator rights required"},
+        )
+    return user
+
+
 async def get_paperless(request: Request) -> AsyncIterator[PaperlessClient]:
     s = get_settings().paperless
     # Paperless-mode logins act under THEIR OWN paperless token, so
@@ -45,5 +56,6 @@ async def get_paperless(request: Request) -> AsyncIterator[PaperlessClient]:
         timeout=s.timeout_seconds,
         username=s.username,
         password=s.password,
+        verify_tls=s.verify_tls,
     ) as client:
         yield client

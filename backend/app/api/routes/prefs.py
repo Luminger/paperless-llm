@@ -5,13 +5,15 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import require_user
 from app.db.models import UserPref
 from app.db.session import get_session
 from app.services.audit import record
+from app.services.auth import CurrentUser
 
 router = APIRouter(prefix="/api", tags=["prefs"])
 
@@ -54,8 +56,18 @@ async def get_prefs(db: AsyncSession = Depends(get_session)) -> PrefsOut:
 
 @router.put("/prefs")
 async def put_prefs(
-    body: PrefsUpdate, db: AsyncSession = Depends(get_session)
+    body: PrefsUpdate,
+    db: AsyncSession = Depends(get_session),
+    user: CurrentUser = Depends(require_user),
 ) -> PrefsOut:
+    # Display preferences are everyone's; prompt tuning shapes the
+    # agent for the whole workspace and is admin-only.
+    touched = body.model_dump(exclude_none=True)
+    if any(k.endswith(("_base", "_addition")) for k in touched) and not user.is_admin:
+        raise HTTPException(
+            403,
+            {"code": "forbidden", "message": "prompt tuning requires administrator rights"},
+        )
     changed: dict[str, str] = {}
     for key, value in body.model_dump(exclude_none=True).items():
         row = await db.get(UserPref, key)
