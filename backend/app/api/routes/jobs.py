@@ -33,6 +33,7 @@ from app.db.models import (
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
+from app.services.jobs import ACTIVE_PHASES, apply_live, live_job_counts
 from app.services.jobs import create_job as create_job_service
 
 router = APIRouter(prefix="/api", tags=["jobs"])
@@ -151,57 +152,6 @@ async def corpus_status(
     return CorpusOut(total=page.count, processed=len(await processed_document_ids(db)))
 
 
-async def _live_job_counts(
-    db: AsyncSession, job_ids: list[int]
-) -> dict[int, tuple[int, int, int]]:
-    """(done, failed, unfinished) per job, computed FROM THE SESSIONS at
-    read time — stored counters can go stale (e.g. a gate resolved
-    without a worker touching the job afterwards), the sessions can't."""
-    if not job_ids:
-        return {}
-    rows = (
-        await db.execute(
-            select(Session.id, Session.job_id, Session.status, Session.phase).where(
-                Session.job_id.in_(job_ids)
-            )
-        )
-    ).all()
-    failed_ids = [sid for sid, _j, status, _p in rows if status == SessionStatus.failed]
-    retrying = set(
-        (
-            await db.scalars(
-                select(Step.session_id).where(
-                    Step.session_id.in_(failed_ids or [0]),
-                    Step.state.in_((StepState.pending, StepState.running)),
-                )
-            )
-        ).all()
-    )
-    out: dict[int, tuple[int, int, int]] = dict.fromkeys(job_ids, (0, 0, 0))
-    for sid, job_id, status, phase in rows:
-        done, failed, unfinished = out[job_id]
-        if status == SessionStatus.failed and sid not in retrying:
-            failed += 1
-        elif phase == SessionPhase.done:
-            done += 1
-        else:
-            unfinished += 1
-        out[job_id] = (done, failed, unfinished)
-    return out
-
-
-def _apply_live(job_out: JobOut, counts: tuple[int, int, int]) -> JobOut:
-    done, failed, unfinished = counts
-    job_out.done, job_out.failed = done, failed
-    if job_out.status != JobStatus.cancelled:
-        job_out.status = (
-            JobStatus.running
-            if unfinished
-            else (JobStatus.completed if done else JobStatus.failed)
-        )
-    return job_out
-
-
 @router.get("/jobs")
 async def list_jobs(
     page: int = 1,
@@ -213,12 +163,12 @@ async def list_jobs(
         page=page, page_size=page_size,
     )
     jobs = [JobOut.model_validate(j) for j in (await db.scalars(q)).all()]
-    live = await _live_job_counts(db, [j.id for j in jobs])
+    live = await live_job_counts(db, [j.id for j in jobs])
     return JobPage(
         count=win.count,
         page=win.page,
         page_size=win.page_size,
-        results=[_apply_live(j, live.get(j.id, (0, 0, 0))) for j in jobs],
+        results=[apply_live(j, live.get(j.id, (0, 0, 0))) for j in jobs],
     )
 
 
@@ -232,7 +182,7 @@ async def get_job(
     if job is None:
         raise HTTPException(404, "job not found")
     out = JobDetailOut.model_validate(job)
-    _apply_live(out, (await _live_job_counts(db, [job.id])).get(job.id, (0, 0, 0)))
+    apply_live(out, (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0)))
     sessions = (
         await db.scalars(
             select(Session)
@@ -296,8 +246,14 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
     job = await db.get(Job, job_id)
     if job is None:
         raise HTTPException(404, "job not found")
-    if job.status in (JobStatus.completed, JobStatus.cancelled):
-        raise HTTPException(409, f"job is already {job.status}")
+    # The stored status only knows "cancelled"; completion is DERIVED —
+    # guard against cancelling an already-finished job with live state.
+    live_out = apply_live(
+        JobOut.model_validate(job),
+        (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0)),
+    )
+    if live_out.status in (JobStatus.completed, JobStatus.cancelled):
+        raise HTTPException(409, f"job is already {live_out.status}")
     from app.services.steps import _publish, cancel_job_steps
 
     cancelled = await cancel_job_steps(db, job_id)
@@ -320,10 +276,7 @@ async def stats(db: AsyncSession = Depends(get_session)) -> StatsOut:
         select(func.count())
         .select_from(Session)
         .where(
-            Session.phase.in_(
-                [SessionPhase.queued, SessionPhase.ocr_running,
-                 SessionPhase.ocr_review, SessionPhase.analyzing]
-            ),
+            Session.phase.in_(ACTIVE_PHASES),
             Session.status != SessionStatus.failed,
         )
     )

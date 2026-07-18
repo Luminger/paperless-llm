@@ -362,7 +362,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #76
 
 ### SV-M1 — MEDIUM — `update_job` is O(sessions) + N+1 counts under a global lock on every finalize; lock doesn't prevent the lost update
-- **Status:** OPEN
+- **Status:** FIXED — `update_job` + `_job_update_lock` DELETED; `live_job_counts`/`apply_live` moved into services/jobs.py as THE derivation (routes import it); finalize no longer touches the job row; cancel route guards its 409 with live status; test asserts derived state
 - **Where:** `app/services/jobs.py:401-441`; caller `steps.py:464-471`;
   read-time truth `routes/jobs.py:154-204`
 - **Detail:** Every finished step loads ALL the job's sessions + one
@@ -393,7 +393,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #76
 
 ### SV-M3 — MEDIUM — `create_job` per-document HTTP fetches + one mega-transaction; times out at scale
-- **Status:** OPEN
+- **Status:** FIXED — title hydration batched via `id__in` pages of 100; scope resolution collects titles while paginating (mega-transaction kept: deliberate all-or-nothing job creation)
 - **Where:** `app/services/jobs.py:193-198,225-266`
 - **Detail:** Sequential `get_document(doc_id)` for every id without a
   title (explicit-id scopes have none; tag/inbox scopes only first 100)
@@ -550,7 +550,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #80
 
 ### API-F3 — MEDIUM — bulk job scopes silently cap at 100 documents when `all` is absent
-- **Status:** OPEN
+- **Status:** FIXED — `_all_matching` paginates by count (bounded, 404-safe); `Page.all` used only when larger; 250-doc regression test
 - **Where:** `app/services/jobs.py:62-80`
 - **Detail:** tag/inbox/all/untagged scopes make one `page_size=100`
   call; `ids = list(page.all) if page.all else [d.id for d in results]`.

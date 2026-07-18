@@ -184,7 +184,7 @@ async def test_counter_failure_does_not_poison_the_session(db):
 
     from sqlalchemy.exc import IntegrityError
 
-    from app.db.models import AgentKind, Counter, Session
+    from app.db.models import AgentKind, Session
     from app.services import counters
 
     # Force the insert-race branch: UPDATE matches nothing, and the

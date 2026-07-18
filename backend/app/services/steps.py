@@ -557,12 +557,10 @@ class StepWorkers:
                 options=[defer(Session.message_history)],
             )
             if session is not None:
+                # Job state is derived from the sessions at READ time
+                # (services/jobs.live_job_counts) — no stored-counter
+                # maintenance here (AUDIT SV-M1).
                 await sync_session(db, session)
-                if session.job_id is not None:
-                    # Lazy: jobs.py imports create_step from here.
-                    from app.services.jobs import update_job
-
-                    await update_job(db, session.job_id)
             await db.commit()
             _publish(step)
 

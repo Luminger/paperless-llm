@@ -14,13 +14,11 @@ Per-job ``apply_policy``:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import defer
 
 from app.db.models import (
     AgentKind,
@@ -65,19 +63,41 @@ async def resolve_documents(
         inbox_tags = [t.id for t in await paperless.list_tags() if t.is_inbox_tag]
         if not inbox_tags:
             return [], {}
-        page = await paperless.search_documents(tag_ids=inbox_tags, page_size=100)
-    elif tag_id:
-        page = await paperless.search_documents(tag_ids=[tag_id], page_size=100)
-    elif all_documents:
-        page = await paperless.search_documents(page_size=100)
-    else:
-        page = await paperless.search_documents(
-            tags_none=True if untagged_only else None,
-            page_size=100,
+        return await _all_matching(paperless, tag_ids=inbox_tags)
+    if tag_id:
+        return await _all_matching(paperless, tag_ids=[tag_id])
+    if all_documents:
+        return await _all_matching(paperless)
+    return await _all_matching(
+        paperless, tags_none=True if untagged_only else None
+    )
+
+
+async def _all_matching(
+    paperless: PaperlessClient, **kwargs: Any
+) -> tuple[list[int], dict[int, str]]:
+    """EVERY matching document id (+titles), paginated. AUDIT API-F3:
+    `Page.all` is only guaranteed on full-text queries — relying on it
+    for plain filtered listings silently capped bulk jobs at 100
+    documents on paperless versions that omit it."""
+    first = await paperless.search_documents(page_size=100, **kwargs)
+    ids = [d.id for d in first.results]
+    titles = {d.id: d.title for d in first.results if d.title}
+    # Bounded by count, not open-ended: documents deleted mid-iteration
+    # must not turn this into a 404 loop (same rule as apply.py's
+    # _docs_referencing).
+    total_pages = -(-first.count // 100)
+    for page_no in range(2, total_pages + 1):
+        more = await paperless.search_documents(
+            page=page_no, page_size=100, **kwargs
         )
-    ids = list(page.all) if page.all else [d.id for d in page.results]
-    titles = {d.id: d.title for d in page.results if d.title}
-    return ids, titles
+        if not more.results:
+            break
+        ids += [d.id for d in more.results]
+        titles.update({d.id: d.title for d in more.results if d.title})
+    if first.all and len(first.all) > len(ids):
+        ids = list(first.all)  # server view is authoritative when larger
+    return list(dict.fromkeys(ids)), titles
 
 
 async def processed_document_ids(db: AsyncSession) -> set[int]:
@@ -189,13 +209,18 @@ async def create_job(
         "skipped_active": skipped,
     }
     # Users see names, not numbers — resolve missing titles (explicit-id
-    # scopes) and derive a human job label.
+    # scopes) in BATCHES of 100 via id__in (AUDIT SV-M3: one sequential
+    # GET per document made a 10k-doc job time out its own POST).
+    missing = [d for d in ids if d not in titles]
+    for i in range(0, len(missing), 100):
+        chunk = missing[i : i + 100]
+        try:
+            pg = await paperless.search_documents(document_ids=chunk, page_size=100)
+            titles.update({d.id: d.title for d in pg.results if d.title})
+        except Exception:  # noqa: BLE001 — labels are cosmetic, never fatal
+            pass
     for doc_id in ids:
-        if doc_id not in titles:
-            try:
-                titles[doc_id] = (await paperless.get_document(doc_id)).title
-            except Exception:  # noqa: BLE001 — label is cosmetic, never fatal
-                titles[doc_id] = ""
+        titles.setdefault(doc_id, "")
     if label is None:
         if inbox:
             label = "Inbox"
@@ -397,51 +422,63 @@ async def create_entity_job(
     return job, session
 
 
-# Serializes job-counter updates (lost-update race between workers).
-_job_update_lock = asyncio.Lock()
+# AUDIT SV-M1: job state is COMPUTED from the sessions at read time —
+# there is no stored-counter maintenance anymore (the old update_job
+# scanned every session of the job under a global lock on EVERY step
+# finalize, and its counters still went stale). These two functions are
+# THE derivation; every reader goes through them.
 
 
-async def update_job(db: AsyncSession, job_id: int) -> None:
-    """Job counters: a session counts as done when it reached a
-    terminal, non-blocked position (done/failed)."""
-    async with _job_update_lock:
-        job = await db.get(Job, job_id)
-        if job is None:
-            return
-        sessions = (
+async def live_job_counts(
+    db: AsyncSession, job_ids: list[int]
+) -> dict[int, tuple[int, int, int]]:
+    """(done, failed, unfinished) per job, computed FROM THE SESSIONS at
+    read time — stored counters can go stale (e.g. a gate resolved
+    without a worker touching the job afterwards), the sessions can't."""
+    if not job_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(Session.id, Session.job_id, Session.status, Session.phase).where(
+                Session.job_id.in_(job_ids)
+            )
+        )
+    ).all()
+    failed_ids = [sid for sid, _j, status, _p in rows if status == SessionStatus.failed]
+    retrying = set(
+        (
             await db.scalars(
-                select(Session)
-                .where(Session.job_id == job_id)
-                .options(defer(Session.message_history))
+                select(Step.session_id).where(
+                    Step.session_id.in_(failed_ids or [0]),
+                    Step.state.in_((StepState.pending, StepState.running)),
+                )
             )
         ).all()
-        done = failed = unfinished = 0
-        for s in sessions:
-            if s.status == SessionStatus.failed:
-                # Failed only counts as final when no retry is pending.
-                has_pending = await db.scalar(
-                    select(func.count())
-                    .select_from(Step)
-                    .where(
-                        Step.session_id == s.id,
-                        Step.state.in_([StepState.pending, StepState.running]),
-                    )
-                )
-                if has_pending:
-                    unfinished += 1
-                else:
-                    failed += 1
-            elif s.phase == SessionPhase.done:
-                done += 1
-            else:
-                unfinished += 1
-        job.done, job.failed = done, failed
-        if job.status != JobStatus.cancelled:
-            job.status = (
-                JobStatus.running
-                if unfinished
-                else (JobStatus.completed if done else JobStatus.failed)
-            )
-        await db.flush()
+    )
+    out: dict[int, tuple[int, int, int]] = dict.fromkeys(job_ids, (0, 0, 0))
+    for sid, job_id, status, phase in rows:
+        done, failed, unfinished = out[job_id]
+        if status == SessionStatus.failed and sid not in retrying:
+            failed += 1
+        elif phase == SessionPhase.done:
+            done += 1
+        else:
+            unfinished += 1
+        out[job_id] = (done, failed, unfinished)
+    return out
+
+
+def apply_live(job_out, counts: tuple[int, int, int]):
+    """Stamp derived counts/status onto a JobOut-shaped object.
+    ``cancelled`` is sticky (the one stored status that matters)."""
+    done, failed, unfinished = counts
+    job_out.done, job_out.failed = done, failed
+    if job_out.status != JobStatus.cancelled:
+        job_out.status = (
+            JobStatus.running
+            if unfinished
+            else (JobStatus.completed if done else JobStatus.failed)
+        )
+    return job_out
 
 

@@ -248,7 +248,10 @@ async def test_recover_retries_interrupted_running_steps(file_db):
             assert s.attempts[-1]["error"] == "interrupted by app restart"
 
 
-async def test_job_counters_from_sessions(file_db, monkeypatch):
+async def test_job_state_derived_from_sessions(file_db, monkeypatch):
+    """AUDIT SV-M1: job state is COMPUTED from the sessions at read time
+    (live_job_counts/apply_live) — there is no stored-counter
+    maintenance."""
     async def ok(db, paperless, session, step):
         return None
 
@@ -272,21 +275,20 @@ async def test_job_counters_from_sessions(file_db, monkeypatch):
     try:
         for i in step_ids:
             await _wait_for(_step_in(i, *FINAL))
-        await _wait_for(_job_is(job_id, JobStatus.completed))
     finally:
         await workers.stop()
 
+    from app.api.schemas import JobOut
+    from app.services.jobs import apply_live, live_job_counts
+
     async with session_scope() as db:
         job = await db.get(Job, job_id)
-        assert (job.done, job.failed) == (2, 0)
-
-
-def _job_is(job_id: int, status: JobStatus):
-    async def check() -> bool:
-        async with session_scope() as db:
-            return (await db.get(Job, job_id)).status == status
-
-    return check
+        out = apply_live(
+            JobOut.model_validate(job),
+            (await live_job_counts(db, [job_id])).get(job_id, (0, 0, 0)),
+        )
+        assert out.status == JobStatus.completed
+        assert (out.done, out.failed) == (2, 0)
 
 
 async def test_redo_supersedes_downstream_steps_and_open_proposals(file_db):
