@@ -525,7 +525,12 @@ export function StepCard({
             outdated ? STATE_DOT.superseded : STATE_DOT[step.state],
           )}
         />
-        <span className={cn("text-sm font-medium", collapsed && "text-muted-foreground/70")}>
+        <span
+          className={cn(
+            "text-[15px] font-semibold tracking-tight",
+            collapsed && "font-medium text-muted-foreground/70",
+          )}
+        >
           {stepLabel(step, collapsed ? undefined : turn)}
         </span>
         {suffix && (
