@@ -327,6 +327,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Attention
+         * @description Which session in this job needs the user next? "Needs" means an
+         *     open gate (awaiting_user step) or a pending proposal. ``after``
+         *     excludes the session being viewed and continues past it, wrapping
+         *     to the start — so "Next" walks the whole job.
+         */
+        get: operations["job_attention_api_jobs__job_id__attention_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}/cancel": {
         parameters: {
             query?: never;
@@ -1052,6 +1075,20 @@ export interface components {
             instructions: string;
         };
         /**
+         * JobAttentionOut
+         * @description Flow-through review: the next session in a job waiting on the
+         *     user, plus how many still are (including the current one).
+         */
+        JobAttentionOut: {
+            /** Next Session Id */
+            next_session_id?: number | null;
+            /**
+             * Remaining
+             * @default 0
+             */
+            remaining: number;
+        };
+        /**
          * JobCreate
          * @description Bulk job. The work set is deterministic: explicit document ids,
          *     a tag, the inbox, all untagged documents — or a set of taxonomy
@@ -1491,6 +1528,8 @@ export interface components {
             error: string | null;
             /** Id */
             id: number;
+            /** Job Id */
+            job_id?: number | null;
             /**
              * Params
              * @default {}
@@ -1534,6 +1573,8 @@ export interface components {
             error: string | null;
             /** Id */
             id: number;
+            /** Job Id */
+            job_id?: number | null;
             /**
              * Params
              * @default {}
@@ -2265,6 +2306,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    job_attention_api_jobs__job_id__attention_get: {
+        parameters: {
+            query?: {
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAttentionOut"];
                 };
             };
             /** @description Validation Error */

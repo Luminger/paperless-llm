@@ -22,6 +22,8 @@ export const keys = {
   job: (id: number) => ["job", id] as const,
   stats: () => ["stats"] as const,
   corpus: () => ["corpus"] as const,
+  jobAttention: (jobId: number, after?: number) =>
+    ["jobs", jobId, "attention", after ?? null] as const,
   audit: (filter?: string, page?: number) =>
     filter !== undefined ? (["audit", filter, page] as const) : (["audit"] as const),
   syncStatus: () => ["sync-status"] as const,

@@ -11,6 +11,7 @@ from app.api.deps import get_paperless
 from app.api.pagination import count_of, paginate
 from app.api.schemas import (
     CorpusOut,
+    JobAttentionOut,
     JobCreate,
     JobDetailOut,
     JobOut,
@@ -88,6 +89,52 @@ async def create_job(
         label=label,
     )
     return JobOut.model_validate(job)
+
+
+@router.get("/jobs/{job_id}/attention")
+async def job_attention(
+    job_id: int,
+    after: int | None = None,
+    db: AsyncSession = Depends(get_session),
+) -> JobAttentionOut:
+    """Which session in this job needs the user next? "Needs" means an
+    open gate (awaiting_user step) or a pending proposal. ``after``
+    excludes the session being viewed and continues past it, wrapping
+    to the start — so "Next" walks the whole job."""
+    if await db.get(Job, job_id) is None:
+        raise HTTPException(404, "job not found")
+    session_ids = (
+        await db.scalars(select(Session.id).where(Session.job_id == job_id))
+    ).all()
+    if not session_ids:
+        return JobAttentionOut()
+    gated = set(
+        (
+            await db.scalars(
+                select(Step.session_id).where(
+                    Step.session_id.in_(session_ids),
+                    Step.state == StepState.awaiting_user,
+                )
+            )
+        ).all()
+    )
+    pending = set(
+        (
+            await db.scalars(
+                select(Proposal.session_id).where(
+                    Proposal.session_id.in_(session_ids),
+                    Proposal.status == ProposalStatus.pending,
+                    Proposal.kind != "replace_content",
+                )
+            )
+        ).all()
+    )
+    waiting = sorted(gated | pending)
+    others = [i for i in waiting if i != after]
+    next_id = next((i for i in others if after is None or i > after), None)
+    if next_id is None and others:
+        next_id = others[0]  # wrap around
+    return JobAttentionOut(next_session_id=next_id, remaining=len(waiting))
 
 
 @router.get("/corpus")

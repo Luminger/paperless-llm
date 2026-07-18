@@ -29,6 +29,7 @@ export type JobPage = S["JobPage"];
 export type ProposalPage = S["ProposalPage"];
 export type Stats = S["StatsOut"];
 export type Corpus = S["CorpusOut"];
+export type JobAttention = S["JobAttentionOut"];
 export type EntityRef = S["EntityOut"];
 export type PaperlessDocument = S["DocumentOut"];
 export type DocumentSearchPage = S["DocumentSearchPage"];
@@ -172,6 +173,10 @@ export const api = {
     request<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   getStats: () => request<Stats>("/api/stats"),
   getCorpus: () => request<Corpus>("/api/corpus"),
+  getJobAttention: (jobId: number, after?: number) =>
+    request<JobAttention>(
+      `/api/jobs/${jobId}/attention${after ? `?after=${after}` : ""}`,
+    ),
   getOcrReview: (sessionId: number) =>
     request<OcrReview>(`/api/sessions/${sessionId}/ocr`),
   resolveStep: (sessionId: number, stepId: number, content: string | null) =>

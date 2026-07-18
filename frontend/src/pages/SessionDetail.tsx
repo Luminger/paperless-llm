@@ -1,5 +1,6 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
@@ -39,10 +40,61 @@ function ArchivedBanner({
   );
 }
 
+/** Flow-through review: while walking a job's waiting sessions, a slim
+ * bar keeps the position ("N waiting on you") and the one move that
+ * matters — Next. Manual by design: a decision often makes the SAME
+ * document continue with a follow-up proposal, so the user leaves when
+ * this one is truly done. */
+function JobFlowBar({ sessionId, jobId }: { sessionId: number; jobId: number }) {
+  const navigate = useNavigate();
+  const { data: job } = useQuery({
+    queryKey: keys.job(jobId),
+    queryFn: () => api.getJob(jobId),
+  });
+  const { data: attention } = useQuery({
+    queryKey: keys.jobAttention(jobId, sessionId),
+    queryFn: () => api.getJobAttention(jobId, sessionId),
+    refetchInterval: 4000,
+  });
+  const label = job ? (job.params.label as string) || "job" : "job";
+  const next = attention?.next_session_id;
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm">
+      <span className="flex-1 text-muted-foreground">
+        Reviewing <Link className="font-medium text-foreground hover:underline" to={`/jobs/${jobId}`}>{label}</Link>
+        {attention != null && (
+          <>
+            {" — "}
+            {attention.remaining === 0
+              ? "nothing else is waiting on you"
+              : `${attention.remaining} waiting on you`}
+          </>
+        )}
+      </span>
+      {next != null ? (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => navigate(`/sessions/${next}?flow=1`)}
+        >
+          Next
+          <ArrowRight className="size-3.5" />
+        </Button>
+      ) : (
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/jobs/${jobId}`}>Back to the job</Link>
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function SessionDetail() {
   const { id } = useParams();
   const sessionId = Number(id);
   const qc = useQueryClient();
+  const [search] = useSearchParams();
+  const inFlow = search.get("flow") != null;
   const { live, connected } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: keys.session(sessionId),
@@ -87,6 +139,9 @@ export default function SessionDetail() {
         </nav>
       )}
       <h1 className="mb-4 text-xl font-semibold tracking-tight">{s.title}</h1>
+      {inFlow && s.job_id != null && (
+        <JobFlowBar sessionId={s.id} jobId={s.job_id} />
+      )}
       {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
 
       <div className="space-y-3">

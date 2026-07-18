@@ -28,6 +28,8 @@ vi.mock("../api", () => ({
     listCorrespondents: vi.fn(),
     listDocumentTypes: vi.fn(),
     listStoragePaths: vi.fn(),
+    getJob: vi.fn(),
+    getJobAttention: vi.fn(),
   },
 }));
 const mocked = vi.mocked(api);
@@ -670,5 +672,54 @@ describe("Reference tokens", () => {
     mocked.getSession.mockResolvedValue(makeDetail({ steps: [step] }));
     renderDetail();
     expect(await screen.findByText(/\[\[wormhole:9\]\]/)).toBeInTheDocument();
+  });
+});
+
+describe("SessionDetail job flow", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+    mocked.getSession.mockResolvedValue(makeDetail({ job_id: 3 }));
+    mocked.getJob.mockResolvedValue({
+      id: 3,
+      kind: "bulk_analyze",
+      params: { label: "Inbox" },
+      status: "running",
+      total: 5,
+      done: 2,
+      failed: 0,
+      created_at: "2026-07-17T10:00:00Z",
+      updated_at: "2026-07-17T10:00:00Z",
+      sessions: [],
+    } as never);
+  });
+
+  it("shows the flow bar with Next when in flow mode", async () => {
+    mocked.getJobAttention.mockResolvedValue({ next_session_id: 12, remaining: 3 });
+    renderWithProviders(<SessionDetail />, {
+      route: "/sessions/9?flow=1",
+      path: "/sessions/:id",
+    });
+    expect(await screen.findByText(/3 waiting on you/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next/i })).toBeInTheDocument();
+    expect(mocked.getJobAttention).toHaveBeenCalledWith(3, 9);
+  });
+
+  it("offers the way back when nothing else waits", async () => {
+    mocked.getJobAttention.mockResolvedValue({ next_session_id: null, remaining: 0 });
+    renderWithProviders(<SessionDetail />, {
+      route: "/sessions/9?flow=1",
+      path: "/sessions/:id",
+    });
+    expect(await screen.findByText(/nothing else is waiting on you/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to the job/i })).toBeInTheDocument();
+  });
+
+  it("stays hidden outside flow mode", async () => {
+    mocked.getJobAttention.mockResolvedValue({ next_session_id: 12, remaining: 3 });
+    renderDetail();
+    await screen.findByText("All done; proposed a better title.");
+    expect(screen.queryByText(/waiting on you/)).toBeNull();
   });
 });

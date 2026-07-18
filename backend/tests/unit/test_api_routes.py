@@ -584,6 +584,50 @@ async def test_corpus_status_and_next_batch(client, db):
     assert job["total"] == 2
 
 
+async def test_job_attention_walks_waiting_sessions(client, db):
+    """Flow-through review: gates and pending proposals mark a session
+    as waiting; `after` continues past the current one and wraps."""
+    from app.db.models import (
+        EntityType,
+        Job,
+        Proposal,
+        ProposalStatus,
+        Step,
+        StepKind,
+        StepState,
+    )
+
+    job = Job(kind="bulk_analyze", params={}, total=3)
+    db.add(job)
+    await db.flush()
+    sessions = []
+    for i in (1, 2, 3):
+        s_ = Session(
+            agent_kind=AgentKind.document, entity_type=EntityType.document,
+            entity_id=i, job_id=job.id,
+        )
+        db.add(s_)
+        sessions.append(s_)
+    await db.flush()
+    # session 0: open gate; session 2: pending proposal; session 1: done.
+    db.add(Step(session_id=sessions[0].id, kind=StepKind.ocr,
+                state=StepState.awaiting_user))
+    db.add(Proposal(session_id=sessions[2].id, kind="update_document_metadata",
+                    agent_payload={}, status=ProposalStatus.pending))
+    await db.commit()
+
+    r = await client.get(f"/api/jobs/{job.id}/attention")
+    assert r.status_code == 200
+    assert r.json() == {"next_session_id": sessions[0].id, "remaining": 2}
+
+    r = await client.get(f"/api/jobs/{job.id}/attention?after={sessions[0].id}")
+    assert r.json() == {"next_session_id": sessions[2].id, "remaining": 2}
+
+    # wraps past the end
+    r = await client.get(f"/api/jobs/{job.id}/attention?after={sessions[2].id}")
+    assert r.json() == {"next_session_id": sessions[0].id, "remaining": 2}
+
+
 def _entity_page(*items):
     return Response(200, json={"count": len(items), "next": None, "results": list(items)})
 

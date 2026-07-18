@@ -43,6 +43,7 @@ class SessionOut(BaseModel):
     phase: SessionPhase | None
     params: dict[str, Any] = {}
     error: str | None
+    job_id: int | None = None
     archived_at: UtcDateTime | None = None
     created_at: UtcDateTime
     updated_at: UtcDateTime
@@ -196,6 +197,14 @@ class JobOut(BaseModel):
 
 class JobDetailOut(JobOut):
     sessions: list[SessionOut] = []
+
+
+class JobAttentionOut(BaseModel):
+    """Flow-through review: the next session in a job waiting on the
+    user, plus how many still are (including the current one)."""
+
+    next_session_id: int | None = None
+    remaining: int = 0
 
 
 class CorpusOut(BaseModel):
