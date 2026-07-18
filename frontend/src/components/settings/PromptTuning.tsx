@@ -1,5 +1,13 @@
+// Prompt tuning, in the open: every prompt is a full section showing
+// the ACTUAL effective text (system default or the user's override),
+// each with its own revert-to-default. Empty override on the server
+// means "use the system default", so default improvements keep
+// flowing until the user really forks the prompt.
+
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { RotateCcw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -8,32 +16,51 @@ import { ErrorNotice } from "@/components/app/states";
 import { api } from "../../api";
 import { keys } from "../../lib/keys";
 
-/** Prompt tuning: the base prompts are system-supplied but overridable
- * (small local models often need it); additions append user context
- * (archive purpose, house rules). Persisted server-side. */
-function PromptField({
+function PromptSection({
   label,
   hint,
   value,
+  defaultValue,
   placeholder,
+  rows,
   onChange,
-  rows = 4,
 }: {
   label: string;
-  hint?: string;
+  hint: string;
+  /** The effective text shown in the editor. */
   value: string;
+  /** What "Revert to default" restores ("" for additions). */
+  defaultValue: string;
   placeholder?: string;
+  rows: number;
   onChange: (v: string) => void;
-  rows?: number;
 }) {
+  const modified = value.trim() !== defaultValue.trim();
   return (
-    <div className="space-y-1">
-      <Label className="font-normal text-muted-foreground">{label}</Label>
-      {hint && <p className="text-xs text-muted-foreground/60">{hint}</p>}
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Label className="font-medium">{label}</Label>
+        {modified && (
+          <Badge variant="secondary" className="text-amber-700 dark:text-amber-300">
+            modified
+          </Badge>
+        )}
+        <span className="flex-1" />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-xs text-muted-foreground"
+          disabled={!modified}
+          onClick={() => onChange(defaultValue)}
+        >
+          <RotateCcw className="size-3" /> Revert to default
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground/70">{hint}</p>
       <Textarea
         aria-label={label.toLowerCase()}
         rows={rows}
-        className="font-mono text-xs"
+        className="font-mono text-xs leading-5"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -53,68 +80,77 @@ export function PromptTuning({
     mutationFn: (body: Record<string, string>) => api.putPrefs(body),
   });
   if (!prefs) return null;
+
+  // The editor always shows the EFFECTIVE prompt text.
   const cur = draft ?? {
+    agent_prompt_base: prefs.agent_prompt_base.trim() || defaults.agent_base,
     agent_prompt_addition: prefs.agent_prompt_addition,
-    agent_prompt_base: prefs.agent_prompt_base,
+    ocr_prompt_base: prefs.ocr_prompt_base.trim() || defaults.ocr_base,
     ocr_prompt_addition: prefs.ocr_prompt_addition,
-    ocr_prompt_base: prefs.ocr_prompt_base,
   };
   const set = (k: string) => (v: string) => setDraft({ ...cur, [k]: v });
   const dirty = draft != null;
+
+  const persist = () =>
+    save.mutate(
+      {
+        // Matching the default is stored as "" — stays on the default.
+        agent_prompt_base:
+          cur.agent_prompt_base.trim() === defaults.agent_base.trim()
+            ? ""
+            : cur.agent_prompt_base,
+        ocr_prompt_base:
+          cur.ocr_prompt_base.trim() === defaults.ocr_base.trim()
+            ? ""
+            : cur.ocr_prompt_base,
+        agent_prompt_addition: cur.agent_prompt_addition,
+        ocr_prompt_addition: cur.ocr_prompt_addition,
+      },
+      { onSuccess: () => setDraft(null) },
+    );
+
   return (
-    <Card className="md:col-span-2">
+    <Card>
       <CardHeader>
         <CardTitle className="text-base">Prompts</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <PromptField
+      <CardContent className="space-y-6">
+        <PromptSection
+          label="Agent system prompt"
+          hint="The base prompt every agent runs with. System-supplied; edit it only to tune for your model — a modified prompt no longer receives system updates."
+          value={cur.agent_prompt_base}
+          defaultValue={defaults.agent_base}
+          rows={14}
+          onChange={set("agent_prompt_base")}
+        />
+        <PromptSection
           label="Additional agent instructions"
           hint="Appended to every agent prompt — describe your archive, its purpose, house rules (e.g. language of titles, who the archive owner is)."
           value={cur.agent_prompt_addition}
-          placeholder="e.g. The archive belongs to Simon; correspondents are always the OTHER party. Titles in the document's language."
+          defaultValue=""
+          placeholder="e.g. The archive belongs to Simon; correspondents are always the OTHER party."
+          rows={4}
           onChange={set("agent_prompt_addition")}
         />
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground select-none">
-            Advanced: override the agent base prompt (leave empty for the system default)
-          </summary>
-          <div className="mt-2">
-            <PromptField
-              label="Agent base prompt override"
-              value={cur.agent_prompt_base}
-              placeholder={defaults.agent_base}
-              onChange={set("agent_prompt_base")}
-              rows={10}
-            />
-          </div>
-        </details>
-        <PromptField
+        <PromptSection
+          label="OCR system prompt"
+          hint="The base prompt for every transcription. System-supplied; edit only to tune for your OCR model."
+          value={cur.ocr_prompt_base}
+          defaultValue={defaults.ocr_base}
+          rows={10}
+          onChange={set("ocr_prompt_base")}
+        />
+        <PromptSection
           label="Additional OCR instructions"
           hint="Appended to the OCR prompt for every transcription."
           value={cur.ocr_prompt_addition}
+          defaultValue=""
           placeholder="e.g. Stamps and handwritten margin notes matter — transcribe them."
+          rows={3}
           onChange={set("ocr_prompt_addition")}
         />
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground select-none">
-            Advanced: override the OCR base prompt (leave empty for the system default)
-          </summary>
-          <div className="mt-2">
-            <PromptField
-              label="OCR base prompt override"
-              value={cur.ocr_prompt_base}
-              placeholder={defaults.ocr_base}
-              onChange={set("ocr_prompt_base")}
-              rows={8}
-            />
-          </div>
-        </details>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            disabled={!dirty || save.isPending}
-            onClick={() => save.mutate(cur, { onSuccess: () => setDraft(null) })}
-          >
+          <Button size="sm" disabled={!dirty || save.isPending} onClick={persist}>
             Save prompts
           </Button>
           {save.isSuccess && !dirty && <span className="text-xs text-primary">saved</span>}
@@ -124,4 +160,3 @@ export function PromptTuning({
     </Card>
   );
 }
-
