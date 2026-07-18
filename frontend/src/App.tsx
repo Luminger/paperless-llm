@@ -1,6 +1,6 @@
+import { useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { CircleUser, Monitor, Moon, Settings2, Sun } from "lucide-react";
-import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,7 +22,7 @@ import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
 import AuditLog from "./pages/AuditLog";
-import Settings from "./pages/Settings";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
 const nav = [
   { to: "/documents", label: "Documents" },
@@ -31,7 +31,7 @@ const nav = [
   { to: "/log", label: "Log" },
 ];
 
-function UserMenu() {
+function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { theme, setTheme } = useTheme();
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
   return (
@@ -54,10 +54,8 @@ function UserMenu() {
           <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to="/settings" className="flex items-center gap-2">
-            <Settings2 className="size-4" /> Settings
-          </Link>
+        <DropdownMenuItem onSelect={onOpenSettings} className="gap-2">
+          <Settings2 className="size-4" /> Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
@@ -69,6 +67,7 @@ function UserMenu() {
 }
 
 export default function App() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b bg-card">
@@ -93,7 +92,7 @@ export default function App() {
             ))}
           </nav>
           <div className="ml-auto">
-            <UserMenu />
+            <UserMenu onOpenSettings={() => setSettingsOpen(true)} />
           </div>
         </div>
       </header>
@@ -110,9 +109,9 @@ export default function App() {
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/log" element={<AuditLog />} />
-          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }
