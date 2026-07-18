@@ -64,7 +64,7 @@ describe("EntityPage (generic entity overview)", () => {
     );
     // Back to the entry in paperless.
     expect(
-      screen.getByRole("link", { name: /open in paperless/ }).getAttribute("href"),
+      screen.getByRole("link", { name: /Open in paperless/ }).getAttribute("href"),
     ).toBe("http://paperless.example/documents/12/details");
     // Preview (clickable), distinct actions, content, session list, history.
     expect(screen.getByRole("button", { name: /open preview of Invoice 4-8/ })).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe("EntityPage (generic entity overview)", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText(/any word · “kraxi”/)).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /open in paperless/ }).getAttribute("href"),
+      screen.getByRole("link", { name: /Open in paperless/ }).getAttribute("href"),
     ).toBe("http://paperless.example/correspondents");
     expect(screen.getByRole("button", { name: "Analyze" })).toBeInTheDocument();
     // Taxonomy entities get the instructions editor.

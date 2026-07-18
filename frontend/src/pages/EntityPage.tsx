@@ -3,7 +3,7 @@ import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
 import { InboxBadge } from "../components/StatusBadge";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ExternalLink, ScanText, Sparkles, User } from "lucide-react";
+import { ExternalLink, ScanText, Sparkles, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -261,37 +261,18 @@ function AnalyzeButton({ entityType, id }: { entityType: string; id: number }) {
 }
 
 /** The stored text layer — what the agent reads, and the basis for
- * judging whether a fresh OCR pass is needed. */
+ * judging whether a fresh OCR pass is needed. The pane scrolls; no
+ * expand theater. */
 function ContentPanel({ content }: { content: string }) {
-  const [openAll, setOpenAll] = useState(false);
-  const clamp = 1800;
-  const truncated = !openAll && content.length > clamp;
-  const shown = truncated ? content.slice(0, clamp) : content;
   return (
     <Card className="mb-8 gap-2 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Content ({content.length.toLocaleString()} characters)
-        </h2>
-      </div>
+      <h2 className="text-sm font-medium text-muted-foreground">
+        Content ({content.length.toLocaleString()} characters)
+      </h2>
       {content.trim() ? (
-        <>
-          <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
-            {shown}
-            {truncated && "…"}
-          </pre>
-          {content.length > clamp && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="self-start text-muted-foreground"
-              onClick={() => setOpenAll(!openAll)}
-            >
-              {openAll ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-              {openAll ? "show less" : "show all"}
-            </Button>
-          )}
-        </>
+        <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+          {content}
+        </pre>
       ) : (
         <p className="text-sm text-muted-foreground">
           No text layer — this document likely needs an OCR pass.
@@ -440,14 +421,15 @@ export default function EntityPage() {
           </span>
         )}
         {meta && (
-          <a
-            className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline"
-            href={paperlessHref(meta.paperless_url, entityType, id)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            open in paperless <ExternalLink className="size-3.5" />
-          </a>
+          <Button asChild size="sm" variant="outline">
+            <a
+              href={paperlessHref(meta.paperless_url, entityType, id)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open in paperless <ExternalLink className="size-3.5" />
+            </a>
+          </Button>
         )}
       </div>
 
