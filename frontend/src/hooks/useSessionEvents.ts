@@ -115,11 +115,15 @@ export function useSessionEvents(sessionId: number) {
   // unavailable" (buffering reverse proxies are a classic self-hosting
   // misconfiguration); consumers fall back to polling.
   const [connected, setConnected] = useState(true);
+  // Epoch ms of the next reconnect attempt (null while connected or
+  // while the browser's own EventSource retry is in charge).
+  const [nextRetryAt, setNextRetryAt] = useState<number | null>(null);
   useEffect(() => {
     if (!Number.isFinite(sessionId)) return;
     // A new session means new step ids: stale live state must not leak.
     setLive({});
     setConnected(true);
+    setNextRetryAt(null);
     let es: EventSource | null = null;
     let timer: number | undefined;
     let disposed = false;
@@ -129,6 +133,7 @@ export function useSessionEvents(sessionId: number) {
       es = new EventSource(`/api/sessions/${sessionId}/events`);
       es.onopen = () => {
         setConnected(true);
+        setNextRetryAt(null);
         // Anything that happened while we were away: refetch once.
         qc.invalidateQueries({ queryKey: keys.session(sessionId) });
       };
@@ -139,7 +144,11 @@ export function useSessionEvents(sessionId: number) {
         // stays dead — it needs a fresh object. Poll until it sticks.
         if (es?.readyState === EventSource.CLOSED) {
           es.close();
+          setNextRetryAt(Date.now() + 3000);
           timer = window.setTimeout(connect, 3000);
+        } else {
+          // Browser-managed retry (transient error): imminent.
+          setNextRetryAt(Date.now());
         }
       };
       es.onmessage = onMessage;
@@ -182,5 +191,5 @@ export function useSessionEvents(sessionId: number) {
       es?.close();
     };
   }, [sessionId, qc]);
-  return { live, connected };
+  return { live, connected, nextRetryAt };
 }

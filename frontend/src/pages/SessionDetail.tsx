@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArchiveRestore, ArrowRight, Check, Pencil, X } from "lucide-react";
+import { ConnectionToast } from "@/components/app/ConnectionToast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
@@ -188,7 +189,7 @@ export default function SessionDetail() {
   const qc = useQueryClient();
   const [search] = useSearchParams();
   const inFlow = search.get("flow") != null;
-  const { live, connected } = useSessionEvents(sessionId);
+  const { live, connected, nextRetryAt } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: keys.session(sessionId),
     queryFn: () => api.getSession(sessionId),
@@ -259,14 +260,13 @@ export default function SessionDetail() {
         {canContinue && <NextTurnBox sessionId={s.id} turn={turnNo + 1} />}
       </div>
 
-      {/* Connection state lives OUT of the content flow; it vanishes
-          the moment the event stream reconnects. */}
-      {!connected && (
-        <div className="fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-md dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-          <span className="inline-block size-2 animate-pulse rounded-full bg-amber-500" />
-          Live updates unavailable — reconnecting… (refreshing every 10s meanwhile)
-        </div>
-      )}
+      {/* Connection state lives OUT of the content flow (the central
+          toast style); it vanishes the moment the stream reconnects. */}
+      <ConnectionToast
+        show={!connected}
+        label="Live updates unavailable (refreshing every 10s meanwhile)"
+        nextRetryAt={nextRetryAt}
+      />
     </div>
   );
 }

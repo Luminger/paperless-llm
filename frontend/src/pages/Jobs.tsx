@@ -90,27 +90,32 @@ function NewJob({ onDone }: { onDone: () => void }) {
           });
         }}
       >
-        <RadioGroup
-          value={mode}
-          onValueChange={(v) => {
-            setMode(v as typeof mode);
-            if (v === "analyze" && scope === "all") setScope("inbox");
-          }}
-          className="flex flex-wrap gap-4"
-        >
-          <Label className="flex items-center gap-1.5 font-normal">
-            <RadioGroupItem value="analyze" />
-            Analyze metadata
-          </Label>
-          <Label className="flex items-center gap-1.5 font-normal">
-            <RadioGroupItem value="ocr" />
-            Re-do OCR only (no analysis)
-          </Label>
-        </RadioGroup>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">What to do</p>
+          <RadioGroup
+            value={mode}
+            onValueChange={(v) => {
+              setMode(v as typeof mode);
+              if (v === "analyze" && scope === "all") setScope("inbox");
+            }}
+            className="flex flex-wrap gap-4 rounded-md border p-3"
+          >
+            <Label className="flex items-center gap-1.5 font-normal">
+              <RadioGroupItem value="analyze" />
+              Analyze metadata
+            </Label>
+            <Label className="flex items-center gap-1.5 font-normal">
+              <RadioGroupItem value="ocr" />
+              Re-do OCR only (no analysis)
+            </Label>
+          </RadioGroup>
+        </div>
+        <div className="space-y-1.5">
+        <p className="text-xs font-medium text-muted-foreground">Which documents</p>
         <RadioGroup
           value={scope}
           onValueChange={(v) => setScope(v as typeof scope)}
-          className="flex flex-wrap gap-4"
+          className="flex flex-wrap gap-4 rounded-md border p-3"
         >
           {(
             [
@@ -126,6 +131,7 @@ function NewJob({ onDone }: { onDone: () => void }) {
             </Label>
           ))}
         </RadioGroup>
+        </div>
         {scope === "tag" && (
           <SimpleSelect
             ariaLabel="job tag"

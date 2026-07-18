@@ -154,7 +154,7 @@ describe("Dashboard corpus block", () => {
     mocked.createJob.mockResolvedValue({ id: 9 } as never);
     renderWithProviders(<Dashboard />);
     expect(
-      await screen.findByText(/118 of 2,400 documents analyzed/),
+      await screen.findByText(/118 of 2,400 analyzed/),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /analyze next batch/i }));
     await waitFor(() =>
@@ -207,7 +207,8 @@ describe("Dashboard inbox block", () => {
     });
     mocked.createJob.mockResolvedValue({ id: 4 } as never);
     renderWithProviders(<Dashboard />);
-    expect(await screen.findByText(/Inbox — 12 documents waiting/)).toBeInTheDocument();
+    expect(await screen.findByText("Inbox")).toBeInTheDocument();
+    expect(screen.getByText(/12 documents waiting/)).toBeInTheDocument();
     expect(screen.getByText("scan_0234")).toBeInTheDocument();
     expect(await screen.findByText("Kraxi")).toBeInTheDocument();
     expect(screen.getByText(/and 11 more/)).toBeInTheDocument();

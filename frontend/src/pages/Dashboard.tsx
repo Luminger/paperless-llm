@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { FramedCard } from "@/components/app/Framed";
 import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/components/app/PageHeader";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
@@ -39,20 +40,20 @@ function InboxBlock() {
   });
   if (!data || data.count === 0) return null;
   return (
-    <Card className="mb-6 py-4">
-      <CardContent className="px-4">
-        <div className="mb-1 flex items-center justify-between gap-4">
-          <p className="text-sm font-medium">
-            Inbox — {data.count} document{data.count === 1 ? "" : "s"} waiting
-          </p>
-          <Button
-            size="sm"
-            disabled={start.isPending}
-            onClick={() => start.mutate()}
-          >
+    <FramedCard
+      className="mb-4"
+      title="Inbox"
+      meta={`${data.count} document${data.count === 1 ? "" : "s"} waiting`}
+      footer={
+        <>
+          <ErrorNotice error={start.error} />
+          <span className="flex-1" />
+          <Button size="sm" disabled={start.isPending} onClick={() => start.mutate()}>
             Analyze the inbox
           </Button>
-        </div>
+        </>
+      }
+    >
         <Table>
           <TableHeader>
             <TableRow>
@@ -87,9 +88,7 @@ function InboxBlock() {
             …and {data.count - data.results.length} more.
           </p>
         )}
-        <ErrorNotice error={start.error} />
-      </CardContent>
-    </Card>
+    </FramedCard>
   );
 }
 
@@ -113,47 +112,42 @@ function CorpusBlock() {
   const done = data.processed >= data.total;
   const pct = Math.round((data.processed / data.total) * 100);
   return (
-    <Card className="mb-6 py-4">
-      <CardContent className="px-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="min-w-56 flex-1">
-            <p className="text-sm font-medium">Corpus</p>
-            <div className="mt-1.5 flex items-center gap-3">
-              <Progress value={pct} className="max-w-72 flex-1" />
-              <p className="text-xs whitespace-nowrap text-muted-foreground">
-                {data.processed.toLocaleString()} of {data.total.toLocaleString()}{" "}
-                documents analyzed
-              </p>
-            </div>
-          </div>
-          {done ? (
-            <p className="text-sm text-muted-foreground">
-              Every document has been analyzed.
-            </p>
-          ) : (
-            <div className="flex items-center gap-2">
-              <SimpleSelect
-                ariaLabel="batch size"
-                value={size}
-                onValueChange={setSize}
-                options={["10", "25", "50"].map((n) => ({
-                  value: n,
-                  label: `${n} documents`,
-                }))}
-              />
-              <Button
-                size="sm"
-                disabled={start.isPending}
-                onClick={() => start.mutate()}
-              >
-                Analyze next batch
-              </Button>
-            </div>
-          )}
-        </div>
-        <ErrorNotice error={start.error} />
-      </CardContent>
-    </Card>
+    <FramedCard
+      className="mb-4"
+      title="Corpus"
+      meta={`${data.processed.toLocaleString()} of ${data.total.toLocaleString()} analyzed`}
+      footer={
+        done ? (
+          <p className="text-sm text-muted-foreground">
+            Every document has been analyzed.
+          </p>
+        ) : (
+          <>
+            <ErrorNotice error={start.error} />
+            <span className="flex-1" />
+            <SimpleSelect
+              ariaLabel="batch size"
+              value={size}
+              onValueChange={setSize}
+              options={["10", "25", "50"].map((n) => ({
+                value: n,
+                label: `${n} documents`,
+              }))}
+            />
+            <Button size="sm" disabled={start.isPending} onClick={() => start.mutate()}>
+              Analyze next batch
+            </Button>
+          </>
+        )
+      }
+    >
+      <div className="flex items-center gap-3">
+        <Progress value={pct} className="max-w-96 flex-1" />
+        <p className="text-xs whitespace-nowrap text-muted-foreground">
+          {pct}%
+        </p>
+      </div>
+    </FramedCard>
   );
 }
 
@@ -212,8 +206,9 @@ export default function Dashboard() {
       <InboxBlock />
       <CorpusBlock />
 
-      <h2 className="mb-2 text-sm font-medium text-muted-foreground">Needs attention</h2>
-      <SessionList unfinished pageSize={5} showEntity showArchived={false} />
+      <FramedCard title="Needs attention">
+        <SessionList unfinished pageSize={5} showEntity showArchived={false} />
+      </FramedCard>
     </div>
   );
 }
