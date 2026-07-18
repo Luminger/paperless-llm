@@ -239,6 +239,8 @@ export function Transcript({ items }: { items: TranscriptItem[] }) {
   return (
     <div>
       {items.map((item, i) => {
+        // Streaming: parts may exist before any content arrived.
+        if (item.role !== "tool" && !item.content.trim()) return null;
         switch (item.role) {
           case "user":
             if (item.origin === "pipeline") return null; // synthetic kickoff
