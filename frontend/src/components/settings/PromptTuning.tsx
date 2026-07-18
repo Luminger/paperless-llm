@@ -29,13 +29,15 @@ function PromptSection({
   hint: string;
   /** The effective text shown in the editor. */
   value: string;
-  /** What "Revert to default" restores ("" for additions). */
-  defaultValue: string;
+  /** System default; undefined = free-text field (additions have no
+   * default to revert to — their default is simply blank). */
+  defaultValue?: string;
   placeholder?: string;
   rows: number;
   onChange: (v: string) => void;
 }) {
-  const modified = value.trim() !== defaultValue.trim();
+  const modified =
+    defaultValue !== undefined && value.trim() !== defaultValue.trim();
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
@@ -46,15 +48,17 @@ function PromptSection({
           </Badge>
         )}
         <span className="flex-1" />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 gap-1 px-2 text-xs text-muted-foreground"
-          disabled={!modified}
-          onClick={() => onChange(defaultValue)}
-        >
-          <RotateCcw className="size-3" /> Revert to default
-        </Button>
+        {defaultValue !== undefined && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 gap-1 px-2 text-xs text-muted-foreground"
+            disabled={!modified}
+            onClick={() => onChange(defaultValue)}
+          >
+            <RotateCcw className="size-3" /> Revert to default
+          </Button>
+        )}
       </div>
       <p className="text-xs text-muted-foreground/70">{hint}</p>
       <Textarea
@@ -116,38 +120,36 @@ export function PromptTuning({
       </CardHeader>
       <CardContent className="space-y-6">
         <PromptSection
+          label="Additional agent instructions"
+          hint="The place for YOUR context — appended to every agent prompt. Describe the archive, its purpose, house rules (e.g. language of titles, who the archive owner is)."
+          value={cur.agent_prompt_addition}
+          placeholder="e.g. The archive belongs to Simon; correspondents are always the OTHER party."
+          rows={4}
+          onChange={set("agent_prompt_addition")}
+        />
+        <PromptSection
           label="Agent system prompt"
-          hint="The base prompt every agent runs with. System-supplied; edit it only to tune for your model — a modified prompt no longer receives system updates."
+          hint="The base prompt every agent runs with. System-supplied and usually best left alone — edit only to tune for your model; a modified prompt no longer receives system updates."
           value={cur.agent_prompt_base}
           defaultValue={defaults.agent_base}
           rows={14}
           onChange={set("agent_prompt_base")}
         />
         <PromptSection
-          label="Additional agent instructions"
-          hint="Appended to every agent prompt — describe your archive, its purpose, house rules (e.g. language of titles, who the archive owner is)."
-          value={cur.agent_prompt_addition}
-          defaultValue=""
-          placeholder="e.g. The archive belongs to Simon; correspondents are always the OTHER party."
-          rows={4}
-          onChange={set("agent_prompt_addition")}
+          label="Additional OCR instructions"
+          hint="The place for YOUR transcription rules — appended to the OCR prompt."
+          value={cur.ocr_prompt_addition}
+          placeholder="e.g. Stamps and handwritten margin notes matter — transcribe them."
+          rows={3}
+          onChange={set("ocr_prompt_addition")}
         />
         <PromptSection
           label="OCR system prompt"
-          hint="The base prompt for every transcription. System-supplied; edit only to tune for your OCR model."
+          hint="The base prompt for every transcription. System-supplied and usually best left alone — edit only to tune for your OCR model."
           value={cur.ocr_prompt_base}
           defaultValue={defaults.ocr_base}
           rows={10}
           onChange={set("ocr_prompt_base")}
-        />
-        <PromptSection
-          label="Additional OCR instructions"
-          hint="Appended to the OCR prompt for every transcription."
-          value={cur.ocr_prompt_addition}
-          defaultValue=""
-          placeholder="e.g. Stamps and handwritten margin notes matter — transcribe them."
-          rows={3}
-          onChange={set("ocr_prompt_addition")}
         />
         <div className="flex items-center gap-2">
           <Button size="sm" disabled={!dirty || save.isPending} onClick={persist}>
