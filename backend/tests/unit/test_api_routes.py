@@ -1230,3 +1230,40 @@ async def test_prompt_tuning_roundtrip(client):
     overview = (await client.get("/api/settings")).json()
     assert "ONE proposal per turn" in overview["prompt_defaults"]["agent_base"]
     assert "OCR engine" in overview["prompt_defaults"]["ocr_base"]
+
+
+async def test_paperless_errors_keep_the_error_shape(client, respx_mock):
+    """PaperlessError must surface as the uniform error shape, not a
+    bare 500 (central exception handler)."""
+    respx_mock.get("http://paperless.test/api/documents/424242/").mock(
+        return_value=httpx.Response(404, json={"detail": "Not found."})
+    )
+    r = await client.get("/api/entities/documents/424242")
+    assert r.status_code == 404
+    body = r.json()
+    assert body["detail"]["code"] == "paperless_not_found"
+    assert isinstance(body["detail"]["message"], str)
+
+
+async def test_entity_scope_creates_one_job_with_sessions(client, respx_mock, db):
+    """Bulk taxonomy review is ONE server-side job (never a client loop)."""
+    for tid, name in ((11, "alpha"), (12, "beta")):
+        respx_mock.get(f"http://paperless.test/api/tags/{tid}/").mock(
+            return_value=httpx.Response(
+                200, json={"id": tid, "name": name, "matching_algorithm": 0,
+                           "match": "", "is_inbox_tag": False,
+                           "document_count": 1},
+            )
+        )
+    r = await client.post(
+        "/api/jobs", json={"entity_type": "tag", "entity_ids": [11, 12]}
+    )
+    assert r.status_code == 200
+    job = r.json()
+    assert job["kind"] == "analyze_entities"
+    assert job["total"] == 2
+    assert job["params"]["label"] == "2 tags"
+    from sqlalchemy import select
+    from app.db.models import Session as Sess
+    sessions = (await db.scalars(select(Sess).where(Sess.job_id == job["id"]))).all()
+    assert [s.title for s in sessions] == ["alpha", "beta"]

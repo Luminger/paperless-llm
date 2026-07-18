@@ -153,13 +153,17 @@ class AnalyzeEntityRequest(BaseModel):
 
 
 class JobCreate(BaseModel):
-    """Bulk job. Document set is deterministic: explicit ids, a tag,
-    the inbox, or all untagged documents — never a full-text search."""
+    """Bulk job. The work set is deterministic: explicit document ids,
+    a tag, the inbox, all untagged documents — or a set of taxonomy
+    entities (entity_type + entity_ids) — never a full-text search."""
 
     document_ids: list[int] | None = None
     tag_id: int | None = None
     inbox: bool = False
     untagged_only: bool = False
+    # Taxonomy scope: review these entities (one session per entity).
+    entity_type: Literal["tag", "correspondent", "document_type"] | None = None
+    entity_ids: list[int] | None = None
     redo_ocr: bool = False
     apply_policy: Literal["review", "auto"] = "review"
     instructions: str | None = None
@@ -241,6 +245,7 @@ class DocumentSearchPage(BaseModel):
     across pages (drives cross-page select-all)."""
 
     count: int
+    page_size: int = 25
     all: list[int] | None = None
     results: list[DocumentOut]
 

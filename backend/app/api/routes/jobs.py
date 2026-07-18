@@ -5,8 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.api.deps import get_paperless
+from app.api.pagination import count_of, paginate
 from app.api.schemas import (
     JobCreate,
     JobDetailOut,
@@ -39,8 +41,20 @@ async def create_job(
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> JobOut:
+    if body.entity_type and body.entity_ids:
+        from app.db.models import EntityType
+        from app.services.jobs import create_entities_job
+
+        job, _ = await create_entities_job(
+            db,
+            paperless,
+            entity_type=EntityType(body.entity_type),
+            entity_ids=body.entity_ids,
+            instructions=body.instructions,
+        )
+        return JobOut.model_validate(job)
     if not (body.document_ids or body.tag_id or body.inbox or body.untagged_only):
-        raise HTTPException(422, "empty document selection")
+        raise HTTPException(422, "empty selection")
     job, ids = await create_job_service(
         db,
         paperless,
@@ -61,22 +75,15 @@ async def list_jobs(
     page_size: int = 50,
     db: AsyncSession = Depends(get_session),
 ) -> JobPage:
-    page = max(1, page)
-    page_size = min(200, max(1, page_size))
-    count = (await db.scalar(select(func.count()).select_from(Job))) or 0
-    jobs = (
-        await db.scalars(
-            select(Job)
-            .order_by(Job.id.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        )
-    ).all()
+    win, q = await paginate(
+        db, select(Job).order_by(Job.id.desc()), count_of(Job),
+        page=page, page_size=page_size,
+    )
     return JobPage(
-        count=count,
-        page=page,
-        page_size=page_size,
-        results=[JobOut.model_validate(j) for j in jobs],
+        count=win.count,
+        page=win.page,
+        page_size=win.page_size,
+        results=[JobOut.model_validate(j) for j in (await db.scalars(q)).all()],
     )
 
 
@@ -88,7 +95,10 @@ async def get_job(job_id: int, db: AsyncSession = Depends(get_session)) -> JobDe
     out = JobDetailOut.model_validate(job)
     sessions = (
         await db.scalars(
-            select(Session).where(Session.job_id == job_id).order_by(Session.id)
+            select(Session)
+            .options(defer(Session.message_history))
+            .where(Session.job_id == job_id)
+            .order_by(Session.id)
         )
     ).all()
     counts = dict(

@@ -20,6 +20,7 @@ from typing import Any, Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.db.models import (
     AgentKind,
@@ -35,8 +36,9 @@ from app.db.models import (
     StepState,
 )
 from app.paperless import PaperlessClient
+from app.paperless.taxonomy import TAXONOMY
 from app.services.audit import record
-from app.services.steps import create_step
+from app.services.steps import create_step, notify_steps
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +159,9 @@ async def create_job(
     db.add(job)
     await db.flush()
 
+    # ONE transaction for the whole job: the job row, every session and
+    # every step commit together (workers wake only after the commit).
+    steps = []
     for doc_id in ids:
         session = Session(
             agent_kind=AgentKind.document,
@@ -173,9 +178,11 @@ async def create_job(
         )
         db.add(session)
         await db.flush()
-        await create_step(
-            db, session, StepKind.ocr if redo_ocr else StepKind.analysis,
-            lane=lane,
+        steps.append(
+            await create_step(
+                db, session, StepKind.ocr if redo_ocr else StepKind.analysis,
+                lane=lane, commit=False,
+            )
         )
     await record(
         db, "job", "created",
@@ -185,6 +192,70 @@ async def create_job(
                "document_ids": document_ids},
     )
     await db.commit()
+    notify_steps(steps)
+    return job, ids
+
+
+async def create_entities_job(
+    db: AsyncSession,
+    paperless: PaperlessClient,
+    *,
+    entity_type: EntityType,
+    entity_ids: list[int],
+    instructions: str | None = None,
+) -> tuple[Job, list[int]]:
+    """Bulk taxonomy review: ONE job, one session per entity — same
+    machinery as document jobs (progress, cancellation, retry), so the
+    UI never loops POSTs client-side."""
+    spec = TAXONOMY.get(entity_type.value)
+    names: dict[int, str] = {}
+    if spec is not None:
+        for eid in dict.fromkeys(entity_ids):
+            try:
+                names[eid] = (await spec.get(paperless, eid)).name
+            except Exception:  # noqa: BLE001 — names are cosmetic
+                names[eid] = ""
+    ids = list(dict.fromkeys(entity_ids))
+    type_label = entity_type.value.replace("_", " ")
+    params: dict[str, Any] = {
+        "entity_type": str(entity_type.value),
+        "entity_ids": ids,
+        "label": (
+            f"{type_label.capitalize()}: {names.get(ids[0]) or ids[0]}"
+            if len(ids) == 1
+            else f"{len(ids)} {type_label}s"
+        ),
+    }
+    if instructions:
+        params["instructions"] = instructions
+    job = Job(kind="analyze_entities", params=params, total=len(ids))
+    db.add(job)
+    await db.flush()
+
+    steps = []
+    for eid in ids:
+        session = Session(
+            agent_kind=AgentKind(entity_type.value),
+            entity_type=entity_type,
+            entity_id=eid,
+            job_id=job.id,
+            params={**({"instructions": instructions} if instructions else {})},
+            title=names.get(eid) or f"{type_label} {eid}",
+        )
+        db.add(session)
+        await db.flush()
+        steps.append(
+            await create_step(
+                db, session, StepKind.analysis, lane=QueueLane.batch, commit=False
+            )
+        )
+    await record(
+        db, "job", "created",
+        job_id=job.id, job_kind="analyze_entities",
+        entity_type=str(entity_type.value), entity_ids=ids,
+    )
+    await db.commit()
+    notify_steps(steps)
     return job, ids
 
 
@@ -199,13 +270,9 @@ async def create_entity_job(
 ) -> tuple[Job, Session]:
     """A single taxonomy review is a tracked job too (total=1) — it
     runs on the interactive lane."""
-    getter = {
-        EntityType.tag: paperless.get_tag,
-        EntityType.correspondent: paperless.get_correspondent,
-        EntityType.document_type: paperless.get_document_type,
-    }.get(entity_type)
+    spec = TAXONOMY.get(entity_type.value)
     try:
-        entity_name = (await getter(entity_id)).name if getter else ""
+        entity_name = (await spec.get(paperless, entity_id)).name if spec else ""
     except Exception:  # noqa: BLE001 — names are cosmetic, never fatal
         entity_name = ""
     type_label = entity_type.value.replace("_", " ")
@@ -255,7 +322,11 @@ async def update_job(db: AsyncSession, job_id: int) -> None:
         if job is None:
             return
         sessions = (
-            await db.scalars(select(Session).where(Session.job_id == job_id))
+            await db.scalars(
+                select(Session)
+                .where(Session.job_id == job_id)
+                .options(defer(Session.message_history))
+            )
         ).all()
         done = failed = unfinished = 0
         for s in sessions:

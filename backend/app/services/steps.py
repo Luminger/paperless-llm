@@ -136,7 +136,12 @@ async def create_step(
     *,
     lane: QueueLane | None = None,
     supersedes_id: int | None = None,
+    commit: bool = True,
 ) -> Step:
+    """``commit=False`` lets a caller batch many steps into ONE
+    transaction (bulk jobs): nothing is visible to workers until the
+    caller commits and calls :func:`notify_steps` — no half-created
+    jobs, no workers racing a loop that is still inserting."""
     step = Step(
         session_id=session.id,
         kind=kind,
@@ -155,10 +160,19 @@ async def create_step(
         session_id=session.id, lane=str(step.lane.value),
     )
     await sync_session(db, session)
-    await db.commit()
-    _publish(step)
-    workers.wake(step.lane)
+    if commit:
+        await db.commit()
+        notify_steps([step])
     return step
+
+
+def notify_steps(steps: list[Step]) -> None:
+    """Publish + wake AFTER the transaction that created the steps
+    committed — events must never announce uncommitted state."""
+    for step in steps:
+        _publish(step)
+    for lane in {s.lane for s in steps}:
+        workers.wake(lane)
 
 
 class StepActionError(Exception):

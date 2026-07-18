@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import EntityEmbedding
 from app.paperless import PaperlessClient
+from app.paperless.taxonomy import TAXONOMY
 
 # Candidate thresholds: either metric qualifies. String ratio catches
 # "Kraxi"/"Kraxi GmbH"; embeddings catch semantic twins with different
@@ -114,13 +115,7 @@ async def _ensure_vectors(
 
 
 async def _list_entities(paperless: PaperlessClient, entity_type: str) -> list[Any]:
-    fetch = {
-        "tag": paperless.list_tags,
-        "correspondent": paperless.list_correspondents,
-        "document_type": paperless.list_document_types,
-        "storage_path": paperless.list_storage_paths,
-    }[entity_type]
-    return await fetch()
+    return await TAXONOMY[entity_type].list(paperless)
 
 
 async def find_similar(

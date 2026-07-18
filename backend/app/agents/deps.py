@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.db.models import Proposal
 from app.paperless import PaperlessClient
+from app.paperless.taxonomy import TAXONOMY
 
 
 @dataclass
@@ -33,13 +34,9 @@ class AgentDeps:
 
     async def taxonomy(self, entity_type: str) -> list:
         if entity_type not in self.taxonomy_cache:
-            fetch = {
-                "tag": self.paperless.list_tags,
-                "correspondent": self.paperless.list_correspondents,
-                "document_type": self.paperless.list_document_types,
-                "storage_path": self.paperless.list_storage_paths,
-            }[entity_type]
-            self.taxonomy_cache[entity_type] = await fetch()
+            self.taxonomy_cache[entity_type] = await TAXONOMY[entity_type].list(
+                self.paperless
+            )
         return self.taxonomy_cache[entity_type]
 
     @property

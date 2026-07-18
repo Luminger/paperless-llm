@@ -20,6 +20,7 @@ from app.api.schemas import (
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
+from app.paperless.taxonomy import TAXONOMY, TAXONOMY_TYPES
 from app.services.entity_index import merge_candidates
 from app.services.instructions import (
     ensure_inbox_defaults,
@@ -28,8 +29,6 @@ from app.services.instructions import (
 )
 
 router = APIRouter(prefix="/api/entities", tags=["entities"])
-
-TAXONOMY_TYPES = ("tag", "correspondent", "document_type")
 
 
 @router.get("/documents")
@@ -52,6 +51,7 @@ async def list_documents(
     )
     return DocumentSearchPage(
         count=result.count,
+        page_size=page_size,
         all=result.all,
         results=[
             DocumentOut(**d.model_dump(exclude={"content"}))
@@ -70,10 +70,8 @@ async def get_document(
 
 @router.get("/documents/{doc_id}/thumb")
 async def get_thumbnail(doc_id: int, paperless: PaperlessClient = Depends(get_paperless)):
-    resp = await paperless._request("GET", f"/api/documents/{doc_id}/thumb/")
-    return Response(
-        content=resp.content, media_type=resp.headers.get("content-type", "image/webp")
-    )
+    content, media_type = await paperless.get_thumbnail(doc_id)
+    return Response(content=content, media_type=media_type)
 
 
 def _entity_out(e, instructions: str = "") -> EntityOut:
@@ -148,16 +146,10 @@ async def get_entity(
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> EntityOut:
     """Generic taxonomy entity detail (documents have their own route)."""
-    if entity_type not in TAXONOMY_TYPES and entity_type != "storage_path":
+    spec = TAXONOMY.get(entity_type)
+    if spec is None:
         raise HTTPException(422, f"unknown entity type {entity_type!r}")
-    getter = {
-        "tag": paperless.get_tag,
-        "correspondent": paperless.get_correspondent,
-        "document_type": paperless.get_document_type,
-    }.get(entity_type)
-    if getter is None:
-        raise HTTPException(422, f"no detail for {entity_type!r}")
-    entity = await getter(entity_id)
+    entity = await spec.get(paperless, entity_id)
     if entity_type == "tag":
         await ensure_inbox_defaults(db, [entity])
     instr = await get_map(db, entity_type)

@@ -361,6 +361,25 @@ class PaperlessClient:
     async def list_storage_paths(self) -> list[StoragePath]:
         return await self._drain("/api/storage_paths/", StoragePath)
 
+    async def get_storage_path(self, spid: int) -> StoragePath:
+        return StoragePath.model_validate(await self._get_json(f"/api/storage_paths/{spid}/"))
+
+    async def create_storage_path(self, **fields: Any) -> StoragePath:
+        resp = await self._request("POST", "/api/storage_paths/", json=fields)
+        return StoragePath.model_validate(resp.json())
+
+    async def update_storage_path(self, spid: int, **fields: Any) -> StoragePath:
+        resp = await self._request("PATCH", f"/api/storage_paths/{spid}/", json=fields)
+        return StoragePath.model_validate(resp.json())
+
+    async def delete_storage_path(self, spid: int) -> None:
+        await self._request("DELETE", f"/api/storage_paths/{spid}/")
+
+    async def get_thumbnail(self, doc_id: int) -> tuple[bytes, str]:
+        """(content, media_type) of the document thumbnail."""
+        resp = await self._request("GET", f"/api/documents/{doc_id}/thumb/")
+        return resp.content, resp.headers.get("content-type", "image/webp")
+
     async def list_custom_fields(self) -> list[CustomField]:
         return await self._drain("/api/custom_fields/", CustomField)
 

@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_paperless
+from app.api.pagination import count_of, paginate
+from app.api.presenters import proposal_out as _out
 from app.api.schemas import (
     ProposalOut,
     ProposalPage,
@@ -19,14 +21,6 @@ from app.paperless import PaperlessClient
 from app.proposals import apply_proposal, revert_change, validate_payload
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
-
-
-def _out(p: Proposal) -> ProposalOut:
-    out = ProposalOut.model_validate(p)
-    if p.applied_change:
-        out.applied = True
-        out.reverted = p.applied_change.reverted_at is not None
-    return out
 
 
 async def _load(db: AsyncSession, proposal_id: int) -> Proposal:
@@ -48,30 +42,24 @@ async def list_proposals(
     page_size: int = 50,
     db: AsyncSession = Depends(get_session),
 ) -> ProposalPage:
-    page = max(1, page)
-    page_size = min(200, max(1, page_size))
     where = []
     if status:
         where.append(Proposal.status == status)
     if session_id:
         where.append(Proposal.session_id == session_id)
-    from sqlalchemy import func
-
-    count = (
-        await db.scalar(select(func.count()).select_from(Proposal).where(*where))
-    ) or 0
     q = (
         select(Proposal)
         .where(*where)
         .options(selectinload(Proposal.applied_change))
         .order_by(Proposal.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+    )
+    win, q = await paginate(
+        db, q, count_of(Proposal, *where), page=page, page_size=page_size
     )
     return ProposalPage(
-        count=count,
-        page=page,
-        page_size=page_size,
+        count=win.count,
+        page=win.page,
+        page_size=win.page_size,
         results=[_out(p) for p in (await db.scalars(q)).all()],
     )
 

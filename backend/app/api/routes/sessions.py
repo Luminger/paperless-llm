@@ -7,10 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.api.deps import get_paperless
-from app.api.routes.proposals import _out as proposal_out
+from app.api.pagination import count_of, paginate
+from app.api.presenters import proposal_out
 from app.api.schemas import (
     AnalyzeEntityRequest,
     AnalyzeRequest,
@@ -60,8 +61,6 @@ async def list_sessions(
     latter); unfinished=true keeps only sessions that still need
     something (gates, running/queued work, failures — or proposals
     still waiting for review)."""
-    page = max(1, page)
-    page_size = min(100, max(1, page_size))
     where = [
         Session.archived_at.is_not(None) if archived else Session.archived_at.is_(None)
     ]
@@ -93,22 +92,28 @@ async def list_sessions(
             raise HTTPException(422, f"unknown entity type {entity_type!r}") from e
     if entity_id is not None:
         where.append(Session.entity_id == entity_id)
-    count = await db.scalar(select(func.count()).select_from(Session).where(*where)) or 0
     q = (
         select(Session, func.count(Proposal.id))
         .outerjoin(Proposal, Proposal.session_id == Session.id)
         .where(*where)
         .group_by(Session.id)
         .order_by(Session.updated_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        # List rows must stay narrow: the full chat history is a
+        # per-session JSON blob and belongs to the detail view only.
+        .options(defer(Session.message_history))
+    )
+    win, q = await paginate(
+        db, q, count_of(Session, *where), page=page, page_size=page_size,
+        max_page_size=100,
     )
     results: list[SessionOut] = []
     for s, n in (await db.execute(q)).all():
         item = SessionOut.model_validate(s)
         item.proposal_count = n
         results.append(item)
-    return SessionPage(count=count, page=page, page_size=page_size, results=results)
+    return SessionPage(
+        count=win.count, page=win.page, page_size=win.page_size, results=results
+    )
 
 
 def _step_out(step: Step, history: list) -> StepOut:

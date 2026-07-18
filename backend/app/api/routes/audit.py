@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.pagination import count_of, paginate
 from app.api.schemas import AuditPage, ResourceFetch, SyncStatusOut
 from app.db.models import AuditLog
 from app.db.session import get_session
@@ -21,8 +22,6 @@ async def list_audit(
     kind: str | None = None,
     db: AsyncSession = Depends(get_session),
 ) -> AuditPage:
-    page = max(1, page)
-    page_size = min(100, max(1, page_size))
     where = []
     if kind == "changes":
         # Data changes only — neither raw paperless traffic nor task
@@ -30,22 +29,17 @@ async def list_audit(
         where.append(AuditLog.kind.notin_(("paperless", "task")))
     elif kind:
         where.append(AuditLog.kind == kind)
-    count = (
-        await db.scalar(select(func.count()).select_from(AuditLog).where(*where))
-    ) or 0
-    rows = (
-        await db.scalars(
-            select(AuditLog)
-            .where(*where)
-            .order_by(AuditLog.id.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        )
-    ).all()
+    win, q = await paginate(
+        db,
+        select(AuditLog).where(*where).order_by(AuditLog.id.desc()),
+        count_of(AuditLog, *where),
+        page=page, page_size=page_size, max_page_size=100,
+    )
+    rows = (await db.scalars(q)).all()
     return AuditPage(
-        count=count,
-        page=page,
-        page_size=page_size,
+        count=win.count,
+        page=win.page,
+        page_size=win.page_size,
         results=[
             {"id": r.id, "ts": r.ts, "kind": r.kind, "action": r.action,
              "actor": r.actor, "detail": r.detail}

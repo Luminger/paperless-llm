@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AppliedChange, Proposal, ProposalStatus, utcnow
 from app.paperless import PaperlessClient, PaperlessError
+from app.paperless.taxonomy import TAXONOMY
 from app.proposals.schemas import (
     AnyProposal,
     CreateEntity,
@@ -29,25 +30,6 @@ from app.services.audit import record
 class ApplyError(Exception):
     pass
 
-
-# Per-taxonomy-type accessor names on PaperlessClient.
-_ENTITY_OPS = {
-    "tag": ("get_tag", "create_tag", "update_tag", "delete_tag", "tags__id__in"),
-    "correspondent": (
-        "get_correspondent",
-        "create_correspondent",
-        "update_correspondent",
-        "delete_correspondent",
-        "correspondent__id",
-    ),
-    "document_type": (
-        "get_document_type",
-        "create_document_type",
-        "update_document_type",
-        "delete_document_type",
-        "document_type__id",
-    ),
-}
 
 _BULK_SET_METHOD = {
     "correspondent": "set_correspondent",
@@ -132,14 +114,8 @@ async def _apply_claimed(
 
 
 async def _find_existing_entity(paperless: PaperlessClient, entity_type: str, name: str):
-    get_list = {
-        "tag": paperless.list_tags,
-        "correspondent": paperless.list_correspondents,
-        "document_type": paperless.list_document_types,
-        "storage_path": paperless.list_storage_paths,
-    }[entity_type]
     wanted = name.strip().lower()
-    for e in await get_list():
+    for e in await TAXONOMY[entity_type].list(paperless):
         if e.name.strip().lower() == wanted:
             return e
     return None
@@ -185,17 +161,17 @@ async def _is_noop(paperless: PaperlessClient, p: AnyProposal) -> bool:  # noqa:
                     return False
             return True
         case UpdateEntity():
-            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
-            current = await getattr(paperless, get)(p.entity_id)
+            spec = TAXONOMY[p.entity_type]
+            current = await spec.get(paperless, p.entity_id)
             fields = _entity_fields(p)
             return bool(fields) and all(
                 getattr(current, k, None) == v for k, v in fields.items()
             )
         case MergeEntities() | DeleteEntity():
-            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
+            spec = TAXONOMY[p.entity_type]
             entity_id = p.source_id if isinstance(p, MergeEntities) else p.entity_id
             try:
-                await getattr(paperless, get)(entity_id)
+                await spec.get(paperless, entity_id)
             except PaperlessError as e:
                 if e.status_code == 404:
                     return True  # already merged away / deleted
@@ -255,18 +231,18 @@ async def _snapshot_conflicts(  # noqa: C901
                 if now != was and now != provided.get(k):
                     conflicts.append(f"{k}: was {_fmt(was)}, now {_fmt(now)}")
         case UpdateEntity():
-            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
-            current = await getattr(paperless, get)(p.entity_id)
+            spec = TAXONOMY[p.entity_type]
+            current = await spec.get(paperless, p.entity_id)
             provided = p.model_dump(exclude_unset=True)
             for k, was in snapshot.items():
                 now = getattr(current, k, None)
                 if now != was and now != provided.get(k):
                     conflicts.append(f"{k}: was {_fmt(was)}, now {_fmt(now)}")
         case MergeEntities():
-            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
-            source = await getattr(paperless, get)(p.source_id)
+            spec = TAXONOMY[p.entity_type]
+            source = await spec.get(paperless, p.source_id)
             try:
-                target = await getattr(paperless, get)(p.target_id)
+                target = await spec.get(paperless, p.target_id)
             except PaperlessError as e:
                 if e.status_code == 404:
                     return [f"merge target #{p.target_id} no longer exists"]
@@ -280,8 +256,8 @@ async def _snapshot_conflicts(  # noqa: C901
                     f"target was {_fmt(snapshot['target']['name'])}, now {_fmt(target.name)}"
                 )
         case DeleteEntity():
-            get, _, _, _, _ = _ENTITY_OPS[p.entity_type]
-            current = await getattr(paperless, get)(p.entity_id)
+            spec = TAXONOMY[p.entity_type]
+            current = await spec.get(paperless, p.entity_id)
             if current.name != snapshot.get("name"):
                 conflicts.append(
                     f"name was {_fmt(snapshot.get('name'))}, now {_fmt(current.name)}"
@@ -368,12 +344,12 @@ async def _apply_create_entity(
     if p.entity_type == "storage_path":
         # Needs create_storage_path client support + a `path`; deferred.
         raise ApplyError("storage_path creation not supported yet")
-    _, create, _, _, _ = _ENTITY_OPS[p.entity_type]
+    spec = TAXONOMY[p.entity_type]
     # An identically-named entity may have appeared since the proposal
     # (concurrent session): reuse it instead of erroring on a duplicate.
     created = await _find_existing_entity(paperless, p.entity_type, p.name)
     if created is None:
-        created = await getattr(paperless, create)(**_entity_fields(p))
+        created = await spec.create(paperless, **_entity_fields(p))
     after: dict[str, Any] = {"entity": created.model_dump(), "assigned_documents": []}
     if p.assign_to_documents:
         if p.entity_type == "tag":
@@ -391,51 +367,42 @@ async def _apply_create_entity(
 async def _apply_update_entity(
     paperless: PaperlessClient, p: UpdateEntity
 ) -> tuple[dict, dict]:
-    get, _, update, _, _ = _ENTITY_OPS[p.entity_type]
-    current = await getattr(paperless, get)(p.entity_id)
+    spec = TAXONOMY[p.entity_type]
+    current = await spec.get(paperless, p.entity_id)
     fields = _entity_fields(p)
     if not fields:
         raise ApplyError("proposal contains no changes")
-    updated = await getattr(paperless, update)(p.entity_id, **fields)
+    updated = await spec.update(paperless, p.entity_id, **fields)
     return {"entity": current.model_dump()}, {"entity": updated.model_dump()}
 
 
 async def _docs_referencing(
     paperless: PaperlessClient, entity_type: str, entity_id: int
 ) -> list[int]:
-    if entity_type == "tag":
-        page = await paperless.search_documents(tag_ids=[entity_id], page_size=100)
-    elif entity_type == "correspondent":
-        page = await paperless.search_documents(correspondent_id=entity_id, page_size=100)
-    elif entity_type == "document_type":
-        page = await paperless.search_documents(document_type_id=entity_id, page_size=100)
-    else:
-        page = await paperless.search_documents(storage_path_id=entity_id, page_size=100)
+    kwargs = TAXONOMY[entity_type].search_filter(entity_id)
+    page = await paperless.search_documents(page_size=100, **kwargs)
     ids = [d.id for d in page.results]
     # `all` carries every matching id regardless of pagination when present.
     if page.all:
         ids = list(page.all)
     elif page.count > len(ids):
-        p = 2
-        while len(ids) < page.count:
-            kwargs = {
-                "tag": {"tag_ids": [entity_id]},
-                "correspondent": {"correspondent_id": entity_id},
-                "document_type": {"document_type_id": entity_id},
-                "storage_path": {"storage_path_id": entity_id},
-            }[entity_type]
+        # Bounded by pages, not by count: documents deleted mid-iteration
+        # must not turn this into an out-of-range 404 loop.
+        total_pages = -(-page.count // 100)
+        for p in range(2, total_pages + 1):
             more = await paperless.search_documents(page=p, page_size=100, **kwargs)
+            if not more.results:
+                break
             ids += [d.id for d in more.results]
-            p += 1
     return ids
 
 
 async def _apply_merge(paperless: PaperlessClient, p: MergeEntities) -> tuple[dict, dict]:
     if p.source_id == p.target_id:
         raise ApplyError("merge source and target are identical")
-    get, _, _, delete, _ = _ENTITY_OPS[p.entity_type]
-    source = await getattr(paperless, get)(p.source_id)
-    target = await getattr(paperless, get)(p.target_id)
+    spec = TAXONOMY[p.entity_type]
+    source = await spec.get(paperless, p.source_id)
+    target = await spec.get(paperless, p.target_id)
     doc_ids = await _docs_referencing(paperless, p.entity_type, p.source_id)
 
     before = {
@@ -452,7 +419,7 @@ async def _apply_merge(paperless: PaperlessClient, p: MergeEntities) -> tuple[di
             await paperless.bulk_edit_documents(
                 doc_ids, _BULK_SET_METHOD[p.entity_type], {p.entity_type: p.target_id}
             )
-    await getattr(paperless, delete)(p.source_id)
+    await spec.delete(paperless, p.source_id)
     return before, {
         "merged_into": {"id": target.id, "name": target.name},
         "documents_reassigned": doc_ids,
@@ -462,8 +429,8 @@ async def _apply_merge(paperless: PaperlessClient, p: MergeEntities) -> tuple[di
 async def _apply_delete_entity(
     paperless: PaperlessClient, p: DeleteEntity
 ) -> tuple[dict, dict]:
-    get, _, _, delete, _ = _ENTITY_OPS[p.entity_type]
-    entity = await getattr(paperless, get)(p.entity_id)
+    spec = TAXONOMY[p.entity_type]
+    entity = await spec.get(paperless, p.entity_id)
     doc_ids = await _docs_referencing(paperless, p.entity_type, p.entity_id)
     if doc_ids and not p.force:
         raise ApplyError(
@@ -479,7 +446,7 @@ async def _apply_delete_entity(
         await paperless.bulk_edit_documents(
             doc_ids, _BULK_SET_METHOD[p.entity_type], {p.entity_type: None}
         )
-    await getattr(paperless, delete)(p.entity_id)
+    await spec.delete(paperless, p.entity_id)
     return before, {"deleted": True, "documents_detached": doc_ids}
 
 
@@ -522,17 +489,17 @@ async def revert_is_noop(
             created_id = (change.paperless_after.get("entity") or {}).get("id")
             if created_id is None:
                 return False
-            get, _, _, _, _ = _ENTITY_OPS[typed.entity_type]
+            spec = TAXONOMY[typed.entity_type]
             try:
-                await getattr(paperless, get)(created_id)
+                await spec.get(paperless, created_id)
             except PaperlessError as e:
                 if e.status_code == 404:
                     return True  # already deleted — nothing to revert
                 raise
             return False
         case UpdateEntity():
-            get, _, _, _, _ = _ENTITY_OPS[typed.entity_type]
-            current = await getattr(paperless, get)(typed.entity_id)
+            spec = TAXONOMY[typed.entity_type]
+            current = await spec.get(paperless, typed.entity_id)
             ent = before.get("entity") or {}
             return all(
                 getattr(current, k, None) == ent[k]
@@ -577,9 +544,9 @@ async def revert_change(
             doc_id = doc.pop("id")
             await paperless.update_document(doc_id, **doc)
         case UpdateEntity():
-            _, _, update, _, _ = _ENTITY_OPS[typed.entity_type]
+            spec = TAXONOMY[typed.entity_type]
             entity = before["entity"]
-            await getattr(paperless, update)(
+            await spec.update(paperless, 
                 typed.entity_id,
                 **{
                     k: entity[k]
@@ -589,13 +556,13 @@ async def revert_change(
             )
         case CreateEntity():
             created_id = change.paperless_after["entity"]["id"]
-            _, _, _, delete, _ = _ENTITY_OPS[typed.entity_type]
-            await getattr(paperless, delete)(created_id)
+            spec = TAXONOMY[typed.entity_type]
+            await spec.delete(paperless, created_id)
         case MergeEntities():
             # Recreate the source entity (new id) and reassign the docs back.
-            _, create, _, _, _ = _ENTITY_OPS[typed.entity_type]
+            spec = TAXONOMY[typed.entity_type]
             src = before["source_entity"]
-            recreated = await getattr(paperless, create)(
+            recreated = await spec.create(paperless, 
                 **{
                     k: src[k]
                     for k in ("name", "match", "matching_algorithm", "is_insensitive")
@@ -616,9 +583,9 @@ async def revert_change(
                         {typed.entity_type: recreated.id},
                     )
         case DeleteEntity():
-            _, create, _, _, _ = _ENTITY_OPS[typed.entity_type]
+            spec = TAXONOMY[typed.entity_type]
             src = before["entity"]
-            recreated = await getattr(paperless, create)(
+            recreated = await spec.create(paperless, 
                 **{
                     k: src[k]
                     for k in ("name", "match", "matching_algorithm", "is_insensitive")
