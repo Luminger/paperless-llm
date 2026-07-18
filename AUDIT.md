@@ -433,7 +433,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #78
 
 ### SV-M6 — MEDIUM — `resolve_step`/`redo_step` double-resolution race
-- **Status:** FIXED for resolve_step (atomic claim, loser 409s, test). redo_step still check-then-act — remaining exposure is two concurrent redos, tracked in #76
+- **Status:** FIXED — resolve_step claims atomically (test); redo_step flips the redone step terminal→superseded via guarded UPDATE before creating the successor (loser 409s)
 - **Where:** `app/services/steps.py:281-291` (and redo's terminal-state
   check)
 - **Detail:** Two concurrent resolves both pass `state == awaiting_user`

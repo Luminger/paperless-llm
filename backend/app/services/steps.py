@@ -223,6 +223,15 @@ async def redo_step(
     applied ones are history and stay untouched."""
     if step.state not in (*TERMINAL, StepState.awaiting_user):
         raise StepActionError(f"step is {step.state.value}; wait for it to finish")
+    # AUDIT SV-M6 (redo half): claim the redo atomically — two concurrent
+    # redos of the same step must not both create successors.
+    claimed = await db.execute(
+        sa_update(Step)
+        .where(Step.id == step.id, Step.state == step.state)
+        .values(state=StepState.superseded)
+    )
+    if claimed.rowcount == 0:
+        raise StepActionError("step was just redone or changed state; reload")
     session = await db.get(Session, step.session_id)
     assert session is not None
 
@@ -244,7 +253,7 @@ async def redo_step(
         if s.state in (StepState.succeeded, StepState.failed, StepState.awaiting_user)
     ]
     for s in to_supersede:
-        s.state = StepState.superseded
+        s.state = StepState.superseded  # step itself already flipped above
     open_proposals = (
         await db.scalars(
             select(Proposal).where(
