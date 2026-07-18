@@ -72,6 +72,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corpus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Corpus Status
+         * @description How much of the archive ever went through a completed analysis —
+         *     feeds the dashboard's batch-by-batch curation block.
+         */
+        get: operations["corpus_status_api_corpus_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/entities/correspondents": {
         parameters: {
             query?: never;
@@ -883,6 +904,17 @@ export interface components {
             ttft_s?: number | null;
         };
         /**
+         * CorpusOut
+         * @description Corpus-curation progress: how much of the archive ever went
+         *     through a completed analysis.
+         */
+        CorpusOut: {
+            /** Processed */
+            processed: number;
+            /** Total */
+            total: number;
+        };
+        /**
          * DocumentOut
          * @description Document list/detail item (content only on detail).
          */
@@ -1050,6 +1082,8 @@ export interface components {
             inbox: boolean;
             /** Instructions */
             instructions?: string | null;
+            /** Next Batch */
+            next_batch?: number | null;
             /**
              * Ocr Only
              * @default false
@@ -1827,6 +1861,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthMeOut"];
+                };
+            };
+        };
+    };
+    corpus_status_api_corpus_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorpusOut"];
                 };
             };
         };

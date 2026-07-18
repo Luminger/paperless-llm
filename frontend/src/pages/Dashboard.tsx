@@ -1,9 +1,79 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/components/app/PageHeader";
+import { SimpleSelect } from "@/components/app/SimpleSelect";
+import { ErrorNotice } from "@/components/app/states";
 import { api } from "../api";
 import { keys } from "../lib/keys";
 import { SessionList } from "../components/SessionList";
+
+/** Batch-by-batch corpus curation: how much of the archive has been
+ * analyzed, and one button that always means "give me the next slice".
+ * Early batches straighten the taxonomy; later ones get easier as
+ * paperless's matching starts pre-assigning. */
+function CorpusBlock() {
+  const navigate = useNavigate();
+  const [size, setSize] = useState("10");
+  const { data } = useQuery({
+    queryKey: keys.corpus(),
+    queryFn: api.getCorpus,
+    refetchInterval: 30_000,
+  });
+  const start = useMutation({
+    mutationFn: () => api.createJob({ next_batch: Number(size) }),
+    onSuccess: (job) => navigate(`/jobs/${job.id}`),
+  });
+  if (!data || data.total === 0) return null;
+  const done = data.processed >= data.total;
+  const pct = Math.round((data.processed / data.total) * 100);
+  return (
+    <Card className="mb-6 py-4">
+      <CardContent className="px-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-56 flex-1">
+            <p className="text-sm font-medium">Corpus</p>
+            <div className="mt-1.5 flex items-center gap-3">
+              <Progress value={pct} className="max-w-72 flex-1" />
+              <p className="text-xs whitespace-nowrap text-muted-foreground">
+                {data.processed.toLocaleString()} of {data.total.toLocaleString()}{" "}
+                documents analyzed
+              </p>
+            </div>
+          </div>
+          {done ? (
+            <p className="text-sm text-muted-foreground">
+              Every document has been analyzed.
+            </p>
+          ) : (
+            <div className="flex items-center gap-2">
+              <SimpleSelect
+                ariaLabel="batch size"
+                value={size}
+                onValueChange={setSize}
+                options={["10", "25", "50"].map((n) => ({
+                  value: n,
+                  label: `${n} documents`,
+                }))}
+              />
+              <Button
+                size="sm"
+                disabled={start.isPending}
+                onClick={() => start.mutate()}
+              >
+                Analyze next batch
+              </Button>
+            </div>
+          )}
+        </div>
+        <ErrorNotice error={start.error} />
+      </CardContent>
+    </Card>
+  );
+}
 
 function fmt(n: number | undefined): string {
   if (n == null) return "0";
@@ -56,6 +126,8 @@ export default function Dashboard() {
           />
         </div>
       )}
+
+      <CorpusBlock />
 
       <h2 className="mb-2 text-sm font-medium text-muted-foreground">Needs attention</h2>
       <SessionList unfinished pageSize={5} showEntity showArchived={false} />

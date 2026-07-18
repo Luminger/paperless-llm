@@ -545,6 +545,45 @@ async def test_ocr_only_job_creation(client, db):
     assert step.input["ocr_only"] is True
 
 
+@respx.mock
+async def test_corpus_status_and_next_batch(client, db):
+    """The corpus block: processed = completed analyses (OCR-only jobs
+    don't count); next_batch picks never-analyzed docs oldest-first."""
+    from app.db.models import EntityType, SessionPhase
+
+    docs = [DOC | {"id": i, "title": f"doc {i}"} for i in (1, 2, 3, 4)]
+    respx.get(f"{PAPERLESS_URL}/api/documents/").mock(
+        return_value=Response(200, json={
+            "count": 4, "next": None, "previous": None, "results": docs,
+        })
+    )
+    for i in (2, 3, 4):
+        respx.get(f"{PAPERLESS_URL}/api/documents/{i}/").mock(
+            return_value=Response(200, json=DOC | {"id": i, "title": f"doc {i}"})
+        )
+    # doc 1: analyzed; doc 2: only OCR-only'd (does NOT count).
+    db.add(Session(
+        agent_kind=AgentKind.document, entity_type=EntityType.document,
+        entity_id=1, phase=SessionPhase.done,
+    ))
+    db.add(Session(
+        agent_kind=AgentKind.document, entity_type=EntityType.document,
+        entity_id=2, phase=SessionPhase.done, params={"ocr_only": True},
+    ))
+    await db.commit()
+
+    r = await client.get("/api/corpus")
+    assert r.status_code == 200
+    assert r.json() == {"total": 4, "processed": 1}
+
+    r = await client.post("/api/jobs", json={"next_batch": 2})
+    assert r.status_code == 200
+    job = r.json()
+    assert job["params"]["label"] == "Corpus batch (2 documents)"
+    assert job["params"]["document_ids"] == [2, 3]  # oldest unprocessed first
+    assert job["total"] == 2
+
+
 def _entity_page(*items):
     return Response(200, json={"count": len(items), "next": None, "results": list(items)})
 

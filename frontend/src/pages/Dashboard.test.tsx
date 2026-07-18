@@ -9,6 +9,8 @@ vi.mock("../api", () => ({
   api: {
     listSessions: vi.fn(),
     getStats: vi.fn(),
+    getCorpus: vi.fn(),
+    createJob: vi.fn(),
     archiveSession: vi.fn(),
     unarchiveSession: vi.fn(),
   },
@@ -41,6 +43,7 @@ function page(results: Session[], count = results.length): SessionPage {
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocked.getCorpus.mockResolvedValue({ total: 2400, processed: 118 });
     mocked.getStats.mockResolvedValue({
       pending_proposals: 1,
       active_sessions: 0,
@@ -120,5 +123,41 @@ describe("Dashboard", () => {
         expect.objectContaining({ unfinished: true, archived: false, page_size: 5 }),
       ),
     );
+  });
+});
+
+describe("Dashboard corpus block", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.getStats.mockResolvedValue({
+      pending_proposals: 0,
+      active_sessions: 0,
+      queue_pending: {},
+      active_jobs: 0,
+      lifetime: {},
+    });
+    mocked.listSessions.mockResolvedValue({ count: 0, page: 1, page_size: 5, results: [] });
+  });
+
+  it("shows curation progress and starts the next batch", async () => {
+    mocked.getCorpus.mockResolvedValue({ total: 2400, processed: 118 });
+    mocked.createJob.mockResolvedValue({ id: 9 } as never);
+    renderWithProviders(<Dashboard />);
+    expect(
+      await screen.findByText(/118 of 2,400 documents analyzed/),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /analyze next batch/i }));
+    await waitFor(() =>
+      expect(mocked.createJob).toHaveBeenCalledWith({ next_batch: 10 }),
+    );
+  });
+
+  it("declares a fully analyzed corpus", async () => {
+    mocked.getCorpus.mockResolvedValue({ total: 13, processed: 13 });
+    renderWithProviders(<Dashboard />);
+    expect(
+      await screen.findByText(/every document has been analyzed/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /analyze next batch/i })).toBeNull();
   });
 });

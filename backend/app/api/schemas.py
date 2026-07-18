@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, PlainSerializer
+from pydantic import BaseModel, Field, PlainSerializer
 
 from app.db.models import (
     AgentKind,
@@ -172,6 +172,9 @@ class JobCreate(BaseModel):
     redo_ocr: bool = False
     # Re-OCR each document and STOP there — no analysis follows.
     ocr_only: bool = False
+    # Corpus curation: analyze the next N never-analyzed documents
+    # (oldest first). Mutually exclusive with the other scopes.
+    next_batch: int | None = Field(default=None, ge=1, le=100)
     apply_policy: Literal["review", "auto"] = "review"
     instructions: str | None = None
 
@@ -193,6 +196,14 @@ class JobOut(BaseModel):
 
 class JobDetailOut(JobOut):
     sessions: list[SessionOut] = []
+
+
+class CorpusOut(BaseModel):
+    """Corpus-curation progress: how much of the archive ever went
+    through a completed analysis."""
+
+    total: int
+    processed: int
 
 
 class StatsOut(BaseModel):

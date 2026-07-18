@@ -80,6 +80,50 @@ async def resolve_documents(
     return ids, titles
 
 
+async def processed_document_ids(db: AsyncSession) -> set[int]:
+    """Documents that went through a COMPLETED metadata analysis — the
+    corpus-curation notion of "done". OCR-only sessions don't count
+    (they fix text, not metadata)."""
+    rows = (
+        await db.execute(
+            select(Session.entity_id, Session.params).where(
+                Session.entity_type == EntityType.document,
+                Session.phase == SessionPhase.done,
+            )
+        )
+    ).all()
+    return {
+        eid for eid, params in rows
+        if eid is not None and not (params or {}).get("ocr_only")
+    }
+
+
+async def resolve_next_batch(
+    db: AsyncSession,
+    paperless: PaperlessClient,
+    size: int,
+) -> list[int]:
+    """The next ``size`` documents that never had a completed analysis,
+    oldest first — deterministic, so "work the corpus in batches" is
+    just pressing the same button until it's done."""
+    done = await processed_document_ids(db)
+    picked: list[int] = []
+    page_no = 1
+    while len(picked) < size:
+        page = await paperless.search_documents(
+            ordering="created", page=page_no, page_size=100
+        )
+        if not page.results:
+            break
+        for d in page.results:
+            if d.id not in done and len(picked) < size:
+                picked.append(d.id)
+        if len(page.results) < 100:
+            break
+        page_no += 1
+    return picked
+
+
 async def create_job(
     db: AsyncSession,
     paperless: PaperlessClient,
@@ -97,6 +141,7 @@ async def create_job(
     kind: str = "bulk_analyze",
     lane: QueueLane = QueueLane.batch,
     trigger: str | None = None,
+    label: str | None = None,
 ) -> tuple[Job, list[int]]:
     """Create the job + sessions + queue items. Returns (job, doc_ids).
 
@@ -151,21 +196,22 @@ async def create_job(
                 titles[doc_id] = (await paperless.get_document(doc_id)).title
             except Exception:  # noqa: BLE001 — label is cosmetic, never fatal
                 titles[doc_id] = ""
-    if inbox:
-        label = "Inbox"
-    elif all_documents:
-        label = "All documents"
-    elif untagged_only:
-        label = "Untagged documents"
-    elif tag_id:
-        try:
-            label = f"Tag: {(await paperless.get_tag(tag_id)).name}"
-        except Exception:  # noqa: BLE001
-            label = "Tag"
-    elif len(ids) == 1:
-        label = titles.get(ids[0]) or "1 document"
-    else:
-        label = f"{len(ids)} selected documents"
+    if label is None:
+        if inbox:
+            label = "Inbox"
+        elif all_documents:
+            label = "All documents"
+        elif untagged_only:
+            label = "Untagged documents"
+        elif tag_id:
+            try:
+                label = f"Tag: {(await paperless.get_tag(tag_id)).name}"
+            except Exception:  # noqa: BLE001
+                label = "Tag"
+        elif len(ids) == 1:
+            label = titles.get(ids[0]) or "1 document"
+        else:
+            label = f"{len(ids)} selected documents"
     params["label"] = label
 
     if instructions:

@@ -10,6 +10,7 @@ from sqlalchemy.orm import defer
 from app.api.deps import get_paperless
 from app.api.pagination import count_of, paginate
 from app.api.schemas import (
+    CorpusOut,
     JobCreate,
     JobDetailOut,
     JobOut,
@@ -53,8 +54,19 @@ async def create_job(
             instructions=body.instructions,
         )
         return JobOut.model_validate(job)
+    document_ids = body.document_ids
+    label: str | None = None
+    if body.next_batch:
+        from app.services.jobs import resolve_next_batch
+
+        document_ids = await resolve_next_batch(db, paperless, body.next_batch)
+        if not document_ids:
+            raise HTTPException(
+                422, "every document has been analyzed — the corpus is done"
+            )
+        label = f"Corpus batch ({len(document_ids)} documents)"
     if not (
-        body.document_ids
+        document_ids
         or body.tag_id
         or body.inbox
         or body.untagged_only
@@ -64,7 +76,7 @@ async def create_job(
     job, ids = await create_job_service(
         db,
         paperless,
-        document_ids=body.document_ids,
+        document_ids=document_ids,
         tag_id=body.tag_id,
         inbox=body.inbox,
         untagged_only=body.untagged_only,
@@ -73,8 +85,22 @@ async def create_job(
         ocr_only=body.ocr_only,
         apply_policy=body.apply_policy,
         instructions=body.instructions,
+        label=label,
     )
     return JobOut.model_validate(job)
+
+
+@router.get("/corpus")
+async def corpus_status(
+    db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> CorpusOut:
+    """How much of the archive ever went through a completed analysis —
+    feeds the dashboard's batch-by-batch curation block."""
+    from app.services.jobs import processed_document_ids
+
+    page = await paperless.search_documents(page_size=1)
+    return CorpusOut(total=page.count, processed=len(await processed_document_ids(db)))
 
 
 @router.get("/jobs")
