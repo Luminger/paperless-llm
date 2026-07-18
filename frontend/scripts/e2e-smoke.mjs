@@ -66,7 +66,7 @@ check(
 // Documents: URL-backed filter state.
 await page.goto(`${BASE}/documents?page=1`, { waitUntil: "load" });
 await new Promise((r) => setTimeout(r, 1200));
-const rows = await page.$$eval("ul.divide-y > li", (t) => t.length);
+const rows = await page.$$eval("table tbody tr", (t) => t.length);
 check(rows > 0, `documents list has rows (${rows})`);
 
 // A session detail (if any session exists).

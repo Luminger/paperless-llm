@@ -71,7 +71,9 @@ describe("AuditLog", () => {
     expect(await screen.findByText(/GET \/api\/documents\//)).toBeInTheDocument();
     expect(screen.getByText("system")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Data changes" }));
+    // The kind filter is a dropdown like every other list filter.
+    await userEvent.click(screen.getByRole("combobox", { name: "filter by log kind" }));
+    await userEvent.click(screen.getByRole("option", { name: "data changes" }));
     expect(mocked.listAudit).toHaveBeenLastCalledWith(1, 20, "changes");
   });
 });
@@ -108,7 +110,8 @@ describe("AuditLog — scheduled tasks", () => {
       screen.getByText(/automatic retry 1 of ocr step scheduled/),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "filter by log kind" }));
+    await userEvent.click(screen.getByRole("option", { name: "tasks" }));
     expect(mocked.listAudit).toHaveBeenLastCalledWith(1, 20, "task");
   });
 });

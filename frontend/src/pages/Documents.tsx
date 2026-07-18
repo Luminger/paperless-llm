@@ -1,20 +1,31 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
-import { useEntityList } from "../hooks/useTaxonomy";
+import { entityName, useEntityList } from "../hooks/useTaxonomy";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { PageHeader } from "@/components/app/PageHeader";
+import { Pager } from "@/components/app/Pager";
+import {
+  SelectAllHeader,
+  SelectionBar,
+  useSelection,
+} from "@/components/app/selection";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef } from "../api";
 import { keys } from "../lib/keys";
 import { formatDate } from "../lib/format";
 import { FetchStatus } from "../components/FetchStatus";
-import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
-import { Pager } from "../components/Pager";
 
 const ANY = "__any__";
 
@@ -55,7 +66,14 @@ export default function Documents() {
   const [query, setQuery] = useState(submitted);
   const patchUrl = useUrlPatch();
   const navigate = useNavigate();
-  const ms = useMultiSelect();
+  const selection = useSelection();
+
+  // Realtime search: debounced into the URL — no Search button.
+  useEffect(() => {
+    if (query === submitted) return;
+    const t = setTimeout(() => patchUrl({ q: query, page: null }), 350);
+    return () => clearTimeout(t);
+  }, [query, submitted, patchUrl]);
 
   const { data: tags } = useEntityList("tag");
   const { data: correspondents } = useEntityList("correspondent");
@@ -73,46 +91,30 @@ export default function Documents() {
   });
 
   const bulkAnalyze = useMutation({
-    mutationFn: () => api.createJob({ document_ids: [...ms.selected] }),
+    mutationFn: () => api.createJob({ document_ids: [...selection.selected] }),
     onSuccess: (job) => {
-      ms.cancel();
+      selection.clear();
       navigate(`/jobs/${job.id}`);
     },
   });
 
   // `all` carries every matching id across pages (from paperless).
   const allIds = data?.all ?? data?.results.map((d) => d.id) ?? [];
+  const pageIds = data?.results.map((d) => d.id) ?? [];
 
   return (
     <div>
       <PageHeader
         title="Documents"
-        actions={
-          !ms.active && (
-            <Button variant="secondary" size="sm" onClick={() => ms.setActive(true)}>
-              Select…
-            </Button>
-          )
-        }
         filters={
           <>
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                patchUrl({ q: query, page: null });
-              }}
-            >
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Full-text search…"
-                className="h-8 w-56"
-              />
-              <Button type="submit" size="sm" variant="secondary">
-                Search
-              </Button>
-            </form>
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Full-text search…"
+              aria-label="full-text search"
+              className="h-8 w-56"
+            />
             <FilterSelect
               label="tag"
               value={tagId}
@@ -139,21 +141,14 @@ export default function Documents() {
         <FetchStatus resource="documents" isFetching={isFetching} onRefresh={() => refetch()} />
       </div>
 
-      {ms.active && (
-        <div className="mb-3 space-y-1">
-          <MultiSelectBar
-            count={ms.selected.size}
-            allIds={allIds}
-            actionLabel={`Analyze ${ms.selected.size} document(s) as job`}
-            busy={bulkAnalyze.isPending}
-            onAction={() => bulkAnalyze.mutate()}
-            onSelectAll={ms.selectAll}
-            onUnselectAll={ms.unselectAll}
-            onCancel={ms.cancel}
-          />
-          <ErrorNotice error={bulkAnalyze.error} />
-        </div>
-      )}
+      <SelectionBar
+        selection={selection}
+        allIds={allIds}
+        actionLabel={`Analyze ${selection.selected.size} document(s) as job`}
+        busy={bulkAnalyze.isPending}
+        onAction={() => bulkAnalyze.mutate()}
+      />
+      <ErrorNotice error={bulkAnalyze.error} />
 
       {error && <ErrorNotice error={error} />}
       {isLoading ? (
@@ -164,38 +159,57 @@ export default function Documents() {
           hint="Adjust the search or filters above."
         />
       ) : (
-        <ul className="divide-y rounded-lg border bg-card">
-          {data?.results.map((d) => (
-            <li key={d.id} className="flex items-center gap-3 p-3">
-              {ms.active && (
-                <Checkbox
-                  aria-label={`select ${d.title}`}
-                  checked={ms.selected.has(d.id)}
-                  onCheckedChange={() => ms.toggle(d.id)}
-                />
-              )}
-              <Link
-                className="font-medium hover:text-primary hover:underline"
-                to={`/documents/${d.id}`}
-              >
-                {d.title || "(untitled)"}
-              </Link>
-              <span className="text-xs text-muted-foreground">{formatDate(d.created)}</span>
-            </li>
-          ))}
-        </ul>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-8">
+                <SelectAllHeader ids={pageIds} selection={selection} />
+              </TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>Correspondent</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead className="text-right">Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data?.results.map((d) => (
+              <TableRow key={d.id} data-state={selection.selected.has(d.id) ? "selected" : undefined}>
+                <TableCell>
+                  <Checkbox
+                    aria-label={`select ${d.title}`}
+                    checked={selection.selected.has(d.id)}
+                    onCheckedChange={() => selection.toggle(d.id)}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Link
+                    className="font-medium hover:text-primary hover:underline"
+                    to={`/documents/${d.id}`}
+                  >
+                    {d.title || "(untitled)"}
+                  </Link>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {entityName(correspondents, d.correspondent) || "—"}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {entityName(docTypes, d.document_type) || "—"}
+                </TableCell>
+                <TableCell className="text-right text-xs text-muted-foreground">
+                  {formatDate(d.created)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
-      <div className="mt-2 flex items-center justify-between">
-        <Pager
-          page={page}
-          pageSize={data?.page_size ?? 25}
-          count={data?.count ?? 0}
-          onPage={setPage}
-        />
-        {data && (
-          <p className="text-xs text-muted-foreground">{data.count} documents</p>
-        )}
-      </div>
+      <Pager
+        page={page}
+        pageSize={data?.page_size ?? 25}
+        count={data?.count ?? 0}
+        onPage={setPage}
+        label="documents"
+      />
     </div>
   );
 }

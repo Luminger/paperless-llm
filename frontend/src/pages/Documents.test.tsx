@@ -66,17 +66,29 @@ describe("Documents", () => {
     renderWithProviders(<Documents />);
     await screen.findByText("Invoice 4-8");
 
-    await userEvent.click(screen.getByRole("button", { name: "Select…" }));
     await userEvent.click(screen.getByLabelText("select scan_0001"));
     expect(screen.getByText("1 selected")).toBeInTheDocument();
 
     // Select all uses the cross-page id list from paperless (3 ids).
-    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
+    await userEvent.click(screen.getByRole("button", { name: /Select all 3/ }));
     expect(screen.getByText("3 selected")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /as job/ }));
     await waitFor(() =>
       expect(mocked.createJob).toHaveBeenCalledWith({ document_ids: [7, 12, 99] }),
+    );
+  });
+
+  it("search is realtime: typing filters after a debounce, no button", async () => {
+    renderWithProviders(<Documents />);
+    await screen.findByText("Invoice 4-8");
+    expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("full-text search"), "tax");
+    await waitFor(() =>
+      expect(mocked.listDocuments).toHaveBeenLastCalledWith(
+        expect.objectContaining({ query: "tax" }),
+      ),
     );
   });
 });

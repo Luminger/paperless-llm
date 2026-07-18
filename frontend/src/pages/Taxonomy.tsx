@@ -18,7 +18,11 @@ import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef, type MergeCandidate } from "../api";
 import { keys } from "../lib/keys";
 import { FetchStatus } from "../components/FetchStatus";
-import { MultiSelectBar, useMultiSelect } from "../components/MultiSelect";
+import {
+  SelectAllHeader,
+  SelectionBar,
+  useSelection,
+} from "@/components/app/selection";
 
 const TYPES = [
   { key: "tag", label: "Tags" },
@@ -61,7 +65,7 @@ export default function Taxonomy() {
     : "tag";
   const [filter, setFilter] = useUrlParam("name");
   const navigate = useNavigate();
-  const ms = useMultiSelect();
+  const selection = useSelection();
 
   const { data: entities, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: keys.entities(type),
@@ -93,9 +97,9 @@ export default function Taxonomy() {
     // One server-side job (progress, cancellation, retries) — never a
     // client-side POST loop with undefined partial-failure semantics.
     mutationFn: () =>
-      api.createJob({ entity_type: type, entity_ids: [...ms.selected] }),
+      api.createJob({ entity_type: type, entity_ids: [...selection.selected] }),
     onSuccess: (job) => {
-      ms.cancel();
+      selection.clear();
       navigate(`/jobs/${job.id}`);
     },
   });
@@ -108,20 +112,13 @@ export default function Taxonomy() {
 
   const switchType = (t: TypeKey) => {
     setType(t);
-    ms.cancel();
+    selection.clear();
   };
 
   return (
     <div>
       <PageHeader
         title="Taxonomy"
-        actions={
-          !ms.active && (
-            <Button variant="secondary" size="sm" onClick={() => ms.setActive(true)}>
-              Select…
-            </Button>
-          )
-        }
         filters={
           <>
             {TYPES.map((t) => (
@@ -149,21 +146,14 @@ export default function Taxonomy() {
         <FetchStatus resource={resource} isFetching={isFetching} onRefresh={() => refetch()} />
       </div>
 
-      {ms.active && (
-        <div className="mb-3 space-y-1">
-          <MultiSelectBar
-            count={ms.selected.size}
-            allIds={selectable}
-            actionLabel={`Analyze ${ms.selected.size} ${type.replaceAll("_", " ")}(s)`}
-            busy={bulkAnalyze.isPending}
-            onAction={() => bulkAnalyze.mutate()}
-            onSelectAll={ms.selectAll}
-            onUnselectAll={ms.unselectAll}
-            onCancel={ms.cancel}
-          />
-          <ErrorNotice error={bulkAnalyze.error} />
-        </div>
-      )}
+      <SelectionBar
+        selection={selection}
+        allIds={selectable}
+        actionLabel={`Analyze ${selection.selected.size} ${type.replaceAll("_", " ")}(s)`}
+        busy={bulkAnalyze.isPending}
+        onAction={() => bulkAnalyze.mutate()}
+      />
+      <ErrorNotice error={bulkAnalyze.error} />
 
       {candidates && candidates.length > 0 && (
         <div className="mb-6">
@@ -187,7 +177,9 @@ export default function Taxonomy() {
         <Table>
           <TableHeader>
             <TableRow>
-              {ms.active && <TableHead className="w-8" />}
+              <TableHead className="w-8">
+                <SelectAllHeader ids={selectable} selection={selection} />
+              </TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Documents</TableHead>
               <TableHead>Matching rule</TableHead>
@@ -196,18 +188,19 @@ export default function Taxonomy() {
           </TableHeader>
           <TableBody>
             {visible.map((e: EntityRef) => (
-              <TableRow key={e.id}>
-                {ms.active && (
-                  <TableCell>
-                    <Checkbox
-                      aria-label={`select ${e.name}`}
-                      checked={ms.selected.has(e.id)}
-                      disabled={e.is_inbox_tag}
-                      title={e.is_inbox_tag ? "The inbox tag cannot be analyzed" : undefined}
-                      onCheckedChange={() => ms.toggle(e.id)}
-                    />
-                  </TableCell>
-                )}
+              <TableRow
+                key={e.id}
+                data-state={selection.selected.has(e.id) ? "selected" : undefined}
+              >
+                <TableCell>
+                  <Checkbox
+                    aria-label={`select ${e.name}`}
+                    checked={selection.selected.has(e.id)}
+                    disabled={e.is_inbox_tag}
+                    title={e.is_inbox_tag ? "The inbox tag cannot be analyzed" : undefined}
+                    onCheckedChange={() => selection.toggle(e.id)}
+                  />
+                </TableCell>
                 <TableCell>
                   <Link
                     className="font-medium hover:text-primary hover:underline"

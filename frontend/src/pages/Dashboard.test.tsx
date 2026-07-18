@@ -80,8 +80,10 @@ describe("Dashboard", () => {
     mocked.listSessions.mockResolvedValue(page(sessions, 12));
     renderWithProviders(<Dashboard />);
 
-    expect(await screen.findByText(/page 1 of 3 · 12 total/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "next ›" }));
+    expect(await screen.findByText(/12 sessions/)).toBeInTheDocument();
+    // Framework pagination: numbered links + prev/next.
+    expect(screen.getByRole("link", { name: "3" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Go to next page" }));
     await waitFor(() =>
       expect(mocked.listSessions).toHaveBeenCalledWith(
         expect.objectContaining({ page: 2, page_size: 5, archived: false }),

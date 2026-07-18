@@ -4,11 +4,18 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Session } from "../api";
 import { keys } from "../lib/keys";
-import { Pager } from "./Pager";
+import { Pager } from "@/components/app/Pager";
 
 function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
   const qc = useQueryClient();
@@ -18,34 +25,44 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions() }),
   });
   return (
-    <Card
-      className={`p-3 transition-colors ${
-        s.archived_at ? "opacity-60" : "hover:border-primary/50"
-      }`}
-    >
-      <div className="flex w-full items-center gap-3">
-        <Link className="flex min-w-0 flex-1 items-center gap-3" to={`/sessions/${s.id}`}>
-          <span className="truncate text-sm font-medium">{s.title}</span>
+    <>
+      <TableRow className={s.archived_at ? "opacity-60" : ""}>
+        <TableCell className="max-w-0">
+          <Link
+            className="truncate font-medium hover:text-primary hover:underline"
+            to={`/sessions/${s.id}`}
+          >
+            {s.title}
+          </Link>
           {showEntity && s.entity_type && (
-            <Badge variant="secondary" className="shrink-0 font-normal text-muted-foreground">
+            <Badge
+              variant="secondary"
+              className="ml-2 shrink-0 font-normal text-muted-foreground"
+            >
               {s.entity_type.replaceAll("_", " ")}
             </Badge>
           )}
-        </Link>
-        <span className="flex shrink-0 items-center gap-2">
-          {s.phase === "ocr_review" && !s.archived_at && <OcrReviewBadge />}
-          {s.proposal_count > 0 ? (
-            <Badge variant="secondary" className="text-primary">
-              {s.proposal_count} proposal{s.proposal_count > 1 ? "s" : ""}
-            </Badge>
-          ) : (
-            s.phase === "done" && (
-              <Badge variant="secondary" className="text-muted-foreground">
-                no changes proposed
+        </TableCell>
+        <TableCell>
+          <span className="flex items-center gap-2">
+            {s.phase === "ocr_review" && !s.archived_at && <OcrReviewBadge />}
+            {s.proposal_count > 0 ? (
+              <Badge variant="secondary" className="text-primary">
+                {s.proposal_count} proposal{s.proposal_count > 1 ? "s" : ""}
               </Badge>
-            )
-          )}
+            ) : (
+              s.phase === "done" && (
+                <Badge variant="secondary" className="text-muted-foreground">
+                  no changes proposed
+                </Badge>
+              )
+            )}
+          </span>
+        </TableCell>
+        <TableCell>
           <SessionStatusBadge status={s.status} phase={s.phase} />
+        </TableCell>
+        <TableCell className="text-right">
           <Button
             variant="ghost"
             size="sm"
@@ -59,14 +76,45 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
           >
             {s.archived_at ? "Unarchive" : "Archive"}
           </Button>
-        </span>
-      </div>
+        </TableCell>
+      </TableRow>
       {s.error && !s.archived_at && (
-        <p className="mt-1 rounded-md bg-destructive/10 p-2 font-mono text-xs text-destructive">
-          {s.error}
-        </p>
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={4} className="py-1">
+            <p className="rounded-md bg-destructive/10 p-2 font-mono text-xs text-destructive">
+              {s.error}
+            </p>
+          </TableCell>
+        </TableRow>
       )}
-    </Card>
+    </>
+  );
+}
+
+/** THE session table markup — dashboard, entity pages, job details. */
+export function SessionTable({
+  sessions,
+  showEntity,
+}: {
+  sessions: Session[];
+  showEntity: boolean;
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Session</TableHead>
+          <TableHead className="w-44">Attention</TableHead>
+          <TableHead className="w-32">Status</TableHead>
+          <TableHead className="w-24 text-right" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sessions.map((s) => (
+          <SessionRow key={s.id} s={s} showEntity={showEntity} />
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -106,14 +154,14 @@ function PagedList({
   if (!data || data.count === 0) return <EmptyState title={emptyText} />;
   return (
     <div className="space-y-2">
-      <ul className="space-y-2">
-        {data.results.map((s) => (
-          <li key={s.id}>
-            <SessionRow s={s} showEntity={showEntity} />
-          </li>
-        ))}
-      </ul>
-      <Pager page={page} pageSize={pageSize} count={data.count} onPage={setPage} />
+      <SessionTable sessions={data.results} showEntity={showEntity} />
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        count={data.count}
+        onPage={setPage}
+        label="sessions"
+      />
     </div>
   );
 }

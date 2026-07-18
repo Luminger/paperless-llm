@@ -157,7 +157,13 @@ export const api = {
   mergeCandidates: (entityType: string) =>
     request<MergeCandidate[]>(`/api/entities/${entityType}/merge-candidates`),
 
-  listJobs: () => request<JobPage>("/api/jobs"),
+  listJobs: (page = 1, pageSize = 25) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    return request<JobPage>(`/api/jobs?${params}`);
+  },
   getJob: (id: number) => request<JobDetail>(`/api/jobs/${id}`),
   createJob: (body: JobCreate) =>
     request<Job>("/api/jobs", { method: "POST", body: JSON.stringify(body) }),

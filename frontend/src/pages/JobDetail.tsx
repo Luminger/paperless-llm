@@ -1,10 +1,11 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { SessionTable } from "../components/SessionList";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
 import { keys } from "../lib/keys";
-import { OcrReviewBadge, StatusBadge } from "../components/StatusBadge";
+import { StatusBadge } from "../components/StatusBadge";
 import { scopeLabel } from "./Jobs";
 
 export default function JobDetail() {
@@ -31,19 +32,7 @@ export default function JobDetail() {
       <p className="-mt-2 mb-4 text-sm text-muted-foreground">
         {job.done} ok, {job.failed} failed of {job.total}
       </p>
-      <ul className="divide-y rounded-lg border bg-card">
-        {job.sessions.map((s) => (
-          <li key={s.id} className="flex items-center gap-3 p-2.5 text-sm">
-            <span className="flex-1">{s.title || "(untitled)"}</span>
-            <span className="text-xs text-muted-foreground">{s.phase}</span>
-            <StatusBadge status={s.status} />
-            {s.phase === "ocr_review" && <OcrReviewBadge />}
-            <Link className="text-xs text-primary hover:underline" to={`/sessions/${s.id}`}>
-              open
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <SessionTable sessions={job.sessions} showEntity={false} />
     </div>
   );
 }

@@ -1,14 +1,23 @@
+import { useState } from "react";
 import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageHeader } from "@/components/app/PageHeader";
+import { Pager } from "@/components/app/Pager";
+import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { EmptyState, ErrorNotice } from "@/components/app/states";
 import { api, type AuditEntry } from "../api";
 import { keys } from "../lib/keys";
 import { formatDateTime } from "../lib/format";
-import { Pager } from "../components/Pager";
 
 const KIND_COLORS: Record<string, string> = {
   proposal:
@@ -164,12 +173,54 @@ function EntryDetails({ e }: { e: AuditEntry }) {
   );
 }
 
+const ALL = "__all__";
+
 const FILTERS = [
-  { key: "", label: "Everything" },
-  { key: "changes", label: "Data changes" },
-  { key: "task", label: "Tasks" },
-  { key: "paperless", label: "Paperless traffic" },
-] as const;
+  { value: ALL, label: "everything" },
+  { value: "changes", label: "data changes" },
+  { value: "task", label: "tasks" },
+  { value: "paperless", label: "paperless traffic" },
+];
+
+function LogRow({ e }: { e: AuditEntry }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TableRow
+        className="cursor-pointer"
+        data-state={open ? "selected" : undefined}
+        onClick={(ev) => {
+          // Links inside the summary navigate; they don't toggle.
+          if ((ev.target as HTMLElement).closest("a")) return;
+          setOpen(!open);
+        }}
+      >
+        <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground/70">
+          {formatDateTime(e.ts)}
+        </TableCell>
+        <TableCell>
+          <Badge
+            variant="secondary"
+            className={`shrink-0 ${KIND_COLORS[e.kind] ?? "bg-muted"}`}
+          >
+            {e.kind}
+          </Badge>
+        </TableCell>
+        <TableCell>
+          <ActorBadge actor={e.actor} />
+        </TableCell>
+        <TableCell className="max-w-0 truncate">{summary(e)}</TableCell>
+      </TableRow>
+      {open && (
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={4} className="p-0">
+            <EntryDetails e={e} />
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  );
+}
 
 export default function AuditLog() {
   const [page, setPage] = useUrlNumber("page", 1);
@@ -188,16 +239,14 @@ export default function AuditLog() {
     <div>
       <PageHeader
         title="Log"
-        filters={FILTERS.map((f) => (
-          <Button
-            key={f.key}
-            size="sm"
-            variant={filter === f.key ? "default" : "secondary"}
-            onClick={() => setFilter(f.key)}
-          >
-            {f.label}
-          </Button>
-        ))}
+        filters={
+          <SimpleSelect
+            ariaLabel="filter by log kind"
+            value={filter || ALL}
+            onValueChange={(v) => setFilter(v === ALL ? "" : v)}
+            options={FILTERS}
+          />
+        }
       />
       <p className="-mt-2 mb-3 text-sm text-muted-foreground">
         Audit trail: every read and write against paperless, every change the
@@ -207,32 +256,29 @@ export default function AuditLog() {
       {data && data.count === 0 ? (
         <EmptyState title="Nothing logged yet." />
       ) : (
-        <ul className="divide-y rounded-lg border bg-card">
-          {(data?.results ?? []).map((e) => (
-            <li key={e.id}>
-              <details>
-                <summary className="flex cursor-pointer items-center gap-3 p-2.5 text-sm select-none hover:bg-muted/50">
-                  <span className="w-40 shrink-0 font-mono text-xs whitespace-nowrap text-muted-foreground/70">
-                    {formatDateTime(e.ts)}
-                  </span>
-                  <Badge
-                    variant="secondary"
-                    className={`shrink-0 ${KIND_COLORS[e.kind] ?? "bg-muted"}`}
-                  >
-                    {e.kind}
-                  </Badge>
-                  <ActorBadge actor={e.actor} />
-                  <span className="min-w-0 flex-1 truncate">{summary(e)}</span>
-                </summary>
-                <EntryDetails e={e} />
-              </details>
-            </li>
-          ))}
-        </ul>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-44">Time</TableHead>
+              <TableHead className="w-28">Kind</TableHead>
+              <TableHead className="w-24">Actor</TableHead>
+              <TableHead>Event</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(data?.results ?? []).map((e) => (
+              <LogRow key={e.id} e={e} />
+            ))}
+          </TableBody>
+        </Table>
       )}
-      <div className="mt-2">
-        <Pager page={page} pageSize={pageSize} count={data?.count ?? 0} onPage={setPage} />
-      </div>
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        count={data?.count ?? 0}
+        onPage={setPage}
+        label="entries"
+      />
     </div>
   );
 }

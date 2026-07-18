@@ -9,8 +9,18 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { PageHeader } from "@/components/app/PageHeader";
+import { Pager } from "@/components/app/Pager";
+import { useUrlNumber } from "../hooks/useUrlState";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Job, type JobCreate } from "../api";
 import { keys } from "../lib/keys";
@@ -138,9 +148,11 @@ function NewJob({ onDone }: { onDone: () => void }) {
 export default function Jobs() {
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
+  const [page, setPage] = useUrlNumber("page", 1);
+  const pageSize = 25;
   const { data, error, isLoading } = useQuery({
-    queryKey: keys.jobs(),
-    queryFn: () => api.listJobs(),
+    queryKey: keys.jobs(page),
+    queryFn: () => api.listJobs(page, pageSize),
     refetchInterval: (q) =>
       (q.state.data?.results ?? []).some(
         (j) => j.status === "queued" || j.status === "running",
@@ -181,12 +193,25 @@ export default function Jobs() {
           hint="A job analyzes a whole set of documents — the inbox, a tag, or a selection."
         />
       ) : (
-        <ul className="space-y-2">
-          {(jobs ?? []).map((j) => (
-            <li key={j.id}>
-              <Card className="flex flex-row items-center gap-4 p-3 text-sm">
-                <span className="flex-1">
-                  {scopeLabel(j)}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Job</TableHead>
+              <TableHead>Progress</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(jobs ?? []).map((j) => (
+              <TableRow key={j.id}>
+                <TableCell>
+                  <Link
+                    className="font-medium hover:text-primary hover:underline"
+                    to={`/jobs/${j.id}`}
+                  >
+                    {scopeLabel(j)}
+                  </Link>
                   {j.kind === "webhook_analyze" && (
                     <Badge variant="secondary" className="ml-2 text-blue-700 dark:text-blue-300">
                       webhook
@@ -200,22 +225,32 @@ export default function Jobs() {
                       auto-apply
                     </Badge>
                   )}
-                </span>
-                <JobProgress job={j} />
-                <StatusBadge status={j.status} />
-                {(j.status === "queued" || j.status === "running") && (
-                  <Button variant="secondary" size="sm" onClick={() => cancel.mutate(j.id)}>
-                    Cancel
-                  </Button>
-                )}
-                <Link className="text-xs text-primary hover:underline" to={`/jobs/${j.id}`}>
-                  details
-                </Link>
-              </Card>
-            </li>
-          ))}
-        </ul>
+                </TableCell>
+                <TableCell>
+                  <JobProgress job={j} />
+                </TableCell>
+                <TableCell>
+                  <StatusBadge status={j.status} />
+                </TableCell>
+                <TableCell className="text-right">
+                  {(j.status === "queued" || j.status === "running") && (
+                    <Button variant="secondary" size="sm" onClick={() => cancel.mutate(j.id)}>
+                      Cancel
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        count={data?.count ?? 0}
+        onPage={setPage}
+        label="jobs"
+      />
     </div>
   );
 }

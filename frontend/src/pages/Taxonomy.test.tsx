@@ -54,10 +54,9 @@ describe("Taxonomy", () => {
     renderWithProviders(<Taxonomy />);
     await screen.findByText("Steuern");
 
-    await userEvent.click(screen.getByRole("button", { name: "Select…" }));
-    // Inbox checkbox disabled.
+    // Checkboxes are always visible; the inbox tag is not selectable.
     expect(screen.getByLabelText("select Inbox")).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
+    await userEvent.click(screen.getByLabelText("select all on this page"));
     expect(screen.getByText("2 selected")).toBeInTheDocument(); // inbox skipped
 
     await userEvent.click(screen.getByRole("button", { name: /Analyze 2 tag/ }));
@@ -69,13 +68,12 @@ describe("Taxonomy", () => {
     });
   });
 
-  it("multiselect can be cancelled", async () => {
+  it("selection can be cleared", async () => {
     renderWithProviders(<Taxonomy />);
     await screen.findByText("Steuern");
-    await userEvent.click(screen.getByRole("button", { name: "Select…" }));
     await userEvent.click(screen.getByLabelText("select Steuern"));
-    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(screen.queryByText(/selected/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("select Steuern")).not.toBeInTheDocument();
   });
 });
