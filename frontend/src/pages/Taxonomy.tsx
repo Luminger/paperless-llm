@@ -82,7 +82,7 @@ export default function Taxonomy() {
   const [pageSize] = useUrlNumber("size", 25);
   const patchUrl = useUrlPatch();
   const navigate = useNavigate();
-  const selection = useSelection();
+  const selection = useSelection(type);
   const typeDef = TYPES.find((t) => t.key === type);
 
   const { data: entities, isLoading, isFetching, refetch, error } = useQuery({

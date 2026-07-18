@@ -54,7 +54,10 @@ export function useUrlPatch() {
           const next = new URLSearchParams(prev);
           for (const [k, v] of Object.entries(patch)) {
             const str = v == null ? "" : String(v);
-            if (!str || str === "0" || (k === "page" && str === "1")) next.delete(k);
+            // NOTE: no blanket str === "0" rule — searching/filtering
+            // for "0" must be expressible (AUDIT FP-M4); numeric params
+            // map their zero-default to null themselves.
+            if (!str || (k === "page" && str === "1")) next.delete(k);
             else next.set(k, str);
           }
           return next;

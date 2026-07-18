@@ -5,7 +5,13 @@ export const keys = {
   sessions: (filter?: object) =>
     filter ? (["sessions", filter] as const) : (["sessions"] as const),
   session: (id: number) => ["session", id] as const,
-  sessionOcr: (id: number) => ["session-ocr", id] as const,
+  // Step-scoped (AUDIT FS-1): after a re-run the NEW gate must never
+  // seed from the OLD step's cached payload. The SSE invalidation uses
+  // the session prefix and still matches.
+  sessionOcr: (id: number, stepId?: number) =>
+    stepId == null
+      ? (["session-ocr", id] as const)
+      : (["session-ocr", id, stepId] as const),
   proposals: () => ["proposals"] as const,
   proposal: (id: number) => ["proposal", id] as const,
   revertCheck: (id: number) => ["revert-check", id] as const,

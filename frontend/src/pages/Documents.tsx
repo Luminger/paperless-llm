@@ -1,10 +1,8 @@
-import { useEffect, useState } from "react";
 import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { entityName, useEntityList } from "../hooks/useTaxonomy";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -16,6 +14,7 @@ import {
 import { MultiFilter } from "@/components/app/MultiFilter";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ResetFilters } from "@/components/app/ResetFilters";
+import { UrlSearchInput } from "@/components/app/UrlSearchInput";
 import { Pager } from "@/components/app/Pager";
 import {
   SelectAllHeader,
@@ -44,17 +43,9 @@ export default function Documents() {
   const tagIds = ids(tagsRaw);
   const correspondentIds = ids(correspondentsRaw);
   const typeIds = ids(typesRaw);
-  const [query, setQuery] = useState(submitted);
   const patchUrl = useUrlPatch();
   const navigate = useNavigate();
   const selection = useSelection();
-
-  // Realtime search: debounced into the URL — no Search button.
-  useEffect(() => {
-    if (query === submitted) return;
-    const t = setTimeout(() => patchUrl({ q: query, page: null }), 350);
-    return () => clearTimeout(t);
-  }, [query, submitted, patchUrl]);
 
   const { data: tags } = useEntityList("tag");
   const { data: correspondents } = useEntityList("correspondent");
@@ -92,11 +83,9 @@ export default function Documents() {
         title="Documents"
         filters={
           <>
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+            <UrlSearchInput
               placeholder="Full-text search…"
-              aria-label="full-text search"
+              ariaLabel="full-text search"
               className="h-8 w-56"
             />
             <MultiFilter
@@ -123,7 +112,6 @@ export default function Documents() {
             <ResetFilters
               active={filtersActive}
               onReset={() => {
-                setQuery("");
                 patchUrl({
                   q: null,
                   tags: null,

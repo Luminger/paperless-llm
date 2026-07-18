@@ -718,7 +718,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 `SessionDetail.tsx`. Backend event contract read for verification.
 
 ### FS-1 — HIGH — stale OCR text can be seeded into the gate after a re-run
-- **Status:** OPEN
+- **Status:** FIXED — `keys.sessionOcr(sessionId, stepId)` step-scoped + `OcrGateBody key={step.id}` (edit state can't survive across steps)
 - **Where:** `features/session/OcrGate.tsx:15-38`; `lib/keys.ts:8`
   (`sessionOcr` session-scoped, not step-scoped)
 - **Detail:** `OcrGateBody` seeds editable text once
@@ -885,7 +885,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 `components/settings/*`, Pager, FetchStatus, MultiFilter, selection.
 
 ### FP-H1 — HIGH — taxonomy selection survives a type switch → bulk analyze can submit the WRONG entities
-- **Status:** OPEN
+- **Status:** FIXED — `useSelection(scopeKey)` self-clears on scope change (render-time adjustment); Taxonomy passes the type; hook test pins it
 - **Where:** `pages/Taxonomy.tsx:85` (`useSelection()` — plain useState,
   `components/app/selection.tsx:9-31`); route `/taxonomy/:type` single
   element
@@ -899,7 +899,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #86
 
 ### FP-H2 — HIGH — Documents: local search state resurrects a cleared URL query
-- **Status:** OPEN
+- **Status:** FIXED — shared `components/app/UrlSearchInput.tsx` (URL is source of truth, local state is an edit buffer); Documents rewired; tests incl. the no-resurrection case
 - **Where:** `pages/Documents.tsx:47,53-57`
 - **Detail:** Nav-click to bare `/documents` doesn't remount; local
   `query` still holds "invoice"; the debounce effect sees
@@ -948,7 +948,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #68
 
 ### FP-M4 — MEDIUM — `useUrlPatch` deletes any value that stringifies to "0"
-- **Status:** OPEN
+- **Status:** FIXED — blanket rule dropped (numeric params own their zero-defaults); "0" searchable, test pins it
 - **Where:** `hooks/useUrlState.ts:57`
 - **Detail:** Typing `0` into the taxonomy name filter does nothing;
   searching "0" in Documents triggers an endless 350ms patch loop
@@ -990,7 +990,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
   of range". Todo #88.
 
 ### FP-L3 — LOW — `SessionList`/`PagedList` page state never resets on entity change
-- **Status:** OPEN — `SessionList.tsx:152` local useState survives
+- **Status:** FIXED — SessionList keyed by `entityType:id` on EntityPage — `SessionList.tsx:152` local useState survives
   same-route id changes → page 3 of one entity's sessions shown for the
   next entity. Key by entity identity. Todo #86.
 

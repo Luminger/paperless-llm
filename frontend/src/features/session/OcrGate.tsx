@@ -13,7 +13,7 @@ import { DiffView } from "../../components/DiffView";
 export function OcrGateBody({ step }: { step: Step }) {
   const qc = useQueryClient();
   const { data: ocr } = useQuery({
-    queryKey: keys.sessionOcr(step.session_id),
+    queryKey: keys.sessionOcr(step.session_id, step.id),
     queryFn: () => api.getOcrReview(step.session_id),
   });
   const [newText, setNewText] = useState<string | null>(null);

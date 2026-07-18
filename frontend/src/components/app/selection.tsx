@@ -2,12 +2,24 @@
 // visible, a toolbar appears once something is selected. No separate
 // "selection mode" to toggle on and off.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
-export function useSelection() {
+/** ``scopeKey``: identity of the list the selection belongs to. When it
+ * changes (e.g. /taxonomy/tag -> /taxonomy/correspondent renders the
+ * same component), the selection self-clears — numeric ids overlap
+ * across entity tables, so a stale selection would silently check the
+ * WRONG rows (AUDIT FP-H1). */
+export function useSelection(scopeKey?: string) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const prevScope = useRef(scopeKey);
+  if (prevScope.current !== scopeKey) {
+    // Render-time state adjustment (the React-sanctioned pattern):
+    // the render restarts with an empty selection before commit.
+    prevScope.current = scopeKey;
+    setSelected(new Set());
+  }
   const toggle = (id: number) =>
     setSelected((prev) => {
       const next = new Set(prev);

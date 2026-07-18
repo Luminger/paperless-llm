@@ -186,7 +186,7 @@ function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
         </Panel>
       )}
       {step.state === "awaiting_user" ? (
-        <OcrGateBody step={step} />
+        <OcrGateBody key={step.id} step={step} />
       ) : (
         resolution && (
           <>

@@ -475,6 +475,7 @@ export default function EntityPage() {
       )}
 
       <SessionList
+        key={`${entityType}:${id}`} /* embedded page state resets per entity */
         entityType={entityType}
         entityId={id}
         pageSize={5}
