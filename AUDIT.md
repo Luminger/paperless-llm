@@ -772,7 +772,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Todo:** #84
 
 ### FS-5 — MEDIUM — proposal decided under the user: Save stays live; panel folds mid-edit
-- **Status:** OPEN
+- **Status:** FIXED — Save/Discard gated on editable && dirty; "decided while you were editing" notice + Discard-only affordance; panels refuse to self-fold while an edit is open (onDirtyChange → dirtyIds in TurnBody)
 - **Where:** `ProposalCard.tsx` action row; `StepCard.tsx`
   `renderProposal` `defaultOpen`
 - **Detail:** `editable` correctly disables inputs on status change, but
@@ -785,7 +785,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Todo:** #85
 
 ### FS-6 — MEDIUM — unbounded OCR diffs can freeze the tab
-- **Status:** OPEN
+- **Status:** FIXED — >120k chars drops to line-level diffing; >400k renders only on explicit request
 - **Where:** `DiffView.tsx`; call sites `StepCard.tsx` OcrBody (open by
   default), `OcrGate.tsx:47`
 - **Detail:** `DiffMethod.WORDS` renders every line of both documents
@@ -803,7 +803,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Status:** FIXED — `deriveTurnView` treats pending+scheduled_at as non-streaming (failed attempt's transcript renders, header badge carries the plan); unit test
 
 ### FS-9 — LOW — `tokenizeRefs` rewrites tokens inside code spans/fences
-- **Status:** OPEN — `RefChip.tsx:26-33`: pre-parse string rewrite hits
+- **Status:** FIXED — `remarkRefs` mdast plugin rewrites TEXT nodes only (code/inlineCode untouched); string-level rewrite deleted; tests pin code-literal + no-mangling; chips live-verified — `RefChip.tsx:26-33`: pre-parse string rewrite hits
   tokens the model quotes in code blocks → literal
   `[tag](pllm://tag/5)` rendered. Move to a remark AST plugin (text
   nodes only) or document. Todo #85.
@@ -815,7 +815,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Status:** FIXED — shared `isRenderable` exported from Transcript, used by rows AND fold counts
 
 ### FS-12 — LOW — `RedoDialog` sends `NaN` for non-numeric DPI
-- **Status:** OPEN — `RedoDialog.tsx:96-101`: "300dpi" → Number() NaN →
+- **Status:** FIXED — Number.isFinite validation disables confirm with a hint — `RedoDialog.tsx:96-101`: "300dpi" → Number() NaN →
   serialized null. `Number.isFinite` validation + disabled confirm.
   Todo #85.
 

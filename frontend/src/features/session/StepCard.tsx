@@ -283,6 +283,17 @@ function TurnBody({
   archived: boolean;
   live?: LiveActivity;
 }) {
+  // Proposals being edited must not self-fold when a decision lands
+  // (AUDIT FS-5).
+  const [dirtyIds, setDirtyIds] = useState<Set<number>>(new Set());
+  const markDirty = (id: number) => (d: boolean) =>
+    setDirtyIds((prev) => {
+      if (prev.has(id) === d) return prev;
+      const next = new Set(prev);
+      if (d) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   // retryScheduled: no fake pulse — the header badge carries the plan
   // and the failed attempt's transcript (if any) renders normally (FS-8).
   const { streaming, items, mine, summaryIdx } =
@@ -363,7 +374,10 @@ function TurnBody({
         key={`p-${p.id}`}
         // Decided proposals are history: folded on load (and they fold
         // themselves the moment the decision lands).
-        defaultOpen={p.status !== "applied" && p.status !== "no_change"}
+        defaultOpen={
+          dirtyIds.has(p.id) ||
+          (p.status !== "applied" && p.status !== "no_change")
+        }
         title={
           <>
             <PanelTitle>Proposal</PanelTitle>
@@ -374,7 +388,12 @@ function TurnBody({
           </>
         }
       >
-        <ProposalCard proposal={p} archived={archived} withHeader={false} />
+        <ProposalCard
+          proposal={p}
+          archived={archived}
+          withHeader={false}
+          onDirtyChange={markDirty(p.id)}
+        />
       </Panel>
     );
 

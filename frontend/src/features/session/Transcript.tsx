@@ -23,7 +23,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { MarkdownLink, tokenizeRefs } from "./RefChip";
+import { MarkdownLink, remarkRefs } from "./RefChip";
 import type { TranscriptItem } from "../../api";
 import { timingLabel } from "./timing";
 
@@ -190,12 +190,12 @@ function Prose({ content }: { content: string }) {
   return (
     <div className={PROSE_CLASSES}>
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkRefs]}
         components={{ a: MarkdownLink }}
         // The sanitizer strips unknown schemes — our chip scheme is ours.
         urlTransform={(url) => (url.startsWith("pllm://") ? url : defaultUrlTransform(url))}
       >
-        {tokenizeRefs(content)}
+        {content}
       </Markdown>
     </div>
   );

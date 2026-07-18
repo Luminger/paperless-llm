@@ -26,10 +26,51 @@ import { entityHref } from "../../pages/EntityPage";
 export const REF_TOKEN_RE =
   /\[\[(document|tag|correspondent|document_type|storage_path|proposal):(\d+)\]\]/g;
 
-/** Rewrites [[type:id]] tokens into markdown links with a pllm://
- * scheme, which the markdown renderer maps onto RefChip. */
-export function tokenizeRefs(md: string): string {
-  return md.replace(REF_TOKEN_RE, (_m, type, id) => `[${type}](pllm://${type}/${id})`);
+/** Remark plugin: rewrites [[type:id]] tokens into pllm:// links —
+ * operating on the mdast TEXT nodes only, so tokens the model quotes
+ * inside code spans or fences stay literal (AUDIT FS-9; the old
+ * string-level rewrite ran before parsing and mangled code). */
+export function remarkRefs() {
+  interface Node {
+    type: string;
+    value?: string;
+    url?: string;
+    children?: Node[];
+  }
+  const rewrite = (node: Node): void => {
+    if (!node.children) return;
+    const out: Node[] = [];
+    for (const child of node.children) {
+      if (child.type === "code" || child.type === "inlineCode") {
+        out.push(child);
+        continue;
+      }
+      if (child.type !== "text" || !child.value) {
+        rewrite(child);
+        out.push(child);
+        continue;
+      }
+      const re = new RegExp(REF_TOKEN_RE.source, "g");
+      let last = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(child.value)) !== null) {
+        if (m.index > last) out.push({ type: "text", value: child.value.slice(last, m.index) });
+        out.push({
+          type: "link",
+          url: `pllm://${m[1]}/${m[2]}`,
+          children: [{ type: "text", value: m[1] }],
+        });
+        last = m.index + m[0].length;
+      }
+      if (last === 0) {
+        out.push(child); // no tokens — untouched
+      } else if (last < child.value.length) {
+        out.push({ type: "text", value: child.value.slice(last) });
+      }
+    }
+    node.children = out;
+  };
+  return (tree: unknown) => rewrite(tree as Node);
 }
 
 function Chip({

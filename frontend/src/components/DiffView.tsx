@@ -25,6 +25,14 @@ export function DiffView({
     () => (localStorage.getItem(MODE_KEY) as Mode) || "side-by-side",
   );
   const [editing, setEditing] = useState(false);
+  // AUDIT FS-6: the diff table renders EVERY line into the DOM and
+  // word-diffs each changed block — a large scanned document freezes
+  // the tab. Above the soft cap word-level highlighting drops to line
+  // diffs; above the hard cap the diff only renders on request.
+  const totalChars = oldText.length + newText.length;
+  const largeDiff = totalChars > 120_000;
+  const hugeDiff = totalChars > 400_000;
+  const [forceRender, setForceRender] = useState(false);
 
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -73,6 +81,17 @@ export function DiffView({
           value={newText}
           onChange={(e) => onNewTextChange(e.target.value)}
         />
+      ) : hugeDiff && !forceRender ? (
+        <div className="rounded border border-border p-4 text-sm text-muted-foreground">
+          This diff spans {Math.round(totalChars / 1000)}k characters —
+          rendering it may briefly freeze the page.{" "}
+          <button
+            className="text-primary underline-offset-2 hover:underline"
+            onClick={() => setForceRender(true)}
+          >
+            Render the full diff
+          </button>
+        </div>
       ) : (
         <div className="max-h-96 overflow-auto rounded border border-border">
           <ReactDiffViewer
@@ -87,7 +106,7 @@ export function DiffView({
             splitView={mode === "side-by-side"}
             leftTitle="Current content (paperless)"
             rightTitle="New content (OCR)"
-            compareMethod={DiffMethod.WORDS}
+            compareMethod={largeDiff ? DiffMethod.LINES : DiffMethod.WORDS}
             styles={{
               contentText: { fontSize: "0.75rem", lineHeight: "1.1rem" },
               lineNumber: { fontSize: "0.65rem" },

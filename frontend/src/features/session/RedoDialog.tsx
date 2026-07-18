@@ -48,6 +48,12 @@ export function RedoDialog({
       fields.map((f) => [f.key, step.input[f.key] != null ? String(step.input[f.key]) : ""]),
     ),
   );
+  const invalidNumeric = fields.some(
+    (f) =>
+      f.key === "dpi" &&
+      values[f.key].trim() !== "" &&
+      !Number.isFinite(Number(values[f.key].trim())),
+  );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -91,12 +97,14 @@ export function RedoDialog({
             Cancel
           </Button>
           <Button
-            disabled={busy}
+            disabled={busy || invalidNumeric}
+            title={invalidNumeric ? "DPI must be a number" : undefined}
             onClick={() => {
               const input: Record<string, unknown> = {};
               for (const f of fields) {
                 const raw = values[f.key].trim();
                 if (raw === "") continue;
+                // AUDIT FS-12: "300dpi" must not become NaN→null.
                 input[f.key] = f.key === "dpi" ? Number(raw) : raw;
               }
               onConfirm(input);

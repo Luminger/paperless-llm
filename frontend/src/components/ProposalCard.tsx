@@ -508,15 +508,22 @@ export function ProposalCard({
   proposal: p,
   archived = false,
   withHeader = true,
+  onDirtyChange,
 }: {
   proposal: Proposal;
   archived?: boolean;
   /** When rendered inside a Panel, the panel owns the header. */
   withHeader?: boolean;
+  /** The wrapping panel refuses to self-fold while an edit is open. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const qc = useQueryClient();
-  const [pending, setPending] = useState<Record<string, unknown> | null>(null);
+  const [pending, setPendingRaw] = useState<Record<string, unknown> | null>(null);
   const [editorKey, setEditorKey] = useState(0);
+  const setPending = (v: Record<string, unknown> | null) => {
+    setPendingRaw(v);
+    onDirtyChange?.(v !== null);
+  };
 
   const invalidate = () => invalidateProposalEffects(qc, p);
   const resetEditor = () => {
@@ -550,6 +557,11 @@ export function ProposalCard({
   // reverting applied changes stays available.
   const editable = !archived && p.status === "pending";
   const dirty = pending !== null;
+  // AUDIT FS-5: the proposal can be decided UNDER the user (auto
+  // policy, second tab). Editing affordances follow `editable`, not
+  // just `dirty` — a PATCH against a decided proposal must be
+  // impossible, and the user deserves a word about what happened.
+  const decidedWhileEditing = dirty && !editable;
   const Editor = hasDocumentEditor(p.kind) ? MetadataEditor : GenericEditor;
 
   return (
@@ -577,8 +589,14 @@ export function ProposalCard({
 
       <Editor key={editorKey} proposal={p} editable={editable} onChange={setPending} />
 
+      {decidedWhileEditing && (
+        <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
+          This proposal was decided while you were editing — your unsaved
+          changes cannot be applied anymore.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
-        {dirty && (
+        {dirty && editable && (
           <>
             <Button
               size="sm"
@@ -591,6 +609,11 @@ export function ProposalCard({
               Discard
             </Button>
           </>
+        )}
+        {decidedWhileEditing && (
+          <Button size="sm" variant="secondary" onClick={resetEditor}>
+            Discard my edits
+          </Button>
         )}
         {editable && !dirty && (
           <>
