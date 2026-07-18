@@ -351,7 +351,12 @@ async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
         entity_id=entity_id,
     )
     ctx.deps.db.add(proposal)
-    await ctx.deps.db.flush()
+    # AUDIT SV-H2: COMMIT, not just flush — a flush takes SQLite's write
+    # lock and the turn's final commit is LLM-minutes away; holding it
+    # that long starves every concurrent finalize. The draft row is
+    # status-guarded, so committing it early is safe (the runner's
+    # failure path promotes or discards it explicitly).
+    await ctx.deps.db.commit()
     ctx.deps.emitted.append(proposal)
     return (
         f"Proposal [[proposal:{proposal.id}]] ({p.kind}) recorded for human "

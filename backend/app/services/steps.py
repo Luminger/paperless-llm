@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession as DbSession
+from sqlalchemy.orm import aliased, defer
 
 from app.config import get_settings
 from app.db.models import (
@@ -244,7 +245,6 @@ async def redo_step(
     ]
     for s in to_supersede:
         s.state = StepState.superseded
-        _publish(s)
     open_proposals = (
         await db.scalars(
             select(Proposal).where(
@@ -265,7 +265,7 @@ async def redo_step(
         superseded_steps=[s.id for s in to_supersede],
         superseded_proposals=[p.id for p in open_proposals],
     )
-    return await create_step(
+    new = await create_step(
         db,
         session,
         step.kind,
@@ -273,26 +273,55 @@ async def redo_step(
         lane=step.lane,
         supersedes_id=step.id,
     )
+    # AUDIT SV-L1: supersessions are announced only after create_step's
+    # commit made them real (events never announce uncommitted state).
+    for s in to_supersede:
+        _publish(s)
+    return new
 
 
 async def resolve_step(
     db: DbSession, paperless: PaperlessClient, step: Step, body: dict[str, Any]
 ) -> Step:
-    """Resolve an awaiting_user step (kind-specific semantics)."""
+    """Resolve an awaiting_user step (kind-specific semantics).
+
+    AUDIT SV-M6/SV-H3: the resolution is claimed atomically (two
+    concurrent resolves → one wins, one 409s), and the follow-up step a
+    resolver creates commits in the SAME transaction that marks this
+    step succeeded — no window where the gate is still resolvable while
+    its analysis is already queued."""
     if step.state != StepState.awaiting_user:
         raise StepActionError(f"step is {step.state.value}, not awaiting user input")
     _ensure_registered()
     resolver = RESOLVERS.get(step.kind)
     if resolver is None:
         raise StepActionError(f"steps of kind {step.kind.value} are not resolvable")
+    claimed = await db.execute(
+        sa_update(Step)
+        .where(Step.id == step.id, Step.state == StepState.awaiting_user)
+        .values(state=StepState.running)
+    )
+    if claimed.rowcount == 0:
+        raise StepActionError("step is already being resolved")
+    await db.commit()
+    await db.refresh(step)
     session = await db.get(Session, step.session_id)
     assert session is not None
-    await resolver(db, paperless, session, step, body)
-    step.state = StepState.succeeded
-    step.finished_at = utcnow()
-    await sync_session(db, session)
-    await db.commit()
+    try:
+        created = await resolver(db, paperless, session, step, body)
+        step.state = StepState.succeeded
+        step.finished_at = utcnow()
+        await sync_session(db, session)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        step.state = StepState.awaiting_user  # release the claim
+        step.finished_at = None
+        await db.commit()
+        raise
     _publish(step)
+    if created is not None:
+        notify_steps([created])
     return step
 
 
@@ -319,7 +348,12 @@ class StepWorkers:
     def __init__(self) -> None:
         self._tasks: list[asyncio.Task] = []
         self._wakeups: dict[QueueLane, asyncio.Event] = {}
-        self._claim_lock = asyncio.Lock()
+        # Per-lane: interactive claims must never queue behind batch
+        # claims (AUDIT SV-L2). The SQL UPDATE is the real guard; these
+        # locks only reduce claim contention within a lane.
+        self._claim_locks: dict[QueueLane, asyncio.Lock] = {
+            lane: asyncio.Lock() for lane in QueueLane
+        }
 
     def wake(self, lane: QueueLane) -> None:
         ev = self._wakeups.get(lane)
@@ -365,14 +399,26 @@ class StepWorkers:
                 await asyncio.sleep(1)
 
     async def _claim(self, lane: QueueLane) -> int | None:
-        async with self._claim_lock:
+        async with self._claim_locks[lane]:
             async with session_scope() as db:
+                # AUDIT BC-F18: one turn per session at a time — a
+                # session whose step is already running must not get a
+                # second concurrent turn (message_history would be
+                # last-writer-wins). Correlated NOT EXISTS on a running
+                # sibling.
+                sibling = aliased(Step)
                 step_id = await db.scalar(
                     select(Step.id)
                     .where(
                         Step.state == StepState.pending,
                         Step.lane == lane,
                         (Step.scheduled_at.is_(None)) | (Step.scheduled_at <= utcnow()),
+                        ~select(sibling.id)
+                        .where(
+                            sibling.session_id == Step.session_id,
+                            sibling.state == StepState.running,
+                        )
+                        .exists(),
                     )
                     .order_by(Step.id)
                     .limit(1)
@@ -395,7 +441,13 @@ class StepWorkers:
                 step = await db.get(Step, step_id)
                 assert step is not None
                 step.started_at = step.started_at or utcnow()
-                session = await db.get(Session, step.session_id)
+                # Engine paths never read the (potentially megabytes of)
+                # serialized history — don't deserialize it per claim
+                # (AUDIT SV-L4).
+                session = await db.get(
+                    Session, step.session_id,
+                    options=[defer(Session.message_history)],
+                )
                 if session is not None:
                     await sync_session(db, session)
                 await db.commit()
@@ -424,6 +476,36 @@ class StepWorkers:
             log.exception("step %s (%s) failed", step_id, kind)
             error = f"{type(e).__name__}: {e}"
 
+        # The finalize transaction is pure bookkeeping and idempotent
+        # per attempt — if it fails transiently (e.g. SQLite contention)
+        # retry it instead of stranding the step in 'running' until the
+        # next process restart (AUDIT SV-L8).
+        for backoff in (0.5, 2.0, None):
+            try:
+                await self._finalize(step_id, attempt_no, attempt_started,
+                                     error, verdict)
+                return
+            except Exception:  # noqa: BLE001
+                if backoff is None:
+                    log.exception(
+                        "finalize for step %s failed repeatedly; step stays "
+                        "running until recover()", step_id,
+                    )
+                    raise
+                log.exception(
+                    "finalize for step %s failed; retrying in %.1fs",
+                    step_id, backoff,
+                )
+                await asyncio.sleep(backoff)
+
+    async def _finalize(
+        self,
+        step_id: int,
+        attempt_no: int,
+        attempt_started,
+        error: str | None,
+        verdict: str | None,
+    ) -> None:
         async with session_scope() as db:
             step = await db.get(Step, step_id)
             if step is None:
@@ -461,7 +543,10 @@ class StepWorkers:
                 else:
                     step.state = StepState.succeeded
                     step.finished_at = utcnow()
-            session = await db.get(Session, step.session_id)
+            session = await db.get(
+                Session, step.session_id,
+                options=[defer(Session.message_history)],
+            )
             if session is not None:
                 await sync_session(db, session)
                 if session.job_id is not None:
@@ -475,30 +560,51 @@ class StepWorkers:
 
 
 
-async def cancel_job_steps(db: DbSession, job_id: int) -> int:
+async def cancel_job_steps(db: DbSession, job_id: int) -> list[Step]:
     """Cancel every still-pending step of a job's sessions. Running
     steps finish on their own; the sessions re-derive their status from
-    the cancelled tail (single writer stays single)."""
-    pending = (
-        await db.scalars(
-            select(Step)
-            .join(Session, Session.id == Step.session_id)
-            .where(Session.job_id == job_id, Step.state == StepState.pending)
+    the cancelled tail (single writer stays single).
+
+    AUDIT SV-M2: the flip is guarded (`WHERE state='pending'`) so a
+    worker that claims a step mid-cancel keeps it — we never overwrite
+    'running'. Returns the cancelled steps; the CALLER commits and then
+    publishes them (events never announce uncommitted state)."""
+    ids = list(
+        (
+            await db.scalars(
+                select(Step.id)
+                .join(Session, Session.id == Step.session_id)
+                .where(Session.job_id == job_id, Step.state == StepState.pending)
+            )
+        ).all()
+    )
+    if not ids:
+        return []
+    await db.execute(
+        sa_update(Step)
+        .where(Step.id.in_(ids), Step.state == StepState.pending)
+        .values(
+            state=StepState.cancelled,
+            error="cancelled with its job",
+            finished_at=utcnow(),
         )
-    ).all()
-    touched: set[int] = set()
-    for step in pending:
-        step.state = StepState.cancelled
-        step.error = "cancelled with its job"
-        step.finished_at = utcnow()
-        touched.add(step.session_id)
-    for sid in touched:
-        session = await db.get(Session, sid)
+    )
+    cancelled = list(
+        (
+            await db.scalars(
+                select(Step).where(
+                    Step.id.in_(ids), Step.state == StepState.cancelled
+                )
+            )
+        ).all()
+    )
+    for sid in {s.session_id for s in cancelled}:
+        session = await db.get(
+            Session, sid, options=[defer(Session.message_history)]
+        )
         if session is not None:
             await sync_session(db, session)
-    for step in pending:
-        _publish(step)
-    return len(pending)
+    return cancelled
 
 
 async def recover() -> dict[str, int]:

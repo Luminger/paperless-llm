@@ -147,6 +147,11 @@ async def _maybe_auto_apply(
     auto-continues the session (bounded), so autonomous runs converge."""
     if session.params.get("apply_policy") != "auto":
         return
+    # AUDIT SV-M5: the user may have archived the session while this
+    # turn ran — archived means "refuse forward-apply", same as the
+    # human path enforces.
+    if session.archived_at is not None:
+        return
     proposals = (
         await db.scalars(
             select(Proposal).where(
@@ -160,7 +165,10 @@ async def _maybe_auto_apply(
         except Exception:  # noqa: BLE001
             log.exception("auto-apply failed for proposal %s", p.id)
             continue
-        await continue_after_decision(db, session, p)
+        # AUDIT SV-H1: this runs while the triggering step is still
+        # committed as 'running' — without the exclusion the busy check
+        # always refuses and autonomous runs stop after one change.
+        await continue_after_decision(db, session, p, exclude_step_id=step.id)
 
 
 # ----- the decision loop ----------------------------------------------
@@ -191,12 +199,19 @@ def _decision_message(p: Proposal) -> str:
 
 
 async def continue_after_decision(
-    db: DbSession, session: Session, proposal: Proposal
+    db: DbSession,
+    session: Session,
+    proposal: Proposal,
+    exclude_step_id: int | None = None,
 ) -> Step | None:
     """After the user (or the auto policy) decided a proposal, the
     session continues on its own: a new turn tells the agent what
     happened. Skipped when the session is archived, other proposals
-    are still open, work is already in flight, or the auto brake hit."""
+    are still open, work is already in flight, or the auto brake hit.
+
+    ``exclude_step_id``: the auto-apply path calls this from INSIDE the
+    executor of the step that produced the proposal — that step is
+    still 'running' and must not count as in-flight work."""
     if session.archived_at is not None:
         return None
     if proposal.step_id is None or str(proposal.kind) == "replace_content":
@@ -212,14 +227,15 @@ async def continue_after_decision(
     )
     if open_left:
         return None  # legacy multi-proposal turns: the user decides each
-    busy = await db.scalar(
-        select(func.count()).select_from(Step).where(
-            Step.session_id == session.id,
-            Step.state.in_(
-                (StepState.pending, StepState.running, StepState.awaiting_user)
-            ),
-        )
+    busy_q = select(func.count()).select_from(Step).where(
+        Step.session_id == session.id,
+        Step.state.in_(
+            (StepState.pending, StepState.running, StepState.awaiting_user)
+        ),
     )
+    if exclude_step_id is not None:
+        busy_q = busy_q.where(Step.id != exclude_step_id)
+    busy = await db.scalar(busy_q)
     if busy:
         return None
     if session.params.get("apply_policy") == "auto":
@@ -257,7 +273,7 @@ async def _resolve_ocr(
     session: Session,
     step: Step,
     body: dict[str, Any],
-) -> None:
+) -> Step | None:
     """The OCR gate. body: {"content": str|None} — None keeps the
     existing paperless content; a string is the accepted (possibly
     hand-fixed) text, written via an internal journaled proposal. The
@@ -312,11 +328,17 @@ async def _resolve_ocr(
     step.result = {**step.result, "resolution": resolution, "edited": edited}
     session.params = {**session.params, "ocr_gate": resolution}
     if session.params.get("ocr_only"):
-        return  # the pipeline ENDS at the gate — no analysis follows
+        return None  # the pipeline ENDS at the gate — no analysis follows
     analysis_input: dict[str, Any] = {"gate": resolution}
     if session.params.get("instructions"):
         analysis_input["instructions"] = session.params["instructions"]
-    await create_step(db, session, StepKind.analysis, analysis_input, lane=step.lane)
+    # AUDIT SV-H3: committed by resolve_step in the SAME transaction
+    # that marks the gate succeeded — never wake workers for an
+    # analysis step while the gate is still resolvable.
+    return await create_step(
+        db, session, StepKind.analysis, analysis_input, lane=step.lane,
+        commit=False,
+    )
 
 
 EXECUTORS.update(

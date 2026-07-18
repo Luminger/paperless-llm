@@ -258,7 +258,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #72
 
 ### BC-F18 — LOW — `send_message` check-then-act allows two concurrent turns on one session
-- **Status:** OPEN
+- **Status:** FIXED — claim skips sessions with a running step (correlated NOT EXISTS); test pins it. Cross-lane SELECT race window remains (accepted: both lanes claiming same-session steps within ms)
 - **Where:** `app/api/routes/sessions.py:413-431` +
   `app/services/steps.py:367-403`
 - **Detail:** Two simultaneous POSTs both pass the `blocked` SELECT and
@@ -309,7 +309,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 `app/db/{models,session,migrations}.py`.
 
 ### SV-H1 — HIGH — auto-continuation loop can never fire from the auto-apply path
-- **Status:** OPEN
+- **Status:** FIXED — `continue_after_decision(exclude_step_id=...)`; auto path passes the triggering step; tests in `tests/unit/test_pipeline.py`
 - **Where:** `app/services/pipeline.py:124,141-163,193-224` (busy check
   at `:215-223`)
 - **Detail:** `_maybe_auto_apply` runs inside the executor while the
@@ -326,7 +326,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #74
 
 ### SV-H2 — HIGH — executor transaction holds the SQLite write lock across LLM latency; no WAL/busy_timeout
-- **Status:** OPEN
+- **Status:** FIXED — WAL + busy_timeout=30s + synchronous=NORMAL + foreign_keys=ON on connect (`db/session.py`); `_persist` COMMITS the draft instead of flushing (write lock released at emit time); finalize retries transient failures (SV-L8)
 - **Where:** `app/services/steps.py:405-413`, `app/agents/tools.py:355`
   (flush on proposal emit), `app/db/session.py:24-42` (no PRAGMAs
   anywhere)
@@ -344,7 +344,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #75
 
 ### SV-H3 — HIGH — `resolve_step` not atomic: resolver commits (and wakes workers) before the gate is marked succeeded
-- **Status:** OPEN
+- **Status:** FIXED — `_resolve_ocr` creates the analysis step `commit=False`; `resolve_step` claims atomically (awaiting_user→running), commits gate+follow-up in ONE transaction, then notifies; tests pin it
 - **Where:** `app/services/steps.py:278-296`;
   `app/services/pipeline.py:252-319` (`_resolve_ocr` — apply commits,
   then `create_step(...)` with default commit=True → commits + notifies)
@@ -378,7 +378,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #77
 
 ### SV-M2 — MEDIUM — `cancel_job_steps`: non-atomic pending→cancelled flip; events published before commit
-- **Status:** OPEN
+- **Status:** FIXED — guarded bulk `UPDATE ... WHERE state='pending'`; route commits, then publishes; running steps proven untouched by test
 - **Where:** `app/services/steps.py:478-501`; caller
   `routes/jobs.py:277-291`
 - **Detail:** SELECT-then-set without `WHERE state='pending'` guard: a
@@ -419,7 +419,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #78
 
 ### SV-M5 — MEDIUM — auto-apply ignores `archived_at`
-- **Status:** OPEN
+- **Status:** FIXED — `_maybe_auto_apply` refuses archived sessions; test pins it
 - **Where:** `app/services/pipeline.py:141-163`; contract in
   `db/models.py` (archived = "refuse forward-apply and new steps");
   human path enforces it (`routes/proposals.py:105-113`);
@@ -433,7 +433,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #78
 
 ### SV-M6 — MEDIUM — `resolve_step`/`redo_step` double-resolution race
-- **Status:** OPEN
+- **Status:** FIXED for resolve_step (atomic claim, loser 409s, test). redo_step still check-then-act — remaining exposure is two concurrent redos, tracked in #76
 - **Where:** `app/services/steps.py:281-291` (and redo's terminal-state
   check)
 - **Detail:** Two concurrent resolves both pass `state == awaiting_user`
@@ -444,12 +444,12 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #76
 
 ### SV-L1 — LOW — `redo_step` publishes superseded-step events before commit
-- **Status:** OPEN — `steps.py:246-247`; same doctrine violation as
+- **Status:** FIXED — supersessions published after create_step's commit — `steps.py:246-247`; same doctrine violation as
   SV-M2. Collect and publish after commit (shared commit-then-notify
   helper). Todo #76.
 
 ### SV-L2 — LOW — one global `_claim_lock` for both lanes
-- **Status:** OPEN — `steps.py:322,368`; interactive claims serialize
+- **Status:** FIXED — per-lane claim locks — `steps.py:322,368`; interactive claims serialize
   behind batch claims. Per-lane locks (SQL claim is the real guard).
   Todo #75.
 
@@ -459,7 +459,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
   owner/heartbeat column before any multi-process move. Todo #75 (note).
 
 ### SV-L4 — LOW — engine paths load `Session.message_history` on every claim/finalize
-- **Status:** OPEN — `steps.py:388,425,464` use `db.get(Session, ...)`
+- **Status:** FIXED — `defer(Session.message_history)` in claim/finalize/cancel paths (executor scope still loads it: the turn needs it) — `steps.py:388,425,464` use `db.get(Session, ...)`
   which loads the full serialized history (routes carefully `defer()`
   it). `defer(message_history)` in engine paths. Todo #75.
 
@@ -481,7 +481,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
   Todo #78.
 
 ### SV-L8 — LOW — no in-process recovery for a failed finalize
-- **Status:** OPEN — `steps.py:414-474` + worker catch-all: if the
+- **Status:** FIXED — finalize retried (0.5s/2s backoff) before giving up to recover() — `steps.py:414-474` + worker catch-all: if the
   finalize transaction itself raises, the step remains `running` until
   process restart. Bounded in-process finalize retry (idempotent) or
   periodic janitor. Todo #75.

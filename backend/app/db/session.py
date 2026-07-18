@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -37,6 +38,23 @@ def _get_engine():
             if db_path and db_path != ":memory:":
                 Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         _engine = create_async_engine(url)
+        if url.startswith("sqlite"):
+            # AUDIT SV-H2: agent turns hold write transactions across
+            # LLM latency (a proposal INSERT flushes mid-turn). Default
+            # journal mode + ~5s busy timeout make concurrent finalizes
+            # fail with "database is locked", stranding steps in
+            # 'running'. WAL lets readers proceed under a writer; the
+            # generous busy_timeout makes writer-vs-writer collisions
+            # wait instead of erroring.
+            @event.listens_for(_engine.sync_engine, "connect")
+            def _sqlite_pragmas(dbapi_conn, _record):  # pragma: no cover - trivial
+                cur = dbapi_conn.cursor()
+                cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA busy_timeout=30000")
+                cur.execute("PRAGMA synchronous=NORMAL")
+                cur.execute("PRAGMA foreign_keys=ON")
+                cur.close()
+
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 

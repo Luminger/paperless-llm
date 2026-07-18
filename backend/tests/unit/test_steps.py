@@ -11,6 +11,10 @@ import asyncio
 import pytest
 from sqlalchemy import select
 
+import app.services.pipeline  # noqa: F401 — populate EXECUTORS/RESOLVERS at
+
+# collection time so per-test monkeypatches of them stick regardless of
+# which test module imported the pipeline first (order-dependence fix).
 from app.config import reset_settings_cache
 from app.db.models import (
     AgentKind,
@@ -339,3 +343,140 @@ async def test_redo_refused_while_downstream_work_in_flight(file_db):
         step = await db.get(Step, ocr_id)
         with pytest.raises(engine.StepActionError, match="still queued or running"):
             await redo_step(db, step)
+
+
+# ----- AUDIT SV-M2 / SV-M6 / BC-F18 regression tests -------------------
+
+
+async def test_cancel_never_overwrites_claimed_steps(file_db):
+    """AUDIT SV-M2: the pending→cancelled flip is guarded — a step a
+    worker claimed (running) mid-cancel keeps running."""
+    from app.db.models import Job
+    from app.services.steps import cancel_job_steps
+
+    async with session_scope() as db:
+        job = Job(kind="bulk_analysis", params={}, total=1)
+        db.add(job)
+        await db.flush()
+        s = Session(agent_kind=AgentKind.document, entity_type=EntityType.document,
+                    entity_id=7, job_id=job.id)
+        db.add(s)
+        await db.flush()
+        pending = Step(session_id=s.id, kind=StepKind.analysis,
+                       state=StepState.pending)
+        running = Step(session_id=s.id, kind=StepKind.analysis,
+                       state=StepState.running)
+        db.add_all([pending, running])
+        await db.commit()
+        job_id, pending_id, running_id = job.id, pending.id, running.id
+
+    async with session_scope() as db:
+        cancelled = await cancel_job_steps(db, job_id)
+        await db.commit()
+        assert [c.id for c in cancelled] == [pending_id]
+
+    async with session_scope() as db:
+        assert (await db.get(Step, pending_id)).state == StepState.cancelled
+        assert (await db.get(Step, running_id)).state == StepState.running
+
+
+async def test_resolve_step_claims_atomically(file_db, monkeypatch):
+    """AUDIT SV-M6: a step resolved out from under us → 409, resolver
+    never runs twice."""
+    from app.services import steps as engine_mod
+    from app.services.steps import StepActionError, resolve_step
+
+    calls = {"n": 0}
+
+    async def fake_resolver(db, paperless, session, step, body):
+        calls["n"] += 1
+        return None
+
+    monkeypatch.setitem(engine_mod.RESOLVERS, StepKind.chat, fake_resolver)
+    monkeypatch.setattr(engine_mod, "_registered", True)
+
+    sid = await _make_session()
+    async with session_scope() as db:
+        step = Step(session_id=sid, kind=StepKind.chat,
+                    state=StepState.awaiting_user)
+        db.add(step)
+        await db.commit()
+        step_id = step.id
+
+    async with session_scope() as db:
+        step = await db.get(Step, step_id)
+        # A concurrent resolve wins the claim between our load and ours.
+        from sqlalchemy import update as sa_update
+        async with session_scope() as other:
+            await other.execute(
+                sa_update(Step).where(Step.id == step_id)
+                .values(state=StepState.succeeded)
+            )
+            await other.commit()
+        import pytest
+        with pytest.raises(StepActionError):
+            await resolve_step(db, None, step, {})
+    assert calls["n"] == 0
+
+
+async def test_resolve_step_commits_followup_with_the_gate(file_db, monkeypatch):
+    """AUDIT SV-H3: the resolver's follow-up step becomes visible in the
+    same transaction that marks the gate succeeded."""
+    from app.services import steps as engine_mod
+    from app.services.steps import resolve_step
+
+    async def fake_resolver(db, paperless, session, step, body):
+        return await create_step(
+            db, session, StepKind.analysis, {"gate": "ok"}, commit=False
+        )
+
+    monkeypatch.setitem(engine_mod.RESOLVERS, StepKind.chat, fake_resolver)
+    monkeypatch.setattr(engine_mod, "_registered", True)
+
+    sid = await _make_session()
+    async with session_scope() as db:
+        step = Step(session_id=sid, kind=StepKind.chat,
+                    state=StepState.awaiting_user)
+        db.add(step)
+        await db.commit()
+        step_id = step.id
+
+    async with session_scope() as db:
+        step = await db.get(Step, step_id)
+        await resolve_step(db, None, step, {})
+
+    async with session_scope() as db:
+        steps = (
+            await db.scalars(select(Step).where(Step.session_id == sid).order_by(Step.id))
+        ).all()
+        assert [s.state for s in steps] == [StepState.succeeded, StepState.pending]
+        assert steps[1].kind == StepKind.analysis
+
+
+async def test_claim_skips_sessions_with_a_running_step(file_db):
+    """AUDIT BC-F18: one turn per session — a pending step whose session
+    already has a running step is not claimable; other sessions are."""
+    workers = StepWorkers()
+
+    busy_sid = await _make_session()
+    free_sid = await _make_session()
+    async with session_scope() as db:
+        db.add(Step(session_id=busy_sid, kind=StepKind.chat,
+                    state=StepState.running))
+        blocked = Step(session_id=busy_sid, kind=StepKind.chat,
+                       state=StepState.pending)
+        free = Step(session_id=free_sid, kind=StepKind.chat,
+                    state=StepState.pending)
+        db.add_all([blocked, free])
+        await db.commit()
+        blocked_id, free_id = blocked.id, free.id
+
+    from app.db.models import QueueLane
+
+    first = await workers._claim(QueueLane.interactive)
+    assert first == free_id  # skipped the blocked session's step
+    second = await workers._claim(QueueLane.interactive)
+    assert second is None  # blocked stays unclaimable, nothing else left
+
+    async with session_scope() as db:
+        assert (await db.get(Step, blocked_id)).state == StepState.pending
