@@ -37,14 +37,10 @@ export type AuditEntry = S["AuditEntryOut"];
 export type AuditPage = S["AuditPage"];
 export type Meta = S["MetaOut"];
 export type SyncStatus = S["SyncStatusOut"];
-export type ResourceFetchStatus = S["ResourceFetch"];
 export type RevertCheck = S["RevertCheckOut"];
 export type SettingsOverview = S["SettingsOut"];
 export type Prefs = S["PrefsOut"];
 export type PrefsUpdate = S["PrefsUpdate"];
-
-// Shapes that exist outside the HTTP contract (SSE payloads, JSON
-// blobs the backend types as dict[str, Any]):
 
 export interface SessionFilter {
   entity_type?: string;
@@ -53,12 +49,6 @@ export interface SessionFilter {
   unfinished?: boolean;
   page?: number;
   page_size?: number;
-}
-
-export interface SessionEvent {
-  type: string;
-  session_id: number;
-  [key: string]: unknown;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -86,10 +76,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listProposals: (status?: ProposalStatus) =>
-    request<ProposalPage>(`/api/proposals${status ? `?status=${status}` : ""}`),
+  listProposals: (status?: ProposalStatus) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    const qs = params.toString();
+    return request<ProposalPage>(`/api/proposals${qs ? `?${qs}` : ""}`);
+  },
   getProposal: (id: number) => request<Proposal>(`/api/proposals/${id}`),
-  patchProposal: (id: number, user_payload: Record<string, unknown> | null) =>
+  patchProposal: (id: number, user_payload: S["ProposalPatch"]["user_payload"]) =>
     request<Proposal>(`/api/proposals/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ user_payload }),
@@ -105,10 +99,14 @@ export const api = {
   putPrefs: (body: PrefsUpdate) =>
     request<Prefs>("/api/prefs", { method: "PUT", body: JSON.stringify(body) }),
   getSyncStatus: () => request<SyncStatus>("/api/sync/status"),
-  listAudit: (page = 1, pageSize = 20, kind?: string) =>
-    request<AuditPage>(
-      `/api/audit?page=${page}&page_size=${pageSize}${kind ? `&kind=${kind}` : ""}`,
-    ),
+  listAudit: (page = 1, pageSize = 20, kind?: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    if (kind) params.set("kind", kind);
+    return request<AuditPage>(`/api/audit?${params}`);
+  },
   listSessions: (filter: SessionFilter = {}) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) {
@@ -129,12 +127,12 @@ export const api = {
       { method: "PUT", body: JSON.stringify({ instructions }) },
     ),
   getSession: (id: number) => request<SessionDetail>(`/api/sessions/${id}`),
-  sendMessage: (id: number, content: string) =>
+  sendMessage: (id: number, content: S["MessageRequest"]["content"]) =>
     request<Step>(`/api/sessions/${id}/messages`, {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
-  analyzeDocument: (docId: number, opts: { redo_ocr: boolean; instructions?: string }) =>
+  analyzeDocument: (docId: number, opts: S["AnalyzeRequest"]) =>
     request<Session>(`/api/sessions/analyze/document/${docId}`, {
       method: "POST",
       body: JSON.stringify(opts),

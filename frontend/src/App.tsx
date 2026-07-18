@@ -110,7 +110,6 @@ export default function App() {
               <NavLink
                 key={n.to}
                 to={n.to}
-                end={n.to === "/"}
                 className={({ isActive }) =>
                   isActive
                     ? "font-medium text-primary"

@@ -9,11 +9,22 @@ import { DateField } from "@/components/app/DateField";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice } from "@/components/app/states";
-import { api, type EntityRef, type PaperlessDocument, type Proposal } from "../api";
+import { api, type EntityRef, type Proposal } from "../api";
 import { keys as qk, invalidateProposalEffects } from "../lib/keys";
 import { formatDate } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
 import { errorMessage } from "../lib/errors";
+import {
+  buildPayload,
+  deriveDesired,
+  displayValue,
+  fieldKind,
+  parseTyped,
+  proposalKindLabel,
+  type Desired,
+} from "../lib/proposal-payload";
+
+export { proposalKindLabel };
 
 // ---------------------------------------------------------------------
 // Metadata proposal editor: shows EVERY document field — current value
@@ -21,61 +32,6 @@ import { errorMessage } from "../lib/errors";
 // in the background). add_tags/remove_tags are presented as ONE tags
 // field; the diff is recomputed on save.
 // ---------------------------------------------------------------------
-
-interface Desired {
-  title: string;
-  correspondent: number | null;
-  document_type: number | null;
-  storage_path: number | null;
-  created: string | null;
-  archive_serial_number: number | null;
-  tags: number[];
-}
-
-function deriveDesired(doc: PaperlessDocument, payload: Record<string, unknown>): Desired {
-  const scalar = <T,>(key: string, fallback: T): T =>
-    key in payload ? (payload[key] as T) : fallback;
-  const removed = new Set((payload.remove_tags as number[] | undefined) ?? []);
-  const added = (payload.add_tags as number[] | undefined) ?? [];
-  const tags = [
-    ...doc.tags.filter((t) => !removed.has(t)),
-    ...added.filter((t) => !doc.tags.includes(t)),
-  ];
-  return {
-    title: scalar("title", doc.title),
-    correspondent: scalar("correspondent", doc.correspondent ?? null),
-    document_type: scalar("document_type", doc.document_type ?? null),
-    storage_path: scalar("storage_path", doc.storage_path ?? null),
-    created: scalar("created", doc.created?.slice(0, 10) ?? null),
-    archive_serial_number: scalar("archive_serial_number", doc.archive_serial_number ?? null),
-    tags,
-  };
-}
-
-function buildPayload(
-  desired: Desired,
-  doc: PaperlessDocument,
-  agent: Record<string, unknown>,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    document_id: agent.document_id,
-  };
-  if (desired.title !== doc.title) payload.title = desired.title;
-  if (desired.correspondent !== (doc.correspondent ?? null))
-    payload.correspondent = desired.correspondent;
-  if (desired.document_type !== (doc.document_type ?? null))
-    payload.document_type = desired.document_type;
-  if (desired.storage_path !== (doc.storage_path ?? null))
-    payload.storage_path = desired.storage_path;
-  if (desired.created !== (doc.created?.slice(0, 10) ?? null)) payload.created = desired.created;
-  if (desired.archive_serial_number !== (doc.archive_serial_number ?? null))
-    payload.archive_serial_number = desired.archive_serial_number;
-  const add = desired.tags.filter((t) => !doc.tags.includes(t));
-  const remove = doc.tags.filter((t) => !desired.tags.includes(t));
-  if (add.length) payload.add_tags = add;
-  if (remove.length) payload.remove_tags = remove;
-  return payload;
-}
 
 const name = (list: EntityRef[] | undefined, id: number | null | undefined) =>
   id == null ? "—" : entityName(list, id);
@@ -311,26 +267,6 @@ function MetadataEditor({
 
 /** Human label naming the entity type: "create document type",
  * "update tag", "merge correspondents", "update document metadata". */
-export function proposalKindLabel(p: Proposal): string {
-  const entity = (
-    (p.agent_payload.entity_type as string | undefined) ??
-    p.entity_type ??
-    "entity"
-  ).replaceAll("_", " ");
-  switch (p.kind) {
-    case "create_entity":
-      return `create ${entity}`;
-    case "update_entity":
-      return `update ${entity}`;
-    case "delete_entity":
-      return `delete ${entity}`;
-    case "merge_entities":
-      return `merge ${entity}s`;
-    default:
-      return p.kind.replaceAll("_", " ");
-  }
-}
-
 const HIDDEN = new Set([
   "kind",
   "document_id",
@@ -359,21 +295,67 @@ function MergeContext({ p }: { p: Proposal }) {
   );
 }
 
-function displayValue(v: unknown): string {
-  if (v === undefined) return "";
-  return typeof v === "string" ? v : JSON.stringify(v);
-}
-
-function parseValue(raw: string, previous: unknown): unknown {
-  if (raw === "") return undefined;
-  if (typeof previous === "string" || previous === undefined || previous === null) {
-    if (!/^[[{"]|^-?\d+(\.\d+)?$|^(true|false|null)$/.test(raw.trim())) return raw;
+/** One payload field editor whose widget follows the field's TYPE
+ * (string/number/boolean/json) — entered text is never re-guessed. */
+function FieldInput({
+  label,
+  value,
+  kind,
+  editable,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  kind: ReturnType<typeof fieldKind>;
+  editable: boolean;
+  onCommit: (v: unknown) => void;
+}) {
+  const [raw, setRaw] = useState(value);
+  const [invalid, setInvalid] = useState(false);
+  const handle = (text: string) => {
+    setRaw(text);
+    const parsed = parseTyped(text, kind);
+    setInvalid(!parsed.ok);
+    if (parsed.ok) onCommit(parsed.value);
+  };
+  if (kind === "boolean") {
+    return (
+      <SimpleSelect
+        ariaLabel={label}
+        value={raw || "false"}
+        onValueChange={handle}
+        disabled={!editable}
+        options={[
+          { value: "true", label: "true" },
+          { value: "false", label: "false" },
+        ]}
+      />
+    );
   }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
+  const cls = `w-full rounded-md border px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 ${
+    invalid ? "border-red-400 bg-red-50 dark:bg-red-950/30" : "border-input bg-transparent"
+  }`;
+  if (kind === "json") {
+    return (
+      <textarea
+        aria-label={label}
+        className={`${cls} min-h-16`}
+        disabled={!editable}
+        value={raw}
+        onChange={(e) => handle(e.target.value)}
+      />
+    );
   }
+  return (
+    <input
+      aria-label={label}
+      type={kind === "number" ? "number" : "text"}
+      className={cls}
+      disabled={!editable}
+      value={raw}
+      onChange={(e) => handle(e.target.value)}
+    />
+  );
 }
 
 function GenericEditor({
@@ -423,12 +405,12 @@ function GenericEditor({
                     </td>
                   )}
                   <td className={`py-2 ${editedByUser ? "rounded-md bg-amber-50 dark:bg-amber-950/40" : ""}`}>
-                    <input
-                      className="w-full rounded-md border border-input bg-transparent px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
-                      disabled={!editable}
+                    <FieldInput
+                      label={k}
                       value={displayValue(cur)}
-                      onChange={(e) => {
-                        const v = parseValue(e.target.value, orig);
+                      kind={fieldKind(orig)}
+                      editable={editable}
+                      onCommit={(v) => {
                         const next = { ...current };
                         if (v === undefined) delete next[k];
                         else next[k] = v;

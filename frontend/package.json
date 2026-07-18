@@ -12,14 +12,10 @@
     "gen:api": "cd ../backend && uv run python -m app.openapi_export ../frontend/openapi.json && cd ../frontend && openapi-typescript openapi.json -o src/api/schema.gen.ts && rm openapi.json"
   },
   "dependencies": {
-    "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/inter": "^5.2.8",
-    "@hugeicons/core-free-icons": "^4.2.2",
-    "@hugeicons/react": "^1.1.9",
     "@tanstack/react-query": "^5.66.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "date-fns": "^4.4.0",
     "lucide-react": "^1.25.0",
     "radix-ui": "^1.6.2",
     "react": "^19.0.0",
@@ -29,7 +25,6 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.1.0",
     "remark-gfm": "^4.0.1",
-    "shadcn": "^4.13.1",
     "tailwind-merge": "^3.6.0",
     "tw-animate-css": "^1.4.0"
   },

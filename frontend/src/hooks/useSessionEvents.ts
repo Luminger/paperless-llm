@@ -5,10 +5,13 @@ import type { TranscriptItem } from "../api";
 
 /** Live activity of one running step. The items are REAL
  * TranscriptItems — the streaming view renders through the exact same
- * components as the finished transcript. */
+ * components as the finished transcript — plus an explicit reconcile
+ * key for streaming deltas (never smuggled through data fields). */
+export type LiveTranscriptItem = TranscriptItem & { live_key?: string };
+
 export interface LiveActivity {
   tokens: number;
-  items: TranscriptItem[];
+  items: LiveTranscriptItem[];
 }
 
 export interface ProgressEvent {
@@ -30,7 +33,7 @@ export interface ProgressEvent {
 
 const EMPTY: LiveActivity = { tokens: 0, items: [] };
 
-function liveItem(over: Partial<TranscriptItem>): TranscriptItem {
+function liveItem(over: Partial<LiveTranscriptItem>): LiveTranscriptItem {
   return {
     role: "agent",
     content: "",
@@ -43,11 +46,10 @@ function liveItem(over: Partial<TranscriptItem>): TranscriptItem {
     timing: null,
     ts: null,
     ...over,
-  } as TranscriptItem;
+  } as LiveTranscriptItem;
 }
 
-// Model parts get stable keys so deltas UPDATE instead of append; the
-// key rides in `ts` (unused during streaming).
+// Model parts get stable keys so deltas UPDATE instead of append.
 const partKey = (i: number) => `part:${i}`;
 
 /** Pure reducer: one progress event onto the live state (exported for
@@ -57,11 +59,11 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
   if (ev.part != null && ev.part_kind) {
     const key = partKey(ev.part);
     const items = [...cur.items];
-    const idx = items.findIndex((it) => it.ts === key);
+    const idx = items.findIndex((it) => it.live_key === key);
     const item = liveItem({
       role: ev.part_kind === "thinking" ? "thinking" : "agent",
       content: ev.content ?? "",
-      ts: key,
+      live_key: key,
     });
     if (idx >= 0) items[idx] = item;
     else items.push(item);
@@ -91,7 +93,7 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
           tool_result: ev.rejected ? `rejected: ${ev.result ?? ""}` : (ev.result ?? ""),
           tool_result_full: ev.result ?? null,
           tool_rejected: ev.rejected === true,
-        } as TranscriptItem;
+        } as LiveTranscriptItem;
         break;
       }
     }
