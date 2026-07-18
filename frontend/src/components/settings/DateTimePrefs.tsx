@@ -15,29 +15,24 @@ import {
   DATE_PREFS,
   TIME_PREFS,
   browserDateTimeDefaults,
-  formatClock,
-  formatDate,
   formatDateTime,
   getDateTimePrefs,
   setDateTimePrefs,
   timeZoneOptions,
   type DatePref,
   type TimePref,
+  formatWithPrefs,
 } from "../../lib/format";
 
-/** Format NOW per candidate pref, for live example labels. */
+/** Format NOW per candidate pref, for live example labels — PURE
+ * (AUDIT FP-L8): no round-trip through the global store during render
+ * (which now notifies subscribers app-wide). */
 function exampleFor(kind: "date" | "time", value: string): string {
   const current = getDateTimePrefs();
-  try {
-    if (kind === "date") {
-      setDateTimePrefs(value as DatePref, current.time, current.timeZone);
-      return formatDate(new Date().toISOString());
-    }
-    setDateTimePrefs(current.date, value as TimePref, current.timeZone);
-    return formatClock(new Date().toISOString());
-  } finally {
-    setDateTimePrefs(current.date, current.time, current.timeZone);
-  }
+  const iso = new Date().toISOString();
+  return kind === "date"
+    ? formatWithPrefs({ ...current, date: value as DatePref }, iso, "date")
+    : formatWithPrefs({ ...current, time: value as TimePref }, iso, "clock");
 }
 
 export function DateTimePrefs() {

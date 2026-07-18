@@ -1,3 +1,4 @@
+import { useDateTimePrefsSubscription } from "./lib/prefs";
 import {
   Navigate,
   NavLink,
@@ -118,6 +119,8 @@ function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
 const SECTION_VALUES = ["preferences", "models", "prompts", "paperless", "system"] as const;
 
 export default function App() {
+  // Fresh date/time prefs re-render everything (AUDIT FP-M1).
+  useDateTimePrefsSubscription();
   // Settings is a routable modal: /settings opens it, the section
   // travels in the #fragment (/settings#prompts). The page the user
   // came from stays MOUNTED underneath (backgroundLocation pattern:

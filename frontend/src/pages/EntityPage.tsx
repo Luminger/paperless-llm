@@ -168,6 +168,14 @@ function InstructionsEditor({
 }) {
   const qc = useQueryClient();
   const [text, setText] = useState(initial);
+  // AUDIT FP-M6: reconcile refetched server text ONLY while the user
+  // isn't mid-edit — keying the editor on the server value used to
+  // remount it after Save, discarding everything typed since.
+  const [baseline, setBaseline] = useState(initial);
+  if (initial !== baseline) {
+    setBaseline(initial);
+    if (text === baseline) setText(initial); // clean editor follows the server
+  }
   const save = useMutation({
     mutationFn: () => api.setInstructions(entityType, id, text),
     onSuccess: () => {
@@ -468,7 +476,7 @@ export default function EntityPage() {
 
       {entityType !== "document" && entityQuery.data && (
         <InstructionsEditor
-          key={`${entityType}-${id}-${entityQuery.data.instructions ?? ""}`}
+          key={`${entityType}-${id}`} /* AUDIT FP-M6: never remount on refetch */
           entityType={entityType}
           id={id}
           initial={entityQuery.data.instructions ?? ""}

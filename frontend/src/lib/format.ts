@@ -75,7 +75,11 @@ export function getDateTimePrefs(): {
     // Legacy "system" (device-locale) collapses to ISO — concrete
     // formats only, now that prefs are server-shared.
     date: storedDate === "eu" || storedDate === "us" ? storedDate : "iso",
-    time: (localStorage.getItem(TIME_KEY) as TimePref) || "24h-seconds",
+    time: (["24h", "24h-seconds", "12h", "12h-seconds"] as const).includes(
+      localStorage.getItem(TIME_KEY) as TimePref,
+    )
+      ? (localStorage.getItem(TIME_KEY) as TimePref)
+      : "24h-seconds",
     // Concrete zones only; anything unset/legacy reads as the browser's
     // zone (and becomes explicit on the next save).
     timeZone:
@@ -83,6 +87,27 @@ export function getDateTimePrefs(): {
         ? storedZone
         : Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
+}
+
+// ---- change subscription (AUDIT FP-M1) --------------------------------
+// Date formatting reads module state; components render its output.
+// Anything that CHANGES the prefs bumps this store so subscribed
+// consumers (the app root) re-render with fresh values.
+let prefsVersion = 0;
+const prefsListeners = new Set<() => void>();
+
+function bumpPrefs(): void {
+  prefsVersion += 1;
+  for (const l of prefsListeners) l();
+}
+
+export function subscribeDateTimePrefs(listener: () => void): () => void {
+  prefsListeners.add(listener);
+  return () => prefsListeners.delete(listener);
+}
+
+export function dateTimePrefsVersion(): number {
+  return prefsVersion;
 }
 
 /** Seed the local cache from the server-side preferences. */
@@ -94,6 +119,7 @@ export function hydrateDateTimePrefs(server: {
   localStorage.setItem(DATE_KEY, server.date_format);
   localStorage.setItem(TIME_KEY, server.time_format);
   localStorage.setItem(TZ_KEY, server.time_zone);
+  bumpPrefs();
 }
 
 export function setDateTimePrefs(
@@ -104,6 +130,7 @@ export function setDateTimePrefs(
   localStorage.setItem(DATE_KEY, date);
   localStorage.setItem(TIME_KEY, time);
   localStorage.setItem(TZ_KEY, timeZone);
+  bumpPrefs();
 }
 
 // Formatter cache, invalidated when prefs change.
@@ -116,8 +143,14 @@ function ensureFormatters(): ReturnType<typeof getDateTimePrefs> {
   const key = `${prefs.date}|${prefs.time}|${prefs.timeZone}`;
   if (key !== cacheKey) {
     cacheKey = key;
-    const tz =
-      prefs.timeZone === "system" ? undefined : { timeZone: prefs.timeZone };
+    // AUDIT FP-M2: a zone this browser's ICU doesn't know must not
+    // white-screen every page that shows a date — fall back to UTC.
+    let tz: { timeZone: string } | undefined = { timeZone: prefs.timeZone };
+    try {
+      new Intl.DateTimeFormat(undefined, tz);
+    } catch {
+      tz = { timeZone: "UTC" };
+    }
     timeFmt = new Intl.DateTimeFormat(undefined, {
       hour: "2-digit",
       minute: "2-digit",
@@ -249,4 +282,48 @@ export function browserDateTimeDefaults(): {
     new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions()
       .hour12 ?? false;
   return { timeZone, date, time: hour12 ? "12h" : "24h" };
+}
+
+
+/** PURE example formatting for candidate prefs (AUDIT FP-L8): builds
+ * throwaway formatters instead of round-tripping through the global
+ * store during render (which, with the change subscription, would
+ * re-render the whole app once per ticking second). */
+export function formatWithPrefs(
+  prefs: { date: DatePref; time: TimePref; timeZone: string },
+  iso: string,
+  kind: "date" | "clock",
+): string {
+  let tz: { timeZone: string } = { timeZone: prefs.timeZone };
+  try {
+    new Intl.DateTimeFormat(undefined, tz);
+  } catch {
+    tz = { timeZone: "UTC" };
+  }
+  const d = new Date(iso);
+  if (kind === "clock") {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      ...(prefs.time.endsWith("seconds") ? { second: "2-digit" } : {}),
+      hourCycle: prefs.time.startsWith("12h") ? "h12" : "h23",
+      ...tz,
+    }).format(d);
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    ...tz,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const [y, m, day] = [get("year"), get("month"), get("day")];
+  switch (prefs.date) {
+    case "eu":
+      return `${day}.${m}.${y}`;
+    case "us":
+      return `${m}/${day}/${y}`;
+    default:
+      return `${y}-${m}-${day}`;
+  }
 }

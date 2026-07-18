@@ -1,4 +1,11 @@
-import { formatClock, formatDate, formatDateTime, setDateTimePrefs } from "./format";
+import {
+  formatClock,
+  formatDate,
+  formatDateTime,
+  hydrateDateTimePrefs,
+  setDateTimePrefs,
+  subscribeDateTimePrefs,
+} from "./format";
 
 const ISO = "2026-07-17T18:49:15+02:00";
 
@@ -48,5 +55,31 @@ describe("timezone preference", () => {
   it("plain calendar dates never shift", () => {
     setDateTimePrefs("iso", "24h", "Pacific/Auckland");
     expect(formatDate("2014-07-11")).toBe("2014-07-11");
+  });
+});
+
+describe("AUDIT FP-M2: invalid timezone never crashes a render", () => {
+  it("falls back to UTC for zones this ICU does not know", () => {
+    localStorage.setItem("pllm.pref.timeZone", "Not/AZone");
+    try {
+      expect(() => formatDateTime("2026-03-07T12:00:00Z")).not.toThrow();
+      expect(formatDateTime("2026-03-07T12:00:00Z")).toContain("2026");
+    } finally {
+      localStorage.removeItem("pllm.pref.timeZone");
+    }
+  });
+});
+
+describe("AUDIT FP-M1: pref changes notify subscribers", () => {
+  it("hydrate and set bump the subscription", () => {
+    let called = 0;
+    const un = subscribeDateTimePrefs(() => {
+      called += 1;
+    });
+    setDateTimePrefs("iso", "24h");
+    hydrateDateTimePrefs({ date_format: "eu", time_format: "24h", time_zone: "UTC" });
+    un();
+    setDateTimePrefs("iso", "24h");
+    expect(called).toBe(2); // unsubscribed calls don't count
   });
 });

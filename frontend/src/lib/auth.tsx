@@ -8,7 +8,8 @@ import { createContext, useContext, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AuthMe } from "../api";
 import { keys } from "./keys";
-import { LoadingState } from "@/components/app/states";
+import { ErrorNotice, LoadingState } from "@/components/app/states";
+import { Button } from "@/components/ui/button";
 import Login from "../pages/Login";
 
 const AuthContext = createContext<AuthMe>({ user: null, role: "user" });
@@ -19,7 +20,7 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
-  const { data: me } = useQuery({
+  const { data: me, error, refetch } = useQuery({
     queryKey: keys.auth(),
     queryFn: api.getAuthMe,
     staleTime: Infinity,
@@ -33,6 +34,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("pllm:unauthorized", onUnauthorized);
   }, [qc]);
 
+  // AUDIT FP-M5: an HTTP-level failure (backend 500) must not be an
+  // eternal skeleton — network outages are ConnectionToast's job, but
+  // this one needs its own retry affordance.
+  if (!me && error) {
+    return (
+      <div className="mx-auto max-w-xl space-y-3 px-4 py-16">
+        <ErrorNotice error={error} />
+        <Button size="sm" variant="secondary" onClick={() => refetch()}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
   if (!me) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6">

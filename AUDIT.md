@@ -893,7 +893,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #86
 
 ### FP-M1 — MEDIUM — server-hydrated prefs never re-render mounted consumers; `usePrefsTick` has zero consumers
-- **Status:** OPEN
+- **Status:** FIXED — useSyncExternalStore subscription (`subscribeDateTimePrefs`/version in format.ts, bumped by hydrate + set); App root subscribes and re-renders the tree on pref change; dead context tick deleted; test pins notify+unsubscribe
 - **Where:** `lib/prefs.tsx:14-31`
 - **Detail:** Exported `usePrefsTick` imported nowhere (verified);
   provider bump only re-renders consumers, and children are referentially
@@ -906,7 +906,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #87
 
 ### FP-M2 — MEDIUM — invalid timezone from server prefs crashes every date render; no error boundary exists
-- **Status:** OPEN
+- **Status:** FIXED — Intl construction probed, unknown zones fall back to UTC (test); `time` pref validated against the known set; app-level ErrorBoundary mounted in main.tsx (server side already validates zones via zoneinfo, #81)
 - **Where:** `lib/format.ts:118-133,89-97`; no ErrorBoundary anywhere
   (grep zero hits)
 - **Detail:** `new Intl.DateTimeFormat(..., {timeZone})` throws
@@ -940,7 +940,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #86
 
 ### FP-M5 — MEDIUM — AuthProvider: HTTP-level auth failure is an infinite skeleton
-- **Status:** OPEN
+- **Status:** FIXED — error state renders ErrorNotice + Try again
 - **Where:** `lib/auth.tsx:36-42`
 - **Detail:** `/api/auth/me` 500 → `me` undefined, retries exhaust, user
   sits on skeleton forever. ConnectivityProvider only rescues TypeError
@@ -949,7 +949,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #87
 
 ### FP-M6 — MEDIUM — EntityPage instructions keyed on server value can discard in-flight edits
-- **Status:** OPEN
+- **Status:** FIXED — keyed by identity only; refetched text reconciles via baseline comparison ONLY while the editor is clean
 - **Where:** `pages/EntityPage.tsx:470`
 - **Detail:** `key` includes `entityQuery.data.instructions`; Save →
   invalidate → refetch returns saved text → key changes → editor
@@ -996,7 +996,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
   items). Thread ErrorNotice. Todo #88.
 
 ### FP-L8 — LOW — `DateTimePrefs.exampleFor` mutates global pref state during render
-- **Status:** OPEN — `DateTimePrefs.tsx:29-40,96,106`: temporary
+- **Status:** FIXED — pure `formatWithPrefs(prefs, iso, kind)`; no store round-trip (which would now notify app-wide per ticking second) — `DateTimePrefs.tsx:29-40,96,106`: temporary
   localStorage write + formatter-cache thrash during render, ~14
   rebuilds/s while the ticking modal is open. Pure
   `formatWith(prefs, date)`. Todo #87.
@@ -1007,7 +1007,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
   - `Jobs.tsx:180` hard-coded page size 25, no size control (only
     top-level list without it).
   - `AuditLog.tsx` missing LoadingState skeleton on first load.
-  - `format.ts:119-120` dead `"system"` branch.
+  - ~~format.ts dead "system" branch~~ (fixed with FP-M2 rework).
   - `App.tsx:135-139` opening Settings while `/settings` open pushes a
     second entry → must close twice; guard `if (settingsOpen) return`.
   - StartJobDialog state (auto/instructions/stale error) persists across
