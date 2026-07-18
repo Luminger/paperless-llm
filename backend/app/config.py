@@ -122,6 +122,27 @@ class PaperlessConfig(BaseModel):
     timeout_seconds: float = 30.0
 
 
+class AuthConfig(BaseModel):
+    """Who may use the app (see DESIGN.md "Authentication").
+
+    - ``none`` (default): trusted network / VPN — no auth.
+    - ``proxy``: trust the username an authenticating reverse proxy
+      (Authelia/authentik) injects via ``proxy_header``.
+    - ``paperless``: login form validated against paperless itself
+      (``POST /api/token/``) — no user store of our own; the per-user
+      paperless token performs that user's applied changes so
+      paperless's own audit trail names the real person.
+    """
+
+    mode: Literal["none", "proxy", "paperless"] = "none"
+    proxy_header: str = "Remote-User"
+    # Signed session cookie lifetime (paperless mode).
+    session_hours: int = 24 * 7
+    # HMAC secret for the session cookie. Empty = generated once and
+    # persisted app-side (survives restarts).
+    session_secret: str = ""
+
+
 class WebhookConfig(BaseModel):
     # Shared secret expected in the X-PLLM-Token header of webhook ingress.
     # Empty disables the webhook endpoint entirely.
@@ -161,6 +182,7 @@ class Settings(BaseSettings):
 
     llm: LlmConfig = LlmConfig()
     paperless: PaperlessConfig = PaperlessConfig()
+    auth: AuthConfig = AuthConfig()
     webhook: WebhookConfig = WebhookConfig()
     queue: QueueConfig = QueueConfig()
 

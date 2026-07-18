@@ -19,6 +19,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTheme, type Theme } from "./lib/theme";
+import { useAuth } from "./lib/auth";
+import { api } from "./api";
+import { keys } from "./lib/keys";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { LogOut } from "lucide-react";
 import Documents from "./pages/Documents";
 import Dashboard from "./pages/Dashboard";
 import SessionDetail from "./pages/SessionDetail";
@@ -42,6 +47,12 @@ const nav = [
 
 function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { theme, setTheme } = useTheme();
+  const auth = useAuth();
+  const qc = useQueryClient();
+  const logout = useMutation({
+    mutationFn: api.logout,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.auth() }),
+  });
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
   return (
     <DropdownMenu>
@@ -68,8 +79,15 @@ function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          Signed in locally
+          {auth.mode === "none"
+            ? "Signed in locally"
+            : `Signed in as ${auth.user}`}
         </DropdownMenuLabel>
+        {auth.mode === "paperless" && (
+          <DropdownMenuItem onSelect={() => logout.mutate()} className="gap-2">
+            <LogOut className="size-4" /> Sign out
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

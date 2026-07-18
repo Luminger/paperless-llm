@@ -40,6 +40,7 @@ export type SyncStatus = S["SyncStatusOut"];
 export type RevertCheck = S["RevertCheckOut"];
 export type SettingsOverview = S["SettingsOut"];
 export type Prefs = S["PrefsOut"];
+export type AuthMe = S["AuthMeOut"];
 export type PrefsUpdate = S["PrefsUpdate"];
 
 export interface SessionFilter {
@@ -70,6 +71,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       // non-JSON body — keep the generic message
     }
+    if (resp.status === 401 && !url.startsWith("/api/auth/")) {
+      // The auth shell re-checks /api/auth/me and shows the login page.
+      window.dispatchEvent(new Event("pllm:unauthorized"));
+    }
     throw new ApiError(resp.status, code, message);
   }
   return resp.json() as Promise<T>;
@@ -94,6 +99,13 @@ export const api = {
     request<RevertCheck>(`/api/proposals/${id}/revert-check`),
 
   getMeta: () => request<Meta>("/api/meta"),
+  getAuthMe: () => request<AuthMe>("/api/auth/me"),
+  login: (username: string, password: string) =>
+    request<AuthMe>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<AuthMe>("/api/auth/logout", { method: "POST" }),
   getSettingsOverview: () => request<SettingsOverview>("/api/settings"),
   getPrefs: () => request<Prefs>("/api/prefs"),
   putPrefs: (body: PrefsUpdate) =>

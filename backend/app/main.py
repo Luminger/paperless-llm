@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.errors import register_error_handlers
 from app.api.routes import (
     audit,
+    auth,
     entities,
     jobs,
     prefs,
@@ -75,20 +76,31 @@ def create_app() -> FastAPI:
         finally:
             actor_var.reset(token)
 
-    app.include_router(proposals.router)
-    app.include_router(sessions.router)
-    app.include_router(entities.router)
-    app.include_router(settings_routes.router)
-    app.include_router(prefs.router)
-    app.include_router(jobs.router)
+    from fastapi import Depends
+
+    from app.api.deps import require_user
+
+    guard = [Depends(require_user)]
+    # Protected: everything a browser calls. Unprotected: auth itself,
+    # health, and the webhook (its own shared-secret header).
+    for router in (
+        proposals.router,
+        sessions.router,
+        entities.router,
+        settings_routes.router,
+        prefs.router,
+        jobs.router,
+        audit.router,
+    ):
+        app.include_router(router, dependencies=guard)
+    app.include_router(auth.router)
     app.include_router(webhooks.router)
-    app.include_router(audit.router)
 
     @app.get("/api/health")
     async def health() -> HealthOut:
         return HealthOut(status="ok")
 
-    @app.get("/api/meta")
+    @app.get("/api/meta", dependencies=guard)
     async def meta() -> MetaOut:
         p = get_settings().paperless
         return MetaOut(paperless_url=(p.external_url or p.base_url).rstrip("/"))

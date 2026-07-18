@@ -264,6 +264,11 @@ class MetaOut(BaseModel):
     paperless_url: str
 
 
+class AuthMeOut(BaseModel):
+    mode: Literal["none", "proxy", "paperless"]
+    user: str | None = None
+
+
 class HealthOut(BaseModel):
     status: str
 

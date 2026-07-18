@@ -39,6 +39,14 @@ export function SystemInfo() {
   return (
     <div className="grid gap-4">
       <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Access</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Row label="Authentication">{s.auth_mode}</Row>
+        </CardContent>
+      </Card>
+      <Card>
           <CardHeader>
             <CardTitle className="text-base">Agent model</CardTitle>
           </CardHeader>

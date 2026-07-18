@@ -24,6 +24,7 @@ export const keys = {
     filter !== undefined ? (["audit", filter, page] as const) : (["audit"] as const),
   syncStatus: () => ["sync-status"] as const,
   meta: () => ["meta"] as const,
+  auth: () => ["auth"] as const,
   settings: () => ["settings"] as const,
   prefs: () => ["prefs"] as const,
 } as const;

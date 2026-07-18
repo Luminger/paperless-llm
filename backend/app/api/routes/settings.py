@@ -54,6 +54,7 @@ class PromptDefaults(BaseModel):
 
 
 class SettingsOut(BaseModel):
+    auth_mode: str
     llm_agent: ProfileOut
     llm_ocr: ProfileOut
     llm_embeddings: ProfileOut
@@ -75,6 +76,7 @@ async def get_settings_overview() -> SettingsOut:
     emb = s.llm.embeddings
     rer = s.llm.reranker
     return SettingsOut(
+        auth_mode=s.auth.mode,
         llm_agent=ProfileOut(
             base_url=agent.base_url,
             model=agent.model,
