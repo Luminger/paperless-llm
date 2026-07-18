@@ -111,10 +111,18 @@ async def validate_paperless_credentials(
 ) -> str | None:
     """Ask paperless itself: valid credentials yield the user's API
     token (their identity for applied changes), invalid ones None."""
-    base = get_settings().paperless.base_url.rstrip("/")
+    cfg = get_settings().paperless
+    base = cfg.base_url.rstrip("/")
     # Same shape as PaperlessClient._ensure_auth (form-encoded, follow
     # redirects) — the proven path against real paperless instances.
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+    # AUDIT API-F4: honor verify_tls/timeout_seconds — otherwise login
+    # is the ONE call that fails on self-signed setups, surfacing as
+    # "invalid username or password".
+    async with httpx.AsyncClient(
+        timeout=cfg.timeout_seconds,
+        follow_redirects=True,
+        verify=cfg.verify_tls,
+    ) as client:
         try:
             resp = await client.post(
                 f"{base}/api/token/",

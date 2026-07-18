@@ -62,7 +62,7 @@ Scope: `app/agents/{runner,tools,registry,deps}.py`,
 - **Todo:** #71
 
 ### BC-F3 — HIGH — `render_pages` blocks the event loop and holds every page PNG in memory
-- **Status:** OPEN
+- **Status:** PARTIAL — preview endpoint now renders a SINGLE page via `asyncio.to_thread`; the OCR path (all pages, in-loop) is still open (#72)
 - **Where:** `app/llm/ocr.py:56-67`, called at `:143`
 - **Detail:** PyMuPDF rendering + PNG encoding is pure CPU, run
   synchronously in the async path. At 150 DPI a page is ~2–8 MB PNG; a
@@ -538,7 +538,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #79
 
 ### API-F2 — HIGH — preview cache bypasses per-user paperless permissions (IDOR via shared cache)
-- **Status:** OPEN
+- **Status:** FIXED — `_archived` authorizes EVERY request with the caller's client (`get_document` probe) before touching the cache; test pins the warm-cache-denied-caller case
 - **Where:** `app/api/routes/entities.py:121-132`
 - **Detail:** `_preview_cache` is module-global keyed by `doc_id` only.
   Once user A previews doc 42, the archived PDF bytes are served to ANY
@@ -564,7 +564,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #77
 
 ### API-F4 — MEDIUM — login ignores `paperless.verify_tls` and `timeout_seconds`
-- **Status:** OPEN
+- **Status:** FIXED — `validate_paperless_credentials` honors both
 - **Where:** `app/services/auth.py:117`
 - **Detail:** `validate_paperless_credentials` builds a raw
   `httpx.AsyncClient(timeout=15)` with default TLS verification. On a
@@ -598,7 +598,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #79
 
 ### API-F7 — MEDIUM — SSE endpoint pins a DB session (pool slot) for the connection lifetime
-- **Status:** OPEN
+- **Status:** FIXED — the session is closed explicitly right after the existence check (early close is idempotent; DI/test overrides preserved)
 - **Where:** `app/api/routes/sessions.py:435-463`
 - **Detail:** `session_events` takes `Depends(get_session)`; FastAPI
   closes yield-dependencies when the response finishes — i.e. when the
@@ -609,7 +609,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #80
 
 ### API-F8 — MEDIUM — sessions irrevocable for up to 7 days; cookie lacks `Secure`
-- **Status:** OPEN
+- **Status:** PARTIAL — `auth.cookie_secure` config added (Secure flag for TLS deployments). Server-side session invalidation (generation counter) still open — cookies remain valid until exp after logout/user-disable
 - **Where:** `app/services/auth.py`, `app/api/routes/auth.py:233-240`
 - **Detail:** Stateless cookie: logout only deletes the browser copy; a
   captured value (contains the user's paperless token) stays valid until
@@ -639,9 +639,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
   limit for secret holders (accepted, comment). Todo #81.
 
 ### API-F12 — LOW — preview cache unbounded per entry, never invalidated
-- **Status:** OPEN — `entities.py:123-132`: 4 whole archived PDFs
-  resident (hundreds of MB possible); re-archived documents serve stale
-  pages until evicted. Size cap/TTL; combine with API-F2. Todo #80.
+- **Status:** FIXED — 5-minute TTL added (4-entry cap kept); re-archived documents refresh within TTL. Per-entry size still unbounded (a PDF is what it is) — accepted.
 
 ### API-F13 — LOW — `GET /{session_id}/ocr` ignores `entity_type`
 - **Status:** OPEN — `sessions.py:286-296` checks only

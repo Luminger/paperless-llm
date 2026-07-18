@@ -6,6 +6,9 @@ proposals")."""
 
 from __future__ import annotations
 
+import asyncio
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,16 +123,43 @@ async def get_document(
 
 # In-memory cache of the last few archived PDFs — paging through a
 # preview must not re-download the document per page.
-_preview_cache: dict[int, tuple[bytes, str]] = {}
+_preview_cache: dict[int, tuple[float, bytes, str]] = {}
 _PREVIEW_CACHE_MAX = 4
+_PREVIEW_CACHE_TTL = 300.0  # re-archived documents go stale within 5 min
 
 
 async def _archived(paperless: PaperlessClient, doc_id: int) -> tuple[bytes, str]:
-    if doc_id not in _preview_cache:
-        _preview_cache[doc_id] = await paperless.download_archived(doc_id)
-        while len(_preview_cache) > _PREVIEW_CACHE_MAX:
-            _preview_cache.pop(next(iter(_preview_cache)))
-    return _preview_cache[doc_id]
+    # AUDIT API-F2: the cache is shared across users — authorize EVERY
+    # request with the CALLER's paperless client before touching it. A
+    # user whose token 403s/404s on the document never sees cached
+    # bytes another user's preview pulled in.
+    await paperless.get_document(doc_id)
+    now = time.monotonic()
+    hit = _preview_cache.get(doc_id)
+    if hit is not None and now - hit[0] <= _PREVIEW_CACHE_TTL:
+        return hit[1], hit[2]
+    data, content_type = await paperless.download_archived(doc_id)
+    _preview_cache[doc_id] = (now, data, content_type)
+    while len(_preview_cache) > _PREVIEW_CACHE_MAX:
+        _preview_cache.pop(next(iter(_preview_cache)))
+    return data, content_type
+
+
+def _render_single_page(
+    data: bytes, content_type: str, page: int, dpi: int
+) -> bytes | None:
+    import fitz
+
+    doc = fitz.open(
+        stream=data, filetype="pdf" if "pdf" in content_type else None
+    )
+    try:
+        if page < 1 or page > doc.page_count:
+            return None
+        zoom = dpi / 72.0
+        return doc[page - 1].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
+    finally:
+        doc.close()
 
 
 @router.get("/documents/{doc_id}/preview")
@@ -155,14 +185,16 @@ async def preview_page(
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> Response:
     """One page of the archived rendition as PNG (1-based)."""
-    from app.llm.ocr import render_pages
-
     data, content_type = await _archived(paperless, doc_id)
-    pages = render_pages(data, content_type, dpi=min(max(dpi, 50), 220), max_pages=page)
-    if page < 1 or page > len(pages):
+    # Render OFF the event loop (PyMuPDF is pure CPU), and only the
+    # requested page — not every page up to it.
+    png = await asyncio.to_thread(
+        _render_single_page, data, content_type, page, min(max(dpi, 50), 220)
+    )
+    if png is None:
         raise HTTPException(404, "page out of range")
     return Response(
-        content=pages[page - 1],
+        content=png,
         media_type="image/png",
         headers={"Cache-Control": "private, max-age=300"},
     )

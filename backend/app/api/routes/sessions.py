@@ -439,6 +439,11 @@ async def session_events(
     """SSE stream: step_changed (invalidation signal) + step_progress
     (live tokens/tools). Tiny payloads; clients refetch over REST."""
     s = await db.get(Session, session_id)
+    # AUDIT API-F7: release the pool slot NOW — FastAPI tears the
+    # dependency down only when the RESPONSE finishes, i.e. when the SSE
+    # client disconnects hours later; ~15 open tabs would exhaust the
+    # pool. Early close is idempotent (teardown re-closes harmlessly).
+    await db.close()
     if s is None:
         raise HTTPException(404, "session not found")
 

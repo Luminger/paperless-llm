@@ -150,6 +150,9 @@ class AuthConfig(BaseModel):
     # HMAC secret for the session cookie. Empty = generated once and
     # persisted app-side (survives restarts).
     session_secret: str = ""
+    # Set the cookie's Secure flag (TLS deployments; the app can't
+    # reliably infer HTTPS behind a reverse proxy). AUDIT API-F8.
+    cookie_secure: bool = False
 
 
 class WebhookConfig(BaseModel):

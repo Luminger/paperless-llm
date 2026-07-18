@@ -1655,3 +1655,23 @@ async def test_job_state_computed_from_sessions(client, db):
     listed = (await client.get("/api/jobs")).json()["results"]
     mine = next(j for j in listed if j["id"] == job.id)
     assert mine["status"] == "completed" and mine["done"] == 2
+
+
+@respx.mock
+async def test_preview_cache_authorizes_every_caller(client):
+    """AUDIT API-F2: cached preview bytes are shared across users — a
+    caller whose paperless token cannot see the document must get 404,
+    even when the archive is already cached from another user."""
+    from app.api.routes import entities as ent
+
+    # Warm the cache as if a privileged user had previewed doc 42.
+    ent._preview_cache[42] = (__import__("time").monotonic(), b"%PDF-fake", "application/pdf")
+    try:
+        # The CALLER's client is denied by paperless.
+        respx.get(f"{PAPERLESS_URL}/api/documents/42/").mock(
+            return_value=httpx.Response(404, json={"detail": "Not found."})
+        )
+        resp = await client.get("/api/entities/documents/42/preview")
+        assert resp.status_code == 404  # cache did NOT leak
+    finally:
+        ent._preview_cache.pop(42, None)

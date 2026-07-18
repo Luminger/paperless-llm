@@ -69,6 +69,7 @@ async def login(
         max_age=cfg.session_hours * 3600,
         httponly=True,
         samesite="lax",
+        secure=cfg.cookie_secure,
         path="/",
     )
     await record(db, "auth", "login", user=body.username, role=role)
