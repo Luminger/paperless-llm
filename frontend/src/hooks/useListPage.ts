@@ -27,7 +27,11 @@ export function useClampPage(
 ) {
   useEffect(() => {
     if (page <= 1) return;
-    if (error != null && data == null) {
+    // Only a 404 means "past the end" (paperless proxies DRF-404 for
+    // out-of-range pages) — a transient 500/network failure must NOT
+    // yank the user back to page 1 (reinspection).
+    const status = (error as { status?: number } | null)?.status;
+    if (status === 404 && data == null) {
       setPage(1); // can't know the last page — restart at the front
       return;
     }

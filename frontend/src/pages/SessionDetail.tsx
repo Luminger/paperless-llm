@@ -203,11 +203,20 @@ export default function SessionDetail() {
   });
   // State-driven live pruning (AUDIT FS-4): once the refetch shows a
   // step settled, its streamed items are superseded by the transcript.
+  // Scheduled retries (pending + scheduled_at) are pruned too
+  // (reinspection): their live state belongs to the FAILED attempt —
+  // keeping it would bleed stale rows into the retry's stream. Fresh
+  // pending steps (no schedule) stay, guarding the refetch race where
+  // a just-claimed step still reads as pending in the snapshot.
   useEffect(() => {
     if (!s) return;
     pruneLive(
       s.steps
-        .filter((st) => st.state === "running" || st.state === "pending")
+        .filter(
+          (st) =>
+            st.state === "running" ||
+            (st.state === "pending" && st.scheduled_at == null),
+        )
         .map((st) => st.id),
     );
   }, [s, pruneLive]);

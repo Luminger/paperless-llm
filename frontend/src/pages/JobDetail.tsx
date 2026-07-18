@@ -101,7 +101,10 @@ function CancelJobDialog({
   return (
     <ConfirmDialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        if (!next) cancel.reset(); // fresh dialog per open
+        onOpenChange(next);
+      }}
       error={cancel.error}
       title="Cancel this job?"
       description="Pending sessions will be cancelled; running steps finish and keep their results. Already-applied changes stay (revertible from the journal)."

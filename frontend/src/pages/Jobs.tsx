@@ -190,7 +190,7 @@ export default function Jobs() {
   const [showNew, setShowNew] = useState(false);
   const { page, setPage, pageSize, setPageSize } = useListPage(25);
   const { data, error, isLoading } = useQuery({
-    queryKey: keys.jobs(page),
+    queryKey: keys.jobs(page, pageSize),
     queryFn: () => api.listJobs(page, pageSize),
     refetchInterval: (q) =>
       (q.state.data?.results ?? []).some(
@@ -308,7 +308,12 @@ export default function Jobs() {
       )}
       <ConfirmDialog
         open={cancelTarget != null}
-        onOpenChange={(open) => !open && setCancelTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCancelTarget(null);
+            cancel.reset(); // a stale error must not haunt the next dialog
+          }
+        }}
         error={cancel.error}
         title="Cancel this job?"
         description={

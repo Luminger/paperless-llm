@@ -18,6 +18,49 @@ info.
 
 ---
 
+## Reinspection (post-remediation verification pass)
+
+Five parallel re-reviewers verified every Status claim against the source
+at `45ac13c`. Outcome: all but three claims CONFIRMED; three INCOMPLETE
+(now fixed) plus a set of new defects introduced by the remediation
+itself (now fixed). Ledger:
+
+- **SV-M5 INCOMPLETE → FIXED** (`341bd6d`) — the guard read the executor's
+  cached ORM attribute; a mid-turn archive still auto-applied. Both call
+  sites now re-read `archived_at` from the DB; stale-attribute test.
+- **API-F16 INCOMPLETE → FIXED** (`341bd6d`) — (a) subpath-hosted paperless
+  got double-prefixed by the base_url merge; (b) worse, found while adding
+  the missing regression test: `params={}` makes httpx STRIP the URL's
+  query, so `_drain` refetched page 1 forever on any >100-entity listing.
+  `_get_json` passes None for empty params; `_drain` strips the base-path
+  prefix. Tests: subpath follow + foreign-host token guard.
+- **FP-L2 INCOMPLETE → FIXED** (`d0c7c1e`) — Taxonomy's clamp fired while
+  the list was still loading, rewriting in-range ?page deep links to 1;
+  now gated on `entities !== undefined`.
+- **New (backend, all fixed in `341bd6d`)**: OCR/agent shared-endpoint
+  semaphore thrash (ocr.max_concurrent honored only with own base_url);
+  OCR loser-path counter loss (increment after upsert settles); fallback
+  draft-deletes committed before re-run; webhook hmac on bytes (non-ASCII
+  header → 403 not 500); custom_fields revert as a DELTA; reused-entity
+  applies journal only docs that GAINED the entity (pre-checked); stranded
+  draft sweep in recover(); public publish_step_changed(); honest
+  pydantic-ai version comment; dead render_pages deleted; tool_done
+  ordering invariant pinned in registry.py.
+- **New (frontend, all fixed in `d0c7c1e`)**: scheduled retries pruned from
+  live state (stale rows no longer bleed into the auto-retry's stream);
+  remarkRefs never rewrites inside links (no nested anchors, test);
+  keys.jobs carries pageSize; useClampPage error path 404-only (transient
+  failures no longer yank the user to page 1); cancel dialogs reset stale
+  mutation errors; useSelection scope-clear via state (concurrent-render
+  safe).
+- **Accepted as-is** (low/no-impact, self-healing, or by design): prune
+  race on a just-born step's early rows; WorkFold "0 steps" transient
+  label; Documents empty-page one-frame flash; resolve-step claim-release
+  commit failure (recover() covers); mid-connection SSE QueueFull gen
+  desync (severe backpressure only; the planned backend `tool_call_id`
+  would delete both heuristics); 404 during mid-iteration document
+  deletion races; EntityPage HISTORY_KINDS label literal.
+
 ## Part 1 — Backend agent/LLM core (BC)
 
 Scope: `app/agents/{runner,tools,registry,deps}.py`,

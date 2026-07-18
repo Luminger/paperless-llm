@@ -126,11 +126,14 @@ export default function Taxonomy() {
   const matching = (entities ?? []).filter(
     (e) => !filter || e.name.toLowerCase().includes(filter.toLowerCase()),
   );
-  // Out-of-range deep links snap back to the last real page (FP-L2).
+  // Out-of-range deep links snap back to the last real page (FP-L2) —
+  // but never while the list is still LOADING (reinspection): an empty
+  // interim `matching` would rewrite an in-range ?page deep link to 1.
+  const loaded = entities !== undefined;
   const lastPage = Math.max(1, Math.ceil(matching.length / pageSize));
   useEffect(() => {
-    if (page > lastPage) setPage(lastPage);
-  }, [page, lastPage, setPage]);
+    if (loaded && page > lastPage) setPage(lastPage);
+  }, [loaded, page, lastPage, setPage]);
   const visible = matching.slice((page - 1) * pageSize, page * pageSize);
   // The inbox tag is a workflow marker — never analyzable. Select-all
   // in the header covers the page; the bar offers all matching.

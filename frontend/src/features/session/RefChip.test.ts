@@ -57,4 +57,30 @@ describe("remarkRefs (AUDIT FS-9: AST-level, code stays literal)", () => {
     expect(para.children).toHaveLength(1);
     expect(para.children[0].value).toBe("plain [not a token]");
   });
+it("never rewrites tokens inside link text (no nested anchors)", () => {
+    const tree = {
+      type: "root",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            {
+              type: "link",
+              url: "https://example.test",
+              children: [{ type: "text", value: "see [[tag:5]] here" }],
+            },
+          ],
+        },
+      ],
+    };
+    run(tree);
+    const link = (tree.children[0] as { children: unknown[] }).children[0] as {
+      type: string;
+      children: { type: string; value: string }[];
+    };
+    expect(link.type).toBe("link");
+    expect(link.children).toEqual([
+      { type: "text", value: "see [[tag:5]] here" },
+    ]);
+  });
 });

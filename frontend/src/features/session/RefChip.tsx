@@ -45,6 +45,13 @@ export function remarkRefs() {
         out.push(child);
         continue;
       }
+      // Never rewrite inside links (reinspection): a token in link text
+      // would become a chip-link nested in an <a> — invalid interactive
+      // nesting with undefined click behavior.
+      if (child.type === "link" || child.type === "linkReference") {
+        out.push(child);
+        continue;
+      }
       if (child.type !== "text" || !child.value) {
         rewrite(child);
         out.push(child);

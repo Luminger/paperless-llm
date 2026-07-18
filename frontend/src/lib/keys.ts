@@ -23,8 +23,10 @@ export const keys = {
   entities: (type: string) => ["entities", type] as const,
   entity: (type: string, id: number) => ["entity", type, id] as const,
   mergeCandidates: (type: string) => ["merge-candidates", type] as const,
-  jobs: (page?: number) =>
-    page !== undefined ? (["jobs", page] as const) : (["jobs"] as const),
+  jobs: (page?: number, pageSize?: number) =>
+    page !== undefined
+      ? (["jobs", page, pageSize ?? 25] as const)
+      : (["jobs"] as const),
   job: (id: number) => ["job", id] as const,
   stats: () => ["stats"] as const,
   corpus: () => ["corpus"] as const,

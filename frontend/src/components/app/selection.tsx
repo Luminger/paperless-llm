@@ -2,7 +2,7 @@
 // visible, a toolbar appears once something is selected. No separate
 // "selection mode" to toggle on and off.
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -13,11 +13,12 @@ import { Checkbox } from "@/components/ui/checkbox";
  * WRONG rows (AUDIT FP-H1). */
 export function useSelection(scopeKey?: string) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const prevScope = useRef(scopeKey);
-  if (prevScope.current !== scopeKey) {
-    // Render-time state adjustment (the React-sanctioned pattern):
-    // the render restarts with an empty selection before commit.
-    prevScope.current = scopeKey;
+  // Render-time state adjustment (the React-sanctioned pattern): track
+  // the previous scope in STATE, not a ref — a ref mutation survives a
+  // discarded concurrent render while the queued state update does not.
+  const [prevScope, setPrevScope] = useState(scopeKey);
+  if (prevScope !== scopeKey) {
+    setPrevScope(scopeKey);
     setSelected(new Set());
   }
   const toggle = (id: number) =>
