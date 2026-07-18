@@ -34,35 +34,22 @@ class SeedDoc:
 
 # Deliberately messy taxonomy. Near-duplicates and bad casing are
 # intentional — this is the cleanup material for the taxonomy agents.
-# (name, extra-fields) — matching rules mirror a lived-in installation:
-# a few explicit word rules, a few auto (ML), plenty left inert like
-# entities created via the API by scripts.
-SEED_CORRESPONDENTS: list[tuple[str, dict]] = [
-    ("Kraxi", {"match": "kraxi", "matching_algorithm": 1}),
-    ("Kraxi GmbH", {}),  # near-duplicate of the above (orphan)
-    ("Bei Spiel GmbH", {}),  # real sender of the RE-20170509/505 invoice; unassigned
-    ("weclapp", {"matching_algorithm": 6}),
-    (
-        "Bundesministerium der Finanzen",
-        {"match": "bundesministerium der finanzen", "matching_algorithm": 2},
-    ),
-    ("Federal Reserve Board", {"matching_algorithm": 6}),
-    ("internal revenue service", {}),  # bad casing
-    ("Unbekannt", {}),  # junk drawer
+# All seeded entities use auto (ML) matching — the same default the
+# agent applies to entities it creates, so paperless's classifier
+# learns from decisions across the whole corpus.
+SEED_CORRESPONDENTS = [
+    "Kraxi",
+    "Kraxi GmbH",  # near-duplicate of the above (orphan)
+    "Bei Spiel GmbH",  # real sender of the RE-20170509/505 invoice; unassigned
+    "weclapp",
+    "Bundesministerium der Finanzen",
+    "Federal Reserve Board",
+    "internal revenue service",  # bad casing
+    "Unbekannt",  # junk drawer
 ]
-SEED_TAGS: list[tuple[str, dict]] = [
-    ("Rechnung", {"match": "rechnung", "matching_algorithm": 1}),
-    ("invoice", {"match": "invoice", "matching_algorithm": 1}),
-    ("wichtig", {}),
-    ("steuer", {"matching_algorithm": 6}),
-    ("old-stuff-2019", {}),
-    ("scan", {}),
-]
-SEED_DOCUMENT_TYPES: list[tuple[str, dict]] = [
-    ("Rechnung", {"match": "rechnung", "matching_algorithm": 1}),
-    ("Invoice", {}),
-    ("Brief", {"matching_algorithm": 6}),
-]
+SEED_TAGS = ["Rechnung", "invoice", "wichtig", "steuer", "old-stuff-2019", "scan"]
+SEED_DOCUMENT_TYPES = ["Rechnung", "Invoice", "Brief"]
+AUTO_MATCH = {"matching_algorithm": 6}
 
 # Fresh arrivals: carry the Inbox tag, like real unreviewed documents.
 # The Inbox tag (is_inbox_tag=true) is created only after the corpus is
@@ -158,23 +145,27 @@ async def seed_corpus(
         base_url, token, username=username, password=password
     ) as client:
         tag_ids: dict[str, int] = {t.name: t.id for t in await client.list_tags()}
-        for name, extra in SEED_TAGS:
+        for name in SEED_TAGS:
             if name not in tag_ids:
-                tag_ids[name] = (await client.create_tag(name=name, **extra)).id
+                tag_ids[name] = (await client.create_tag(name=name, **AUTO_MATCH)).id
 
         corr_ids: dict[str, int] = {
             c.name: c.id for c in await client.list_correspondents()
         }
-        for name, extra in SEED_CORRESPONDENTS:
+        for name in SEED_CORRESPONDENTS:
             if name not in corr_ids:
-                corr_ids[name] = (await client.create_correspondent(name=name, **extra)).id
+                corr_ids[name] = (
+                    await client.create_correspondent(name=name, **AUTO_MATCH)
+                ).id
 
         type_ids: dict[str, int] = {
             d.name: d.id for d in await client.list_document_types()
         }
-        for name, extra in SEED_DOCUMENT_TYPES:
+        for name in SEED_DOCUMENT_TYPES:
             if name not in type_ids:
-                type_ids[name] = (await client.create_document_type(name=name, **extra)).id
+                type_ids[name] = (
+                    await client.create_document_type(name=name, **AUTO_MATCH)
+                ).id
 
         tasks: list[str] = []
         skipped = 0

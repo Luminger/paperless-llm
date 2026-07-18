@@ -51,6 +51,8 @@ async def login(
     cfg = get_settings().auth
     token = await validate_paperless_credentials(body.username, body.password)
     if token is None:
+        await record(db, "auth", "login_failed", user=body.username)
+        await db.commit()
         raise HTTPException(
             401,
             {"code": "bad_credentials", "message": "invalid username or password"},

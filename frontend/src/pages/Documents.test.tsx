@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import Documents from "./Documents";
-import { makeEntity, pickOption, renderWithProviders } from "../test/utils";
+import { makeEntity, renderWithProviders } from "../test/utils";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
@@ -36,7 +36,10 @@ describe("Documents", () => {
     vi.clearAllMocks();
     mocked.getSyncStatus.mockResolvedValue({ resources: {} });
     mocked.listDocuments.mockResolvedValue(DOCS);
-    mocked.listTags.mockResolvedValue([makeEntity({ id: 3, name: "Steuern" })]);
+    mocked.listTags.mockResolvedValue([
+      makeEntity({ id: 3, name: "Steuern" }),
+      makeEntity({ id: 5, name: "Rechnung" }),
+    ]);
     mocked.listCorrespondents.mockResolvedValue([makeEntity({ id: 1, name: "Kraxi" })]);
     mocked.listDocumentTypes.mockResolvedValue([makeEntity({ id: 2, name: "Rechnung" })]);
   });
@@ -48,17 +51,33 @@ describe("Documents", () => {
     expect(screen.queryByRole("button", { name: "Analyze" })).not.toBeInTheDocument();
   });
 
-  it("filters by tag/correspondent/type names", async () => {
+  it("filters are multiselects; reset clears them", async () => {
     renderWithProviders(<Documents />);
     await screen.findByText("Invoice 4-8");
 
-    await pickOption("filter by tag", "Steuern");
-    await pickOption("filter by correspondent", "Kraxi");
+    // Pick TWO tags and one correspondent - ANY-of per type.
+    await userEvent.click(screen.getByLabelText("filter by tag"));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Steuern" }));
+    await userEvent.click(screen.getByRole("menuitemcheckbox", { name: "Rechnung" }));
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByLabelText("filter by correspondent"));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Kraxi" }));
+    await userEvent.keyboard("{Escape}");
     await waitFor(() =>
       expect(mocked.listDocuments).toHaveBeenLastCalledWith(
-        expect.objectContaining({ tag_id: 3, correspondent_id: 1 }),
+        expect.objectContaining({ tag_ids: [3, 5], correspondent_ids: [1] }),
       ),
     );
+    expect(screen.getByLabelText("filter by tag")).toHaveTextContent("2 tags");
+
+    // Reset filters: back to the unfiltered list.
+    await userEvent.click(screen.getByRole("button", { name: /reset filters/i }));
+    await waitFor(() =>
+      expect(mocked.listDocuments).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tag_ids: [], correspondent_ids: [] }),
+      ),
+    );
+    expect(screen.queryByRole("button", { name: /reset filters/i })).toBeNull();
   });
 
   it("multiselect: select-all spans all pages, bulk analyze creates a job", async () => {

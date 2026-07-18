@@ -1144,11 +1144,15 @@ async def test_documents_list_filters_by_taxonomy(client):
     route = respx.get(f"{PAPERLESS_URL}/api/documents/").mock(
         return_value=Response(200, json={"count": 0, "next": None, "results": []})
     )
-    await client.get("/api/entities/documents?tag_id=3&correspondent_id=8&document_type_id=2")
+    await client.get(
+        "/api/entities/documents"
+        "?tag_ids=3,4&correspondent_ids=8&document_type_ids=2,5"
+    )
     params = dict(route.calls.last.request.url.params)
-    assert params["tags__id__all"] == "3"
-    assert params["correspondent__id"] == "8"
-    assert params["document_type__id"] == "2"
+    # Multiselect filters are ANY-of (paperless __in), per taxonomy type.
+    assert params["tags__id__in"] == "3,4"
+    assert params["correspondent__id__in"] == "8"
+    assert params["document_type__id__in"] == "2,5"
 
 
 async def test_error_shape_is_uniform(client):

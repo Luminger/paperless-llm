@@ -196,10 +196,13 @@ class PaperlessClient:
         *,
         title_contains: str | None = None,
         tag_ids: list[int] | None = None,
+        tags_any: list[int] | None = None,
         tags_none: bool | None = None,
         correspondent_id: int | None = None,
+        correspondent_ids: list[int] | None = None,
         correspondent_none: bool | None = None,
         document_type_id: int | None = None,
+        document_type_ids: list[int] | None = None,
         document_type_none: bool | None = None,
         storage_path_id: int | None = None,
         created_after: str | None = None,
@@ -213,11 +216,20 @@ class PaperlessClient:
         params: dict[str, Any] = {
             "query": query,
             "title__icontains": title_contains,
+            # __all = document carries ALL of these (agent/scope use);
+            # __in = ANY of these (multiselect filters).
             "tags__id__all": ",".join(map(str, tag_ids)) if tag_ids else None,
+            "tags__id__in": ",".join(map(str, tags_any)) if tags_any else None,
             "is_tagged": None if tags_none is None else (not tags_none),
             "correspondent__id": correspondent_id,
+            "correspondent__id__in": (
+                ",".join(map(str, correspondent_ids)) if correspondent_ids else None
+            ),
             "correspondent__isnull": correspondent_none,
             "document_type__id": document_type_id,
+            "document_type__id__in": (
+                ",".join(map(str, document_type_ids)) if document_type_ids else None
+            ),
             "document_type__isnull": document_type_none,
             "storage_path__id": storage_path_id,
             "created__date__gt": created_after,

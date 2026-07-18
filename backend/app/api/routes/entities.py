@@ -33,21 +33,30 @@ from app.services.instructions import (
 router = APIRouter(prefix="/api/entities", tags=["entities"])
 
 
+def _id_list(v: str | None) -> list[int] | None:
+    """Comma-separated ids from the URL ("1,5,9") — empty means None."""
+    if not v:
+        return None
+    return [int(part) for part in v.split(",") if part.strip()]
+
+
 @router.get("/documents")
 async def list_documents(
     query: str | None = None,
-    tag_id: int | None = None,
-    correspondent_id: int | None = None,
-    document_type_id: int | None = None,
+    tag_ids: str | None = None,
+    correspondent_ids: str | None = None,
+    document_type_ids: str | None = None,
     page: int = 1,
     page_size: int = 25,
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> DocumentSearchPage:
+    """Browse filters are multiselects with ANY-of semantics — ids come
+    comma-separated per taxonomy type."""
     result = await paperless.search_documents(
         query=query,
-        tag_ids=[tag_id] if tag_id else None,
-        correspondent_id=correspondent_id,
-        document_type_id=document_type_id,
+        tags_any=_id_list(tag_ids),
+        correspondent_ids=_id_list(correspondent_ids),
+        document_type_ids=_id_list(document_type_ids),
         page=page,
         page_size=page_size,
     )

@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/app/PageHeader";
+import { ResetFilters } from "@/components/app/ResetFilters";
 import { Pager } from "@/components/app/Pager";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef, type MergeCandidate } from "../api";
@@ -137,13 +138,19 @@ export default function Taxonomy() {
       <PageHeader
         title={typeDef.label}
         filters={
-          <Input
+          <>
+            <Input
             aria-label="filter entities"
             className="h-8 w-48"
-            placeholder="filter by name…"
-            value={filter}
-            onChange={(e) => patchUrl({ name: e.target.value, page: null })}
-          />
+              placeholder="filter by name…"
+              value={filter}
+              onChange={(e) => patchUrl({ name: e.target.value, page: null })}
+            />
+            <ResetFilters
+              active={Boolean(filter)}
+              onReset={() => patchUrl({ name: null, page: null })}
+            />
+          </>
         }
       />
 

@@ -198,9 +198,9 @@ export const api = {
   listDocuments: (
     opts: {
       query?: string;
-      tag_id?: number;
-      correspondent_id?: number;
-      document_type_id?: number;
+      tag_ids?: number[];
+      correspondent_ids?: number[];
+      document_type_ids?: number[];
       page?: number;
       page_size?: number;
     } = {},
@@ -208,9 +208,12 @@ export const api = {
     const params = new URLSearchParams({ page: String(opts.page ?? 1) });
     if (opts.page_size) params.set("page_size", String(opts.page_size));
     if (opts.query) params.set("query", opts.query);
-    if (opts.tag_id) params.set("tag_id", String(opts.tag_id));
-    if (opts.correspondent_id) params.set("correspondent_id", String(opts.correspondent_id));
-    if (opts.document_type_id) params.set("document_type_id", String(opts.document_type_id));
+    // Multiselect filters: ANY-of semantics, comma-separated ids.
+    if (opts.tag_ids?.length) params.set("tag_ids", opts.tag_ids.join(","));
+    if (opts.correspondent_ids?.length)
+      params.set("correspondent_ids", opts.correspondent_ids.join(","));
+    if (opts.document_type_ids?.length)
+      params.set("document_type_ids", opts.document_type_ids.join(","));
     return request<DocumentSearchPage>(`/api/entities/documents?${params}`);
   },
   getDocument: (id: number) =>

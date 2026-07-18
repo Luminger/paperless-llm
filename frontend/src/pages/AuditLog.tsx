@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Pager } from "@/components/app/Pager";
+import { ResetFilters } from "@/components/app/ResetFilters";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { EmptyState, ErrorNotice } from "@/components/app/states";
 import { api, type AuditEntry } from "../api";
@@ -27,6 +28,7 @@ const KIND_COLORS: Record<string, string> = {
   session: "bg-muted text-muted-foreground",
   paperless: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
   task: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
+  auth: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
 };
 
 function ActorBadge({ actor }: { actor: string }) {
@@ -49,6 +51,16 @@ function ActorBadge({ actor }: { actor: string }) {
 function summary(e: AuditEntry): React.ReactNode {
   const d = e.detail;
   switch (`${e.kind}/${e.action}`) {
+    case "auth/login":
+      return <>{String(d.user)} signed in</>;
+    case "auth/login_failed":
+      return (
+        <span className="text-destructive">
+          failed sign-in attempt as {String(d.user)}
+        </span>
+      );
+    case "auth/logout":
+      return <>{String(d.user)} signed out</>;
     case "proposal/applied":
     case "proposal/reverted":
     case "proposal/no_change":
@@ -178,6 +190,7 @@ const ALL = "__all__";
 const FILTERS = [
   { value: ALL, label: "everything" },
   { value: "changes", label: "data changes" },
+  { value: "auth", label: "sign-ins" },
   { value: "task", label: "tasks" },
   { value: "paperless", label: "paperless traffic" },
 ];
@@ -240,12 +253,15 @@ export default function AuditLog() {
       <PageHeader
         title="Log"
         filters={
-          <SimpleSelect
-            ariaLabel="filter by log kind"
-            value={filter || ALL}
-            onValueChange={(v) => setFilter(v === ALL ? "" : v)}
-            options={FILTERS}
-          />
+          <>
+            <SimpleSelect
+              ariaLabel="filter by log kind"
+              value={filter || ALL}
+              onValueChange={(v) => setFilter(v === ALL ? "" : v)}
+              options={FILTERS}
+            />
+            <ResetFilters active={Boolean(filter)} onReset={() => setFilter("")} />
+          </>
         }
       />
       <p className="-mt-2 mb-3 text-sm text-muted-foreground">

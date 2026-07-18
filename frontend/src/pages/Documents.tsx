@@ -13,8 +13,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { SimpleSelect } from "@/components/app/SimpleSelect";
+import { MultiFilter } from "@/components/app/MultiFilter";
 import { PageHeader } from "@/components/app/PageHeader";
+import { ResetFilters } from "@/components/app/ResetFilters";
 import { Pager } from "@/components/app/Pager";
 import {
   SelectAllHeader,
@@ -22,48 +23,27 @@ import {
   useSelection,
 } from "@/components/app/selection";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
-import { api, type EntityRef } from "../api";
+import { api } from "../api";
 import { keys } from "../lib/keys";
 import { formatDate } from "../lib/format";
 import { FetchStatus } from "../components/FetchStatus";
 
-const ANY = "__any__";
-
-function FilterSelect({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: number | undefined;
-  options: EntityRef[] | undefined;
-  onChange: (v: number | undefined) => void;
-}) {
-  return (
-    <SimpleSelect
-      ariaLabel={`filter by ${label}`}
-      value={value != null ? String(value) : ANY}
-      onValueChange={(v) => onChange(v === ANY ? undefined : Number(v))}
-      options={[
-        { value: ANY, label: `any ${label}` },
-        ...(options ?? []).map((o) => ({ value: String(o.id), label: o.name })),
-      ]}
-    />
-  );
+/** "1,5,9" from the URL -> [1, 5, 9]; empty -> []. */
+function ids(v: string): number[] {
+  return v ? v.split(",").map(Number).filter(Boolean) : [];
 }
 
 export default function Documents() {
   // Filters and page live in the URL: deep-linkable, refresh-proof.
   const [submitted] = useUrlParam("q");
-  const [tagIdRaw] = useUrlNumber("tag");
-  const [correspondentIdRaw] = useUrlNumber("correspondent");
-  const [docTypeIdRaw] = useUrlNumber("type");
+  const [tagsRaw] = useUrlParam("tags");
+  const [correspondentsRaw] = useUrlParam("correspondents");
+  const [typesRaw] = useUrlParam("types");
   const [page, setPage] = useUrlNumber("page", 1);
   const [pageSize] = useUrlNumber("size", 25);
-  const tagId = tagIdRaw || undefined;
-  const correspondentId = correspondentIdRaw || undefined;
-  const docTypeId = docTypeIdRaw || undefined;
+  const tagIds = ids(tagsRaw);
+  const correspondentIds = ids(correspondentsRaw);
+  const typeIds = ids(typesRaw);
   const [query, setQuery] = useState(submitted);
   const patchUrl = useUrlPatch();
   const navigate = useNavigate();
@@ -82,10 +62,13 @@ export default function Documents() {
 
   const filters = {
     query: submitted || undefined,
-    tag_id: tagId,
-    correspondent_id: correspondentId,
-    document_type_id: docTypeId,
+    tag_ids: tagIds,
+    correspondent_ids: correspondentIds,
+    document_type_ids: typeIds,
   };
+  const filtersActive =
+    Boolean(submitted) ||
+    tagIds.length + correspondentIds.length + typeIds.length > 0;
   const { data, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: keys.documents({ ...filters, page_size: pageSize }, page),
     queryFn: () => api.listDocuments({ ...filters, page, page_size: pageSize }),
@@ -116,23 +99,39 @@ export default function Documents() {
               aria-label="full-text search"
               className="h-8 w-56"
             />
-            <FilterSelect
+            <MultiFilter
               label="tag"
-              value={tagId}
               options={tags}
-              onChange={(v) => patchUrl({ tag: v, page: null })}
+              values={tagIds}
+              onChange={(v) => patchUrl({ tags: v.join(",") || null, page: null })}
             />
-            <FilterSelect
+            <MultiFilter
               label="correspondent"
-              value={correspondentId}
               options={correspondents}
-              onChange={(v) => patchUrl({ correspondent: v, page: null })}
+              values={correspondentIds}
+              onChange={(v) =>
+                patchUrl({ correspondents: v.join(",") || null, page: null })
+              }
             />
-            <FilterSelect
+            <MultiFilter
               label="document type"
-              value={docTypeId}
+              plural="document types"
               options={docTypes}
-              onChange={(v) => patchUrl({ type: v, page: null })}
+              values={typeIds}
+              onChange={(v) => patchUrl({ types: v.join(",") || null, page: null })}
+            />
+            <ResetFilters
+              active={filtersActive}
+              onReset={() => {
+                setQuery("");
+                patchUrl({
+                  q: null,
+                  tags: null,
+                  correspondents: null,
+                  types: null,
+                  page: null,
+                });
+              }}
             />
           </>
         }
