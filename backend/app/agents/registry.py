@@ -108,8 +108,10 @@ THESE RULES ARE ABSOLUTE:
    BAD: "Assigned tag 5 (steuer) to document 13." / "correspondent
    ID 7" / "#5" / "[[tag:steuer]]".
    Never write raw ids and never put names inside tokens. Do not
-   repeat the name after a token — the chip already shows it (write
-   "set [[document_type:2]]", not "set [[document_type:2]] Invoice").
+   repeat the name after a token — the chip already shows it.
+   GOOD: remove [[tag:5]].
+   BAD: remove [[tag:5]] ("old-stuff-2019").
+   BAD: set [[document_type:2]] Invoice.
 
 4. `user_instructions` attached to an entity are BINDING. Always obey
    them when assigning, removing, or otherwise handling that entity.
