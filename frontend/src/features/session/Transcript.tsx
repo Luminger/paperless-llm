@@ -239,11 +239,9 @@ export function Transcript({ items }: { items: TranscriptItem[] }) {
   return (
     <div>
       {items.map((item, i) => {
-        // Streaming: parts may exist before any content arrived.
-        if (item.role !== "tool" && !item.content.trim()) return null;
+        if (!isRenderable(item)) return null;
         switch (item.role) {
           case "user":
-            if (item.origin === "pipeline") return null; // synthetic kickoff
             return <UserMessage key={i} item={item} />;
           case "thinking":
             return <ThinkingItem key={i} item={item} />;
@@ -255,4 +253,14 @@ export function Transcript({ items }: { items: TranscriptItem[] }) {
       })}
     </div>
   );
+}
+
+
+/** Which transcript items actually render (AUDIT FS-11): empty
+ * streaming parts and synthetic pipeline kickoffs are hidden — every
+ * consumer that COUNTS items must use the same predicate. */
+export function isRenderable(item: TranscriptItem): boolean {
+  if (item.role === "user" && item.origin === "pipeline") return false;
+  if (item.role !== "tool" && !item.content.trim()) return false;
+  return true;
 }

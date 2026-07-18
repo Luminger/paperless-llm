@@ -1,3 +1,4 @@
+import { isInternalKind } from "../lib/proposal-kinds";
 import { useState } from "react";
 import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
 import { InboxBadge } from "../components/StatusBadge";
@@ -340,7 +341,7 @@ function HistorySection({ id }: { id: number }) {
             <TableCell>
               <span className="flex flex-wrap items-center gap-1.5">
                 {HISTORY_KINDS[h.kind] ?? h.kind.replaceAll("_", " ")}
-                {h.fields.length > 0 && h.kind !== "replace_content" && (
+                {h.fields.length > 0 && !isInternalKind(h.kind) && (
                   <span className="text-xs text-muted-foreground">
                     ({h.fields.join(", ")})
                   </span>

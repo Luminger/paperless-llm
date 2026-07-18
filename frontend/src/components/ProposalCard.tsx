@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { hasDocumentEditor } from "../lib/proposal-kinds";
 import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquareText } from "lucide-react";
@@ -549,7 +550,7 @@ export function ProposalCard({
   // reverting applied changes stays available.
   const editable = !archived && p.status === "pending";
   const dirty = pending !== null;
-  const Editor = p.kind === "update_document_metadata" ? MetadataEditor : GenericEditor;
+  const Editor = hasDocumentEditor(p.kind) ? MetadataEditor : GenericEditor;
 
   return (
     <div className="space-y-3">

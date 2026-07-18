@@ -13,10 +13,12 @@ import { cn } from "@/lib/utils";
 import { api, type Proposal, type Step, type TranscriptItem } from "../../api";
 import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
-import { ProposalCard, proposalKindLabel } from "../../components/ProposalCard";
+import { ProposalCard } from "../../components/ProposalCard";
+import { isInternalKind, proposalKindLabel } from "../../lib/proposal-kinds";
 import { frameFooterClass, frameHeaderClass } from "@/components/app/Framed";
 import { DiffView } from "../../components/DiffView";
-import { ProseBody, Transcript, UserMessage } from "./Transcript";
+import { ProseBody, Transcript, UserMessage, isRenderable } from "./Transcript";
+import { deriveTurnView, stepProposals } from "./turn-view";
 import { Panel, PanelTitle, PanelTitleMuted } from "./Panel";
 import { StepTimingSummary } from "./timing";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -170,7 +172,7 @@ function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
   // proposal — the SAME record proposals use, so the outcome row can
   // use the same badge + decided-by treatment as every proposal.
   const contentProposal = proposals.find(
-    (p) => p.step_id === step.id && p.kind === "replace_content",
+    (p) => p.step_id === step.id && isInternalKind(p.kind),
   );
   const instructions =
     typeof step.input.instructions === "string" ? step.input.instructions : null;
@@ -234,17 +236,11 @@ export function DecidedBy({ p }: { p: Proposal }) {
   );
 }
 
-function stepProposals(step: Step, proposals: Proposal[]): Proposal[] {
-  const ids = (step.result.proposal_ids as number[] | undefined) ?? [];
-  const byId = new Map(proposals.map((p) => [p.id, p]));
-  return ids
-    .map((id) => byId.get(id))
-    .filter((p): p is Proposal => p != null && p.kind !== "replace_content");
-}
-
 function WorkFold({ items, open = false }: { items: TranscriptItem[]; open?: boolean }) {
-  const toolCount = items.filter((it) => it.role === "tool").length;
-  const thinkingCount = items.filter((it) => it.role === "thinking").length;
+  // Count what the transcript SHOWS (shared predicate, AUDIT FS-11).
+  const visible = items.filter(isRenderable);
+  const toolCount = visible.filter((it) => it.role === "tool").length;
+  const thinkingCount = visible.filter((it) => it.role === "thinking").length;
   const label =
     [
       toolCount > 0 && `${toolCount} tool call${toolCount !== 1 ? "s" : ""}`,
@@ -252,7 +248,7 @@ function WorkFold({ items, open = false }: { items: TranscriptItem[]; open?: boo
         `${thinkingCount} reasoning step${thinkingCount !== 1 ? "s" : ""}`,
     ]
       .filter(Boolean)
-      .join(" · ") || `${items.length} steps`;
+      .join(" · ") || `${visible.length} steps`;
   return (
     // `open` flips false when the live tail gets sealed by a proposal —
     // the panel closes itself and the timeline moves on.
@@ -287,27 +283,10 @@ function TurnBody({
   archived: boolean;
   live?: LiveActivity;
 }) {
-  const streaming = step.state === "running" || step.state === "pending";
-  // Live proposals are matched via step_id (result.proposal_ids only
-  // exists once the turn finished).
-  const mine = streaming
-    ? proposals.filter(
-        (p) => p.step_id === step.id && p.kind !== "replace_content",
-      )
-    : stepProposals(step, proposals);
-  const items = streaming ? (live?.items ?? []) : step.transcript;
-
-  // The summary is the LAST agent prose — but only once the turn is
-  // done; mid-stream prose is just the growing tail of the work.
-  let summaryIdx = -1;
-  if (!streaming) {
-    for (let i = items.length - 1; i >= 0; i--) {
-      if (items[i].role === "agent") {
-        summaryIdx = i;
-        break;
-      }
-    }
-  }
+  // retryScheduled: no fake pulse — the header badge carries the plan
+  // and the failed attempt's transcript (if any) renders normally (FS-8).
+  const { streaming, items, mine, summaryIdx } =
+    deriveTurnView(step, proposals, live);
 
   // Walk chronologically; successful propose_* calls become their
   // proposal (matched by the id in the tool result, order fallback).

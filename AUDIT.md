@@ -803,10 +803,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
   input until reload. `key={turnNo}`. Todo #84.
 
 ### FS-8 — LOW — scheduled-retry steps show a live "working…" pulse
-- **Status:** OPEN — `StepCard.tsx`: `pending` + future `scheduled_at`
-  treated as streaming — empty pulse, and the failed attempt's
-  transcript hidden until the retry runs. Treat as non-streaming or
-  caption "retry scheduled". Todo #84.
+- **Status:** FIXED — `deriveTurnView` treats pending+scheduled_at as non-streaming (failed attempt's transcript renders, header badge carries the plan); unit test
 
 ### FS-9 — LOW — `tokenizeRefs` rewrites tokens inside code spans/fences
 - **Status:** OPEN — `RefChip.tsx:26-33`: pre-parse string rewrite hits
@@ -821,9 +818,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
   keys from content identity (`live_key ?? ts`). Todo #84.
 
 ### FS-11 — LOW — work-fold count label counts items the transcript hides
-- **Status:** OPEN — WorkFold counts vs `Transcript`'s
-  `!item.content.trim()` filter — label can claim more rows than shown.
-  Shared `isRenderable(item)`. Todo #84/#89.
+- **Status:** FIXED — shared `isRenderable` exported from Transcript, used by rows AND fold counts
 
 ### FS-12 — LOW — `RedoDialog` sends `NaN` for non-numeric DPI
 - **Status:** OPEN — `RedoDialog.tsx:96-101`: "300dpi" → Number() NaN →
@@ -859,7 +854,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
   three — comment drift. Todo #88.
 
 ### FS-C — centralization opportunities
-- **Status:** OPEN — todo #89
+- **Status:** LARGELY DONE — (1) `lib/proposal-kinds.ts` registry (isInternalKind/hasDocumentEditor/label re-export; all string tests rewired); (2) `deriveTurnView` pure fn + tests (`features/session/turn-view.ts`); (3) `isRenderable` shared; (5) sessionOcr step-scoped (done in #83); (4) tool_call_id backend field still open (would delete the FIFO heuristic + gen counter); (6) kept
   1. Proposal-kind dispatch scattered (`kind !== "replace_content"` ×3
      in StepCard + EntityPage variant; editor selection; labels) → one
      `proposal-kinds.ts` registry `{label, editor, internal,
@@ -1038,7 +1033,7 @@ redirect loops, SSE death degrades to poll); modal guards on schedule +
 cancel; no raw IDs user-facing; 93/93 tests.
 
 ### FP-C — centralization opportunities
-- **Status:** OPEN — todos #86, #87, #88, #89
+- **Status:** IN PROGRESS — (2) UrlSearchInput done (#86); (3) scoped useSelection done (#86); (5) dialog error slot done (#68); (7) labels.ts done (#66); (1) `useListPage`/`useClampPage` hooks created (page wiring lands with #88); (4) DateTime subscription pending (#87); (6) keys/api discipline pending (#88)
   1. `useListPage` / `<ListShell>` — four pages hand-assemble URL params
      + query + Pager + FetchStatus with drift (Jobs no size control,
      AuditLog no skeleton, Taxonomy client-side slice).
