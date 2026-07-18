@@ -13,6 +13,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import time
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.models import UserPref
 from app.db.session import session_scope
+
+log = logging.getLogger(__name__)
 
 COOKIE_NAME = "pllm_session"
 _SECRET_KEY = "_auth.session_secret"  # never surfaced by the prefs API
@@ -96,11 +99,17 @@ async def validate_paperless_credentials(
     """Ask paperless itself: valid credentials yield the user's API
     token (their identity for applied changes), invalid ones None."""
     base = get_settings().paperless.base_url.rstrip("/")
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(
-            f"{base}/api/token/",
-            json={"username": username, "password": password},
-        )
+    # Same shape as PaperlessClient._ensure_auth (form-encoded, follow
+    # redirects) — the proven path against real paperless instances.
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        try:
+            resp = await client.post(
+                f"{base}/api/token/",
+                data={"username": username, "password": password},
+            )
+        except httpx.HTTPError as e:
+            log.warning("paperless token fetch failed: %r", e)
+            return None
     if resp.status_code != 200:
         return None
     token = resp.json().get("token")

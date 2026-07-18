@@ -65,7 +65,7 @@ async def test_mode_paperless_login_flow(client, respx_mock, monkeypatch):
     respx_mock.post("http://paperless.test/api/token/").mock(
         side_effect=lambda request: (
             httpx.Response(200, json={"token": "user-token"})
-            if b'"simon"' in request.content
+            if b"simon" in request.content
             else httpx.Response(400, json={})
         )
     )
