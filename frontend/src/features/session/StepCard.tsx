@@ -25,8 +25,8 @@ import { RedoDialog } from "./RedoDialog";
 
 const STATE_DOT: Record<Step["state"], string> = {
   pending: "bg-muted-foreground/40",
-  running: "bg-blue-500 animate-pulse",
-  awaiting_user: "bg-amber-500",
+  running: "bg-info animate-pulse",
+  awaiting_user: "bg-warning",
   succeeded: "bg-primary",
   failed: "bg-destructive",
   superseded: "bg-muted-foreground/25",
@@ -452,7 +452,7 @@ function TurnBody({
       {out}
       {streaming && (
         <p className="px-2 text-xs text-muted-foreground">
-          <span className="mr-1.5 inline-block size-2 animate-pulse rounded-full bg-blue-500" />
+          <span className="mr-1.5 inline-block size-2 animate-pulse rounded-full bg-info" />
           {live && live.tokens > 0
             ? `generating… ${live.tokens} tokens`
             : "working…"}

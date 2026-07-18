@@ -44,7 +44,7 @@ function PromptSection({
       <div className="flex items-center gap-2">
         <Label className="font-medium">{label}</Label>
         {modified && (
-          <Badge variant="secondary" className="text-amber-700 dark:text-amber-300">
+          <Badge variant="secondary" className="text-warning">
             modified
           </Badge>
         )}

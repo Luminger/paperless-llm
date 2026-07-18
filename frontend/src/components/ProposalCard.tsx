@@ -51,7 +51,7 @@ function Row({
     <div className="grid grid-cols-[10rem_1fr_1.4fr] items-center gap-3 border-b border-border/50 py-2">
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="truncate text-sm text-muted-foreground">{current}</div>
-      <div className={changed ? "rounded-md bg-amber-50 p-1 dark:bg-amber-950/40" : "p-1"}>
+      <div className={changed ? "rounded-md bg-warning/10 p-1" : "p-1"}>
         {children}
       </div>
     </div>
@@ -333,7 +333,7 @@ function FieldInput({
     );
   }
   const cls = `w-full rounded-md border px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 ${
-    invalid ? "border-red-400 bg-red-50 dark:bg-red-950/30" : "border-input bg-transparent"
+    invalid ? "border-destructive/60 bg-destructive/10" : "border-input bg-transparent"
   }`;
   if (kind === "json") {
     return (
@@ -404,7 +404,7 @@ function GenericEditor({
                       {was !== undefined ? displayValue(was) || "—" : "—"}
                     </td>
                   )}
-                  <td className={`py-2 ${editedByUser ? "rounded-md bg-amber-50 dark:bg-amber-950/40" : ""}`}>
+                  <td className={`py-2 ${editedByUser ? "rounded-md bg-warning/10" : ""}`}>
                     <FieldInput
                       label={k}
                       value={displayValue(cur)}
@@ -569,7 +569,7 @@ export function ProposalCard({
       )}
 
       {p.user_payload && !dirty && (
-        <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+        <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
           This proposal has saved user edits — they are what gets applied.
         </p>
       )}
@@ -581,7 +581,7 @@ export function ProposalCard({
           <>
             <Button
               size="sm"
-              className="bg-amber-600 text-white hover:bg-amber-700"
+              className="bg-warning text-white hover:bg-warning/90"
               onClick={() => save.mutate(pending)}
             >
               Save edits

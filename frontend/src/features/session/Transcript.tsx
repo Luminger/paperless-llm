@@ -119,7 +119,7 @@ export function ToolCallItem({ item }: { item: TranscriptItem }) {
     <CollapsibleRow
       icon={
         rejected ? (
-          <XCircle className="size-3.5 text-amber-600 dark:text-amber-400" />
+          <XCircle className="size-3.5 text-warning" />
         ) : (
           <Wrench className="size-3.5 text-muted-foreground/70" />
         )
@@ -130,7 +130,7 @@ export function ToolCallItem({ item }: { item: TranscriptItem }) {
           <span className="text-foreground/85">{item.tool_name}</span>
           <span className="text-muted-foreground/60">({argsSummary(item.tool_args)})</span>
           {rejected && (
-            <span className="ml-2 font-sans text-amber-600 dark:text-amber-400">
+            <span className="ml-2 font-sans text-warning">
               rejected
             </span>
           )}
@@ -152,7 +152,7 @@ export function ToolCallItem({ item }: { item: TranscriptItem }) {
             className={cn(
               "max-h-80 overflow-auto rounded-md bg-muted/60 p-2 font-mono text-[11px] leading-4 whitespace-pre-wrap",
               rejected &&
-                "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
+                "bg-warning/10 text-warning",
             )}
           >
             {pretty(item.tool_result_full ?? item.tool_result ?? "(no result recorded)")}
@@ -168,7 +168,7 @@ export function ToolCallItem({ item }: { item: TranscriptItem }) {
 export function ThinkingItem({ item }: { item: TranscriptItem }) {
   return (
     <CollapsibleRow
-      icon={<Brain className="size-3.5 text-violet-500/80 dark:text-violet-400/80" />}
+      icon={<Brain className="size-3.5 text-special/80" />}
       summary={
         <span className="block truncate text-xs leading-5 text-muted-foreground">
           <span className="font-medium">Reasoning</span>

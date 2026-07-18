@@ -28,7 +28,7 @@ export function FetchStatus({
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       {busy ? (
-        <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+        <span className="flex items-center gap-1.5 text-info">
           <span className="inline-block size-2 animate-pulse rounded-full bg-current" />
           fetching from paperless…
         </span>

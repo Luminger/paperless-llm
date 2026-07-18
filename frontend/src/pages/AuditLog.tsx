@@ -19,26 +19,16 @@ import { EmptyState, ErrorNotice } from "@/components/app/states";
 import { api, type AuditEntry } from "../api";
 import { keys } from "../lib/keys";
 import { formatDateTime } from "../lib/format";
-
-const KIND_COLORS: Record<string, string> = {
-  proposal:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  job: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
-  webhook: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  session: "bg-muted text-muted-foreground",
-  paperless: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  task: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
-  auth: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-};
+import { AUDIT_KIND_TONE, TONE_BADGE, parseActor } from "../lib/labels";
 
 function ActorBadge({ actor }: { actor: string }) {
-  const isUser = actor.startsWith("user");
+  const isUser = parseActor(actor).user;
   return (
     <Badge
       variant="secondary"
       className={
         isUser
-          ? "shrink-0 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+          ? `shrink-0 ${TONE_BADGE.warning}`
           : "shrink-0 text-muted-foreground"
       }
       title={isUser ? "Triggered by a user action" : "Triggered by the application"}
@@ -155,10 +145,10 @@ function DiffTable({ diff }: { diff: Record<string, { from: unknown; to: unknown
         {fields.map((k) => (
           <tr key={k} className="border-b border-border/50 align-top">
             <td className="py-1 pr-2 font-mono text-muted-foreground">{k}</td>
-            <td className="py-1 pr-2 break-words whitespace-pre-wrap text-red-700/80 dark:text-red-400/80">
+            <td className="py-1 pr-2 break-words whitespace-pre-wrap text-destructive/80">
               {JSON.stringify(diff[k].from) ?? "—"}
             </td>
-            <td className="py-1 break-words whitespace-pre-wrap text-emerald-700/90 dark:text-emerald-400/90">
+            <td className="py-1 break-words whitespace-pre-wrap text-success/90">
               {JSON.stringify(diff[k].to) ?? "—"}
             </td>
           </tr>
@@ -214,7 +204,7 @@ function LogRow({ e }: { e: AuditEntry }) {
         <TableCell>
           <Badge
             variant="secondary"
-            className={`shrink-0 ${KIND_COLORS[e.kind] ?? "bg-muted"}`}
+            className={`shrink-0 ${TONE_BADGE[AUDIT_KIND_TONE[e.kind] ?? "muted"]}`}
           >
             {e.kind}
           </Badge>

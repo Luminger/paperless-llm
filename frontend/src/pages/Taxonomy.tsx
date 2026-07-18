@@ -52,7 +52,7 @@ type TypeKey = (typeof TYPES)[number]["key"];
 
 function CandidateRow({ c, onReview }: { c: MergeCandidate; onReview: () => void }) {
   return (
-    <li className="flex items-center gap-3 rounded-lg border border-amber-300/60 bg-amber-50 p-2 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+    <li className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 p-2 text-sm">
       <span className="flex-1">
         <strong>{c.source.name}</strong>{" "}
         <span className="text-muted-foreground">
@@ -165,7 +165,7 @@ export default function Taxonomy() {
 
       {candidates && candidates.length > 0 && (
         <div className="mb-6">
-          <h2 className="mb-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+          <h2 className="mb-2 text-sm font-medium text-warning">
             Possible duplicates ({candidates.length})
           </h2>
           <ul className="space-y-2">

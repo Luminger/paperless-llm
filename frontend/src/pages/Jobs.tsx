@@ -267,7 +267,7 @@ export default function Jobs() {
                     {scopeLabel(j)}
                   </Link>
                   {j.kind === "webhook_analyze" && (
-                    <Badge variant="secondary" className="ml-2 text-blue-700 dark:text-blue-300">
+                    <Badge variant="secondary" className="ml-2 text-info">
                       webhook
                     </Badge>
                   )}
@@ -279,7 +279,7 @@ export default function Jobs() {
                   {j.params.apply_policy === "auto" && (
                     <Badge
                       variant="secondary"
-                      className="ml-2 text-purple-700 dark:text-purple-300"
+                      className="ml-2 text-special"
                     >
                       auto-apply
                     </Badge>

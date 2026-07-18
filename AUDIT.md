@@ -1067,7 +1067,7 @@ Collapsible vs native details, Oct-2025 component batch), Tailwind v4
 `@theme inline` pattern, MDN disclosure semantics.
 
 ### UI-U1 — HIGH — status-color system bypasses the token system
-- **Status:** OPEN
+- **Status:** FIXED — semantic tone tokens (--success/--warning/--info/--notice/--special) in :root/.dark + @theme inline; lib/labels.ts (TONE_BADGE/TONE_TEXT/TONE_PANEL, STATUS_TONE, AUDIT_KIND_TONE, parseActor); ALL 11 files swept — zero raw palette utilities outside ui/; screenshot-verified light+dark
 - **Where:** ~60 raw palette utilities with hand-paired `dark:` variants
   across 11 files: `StatusBadge.tsx` (header claims "dark-mode variants
   live here and nowhere else" — no longer true), `AuditLog.tsx`
