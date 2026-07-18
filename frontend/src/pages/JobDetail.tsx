@@ -96,6 +96,7 @@ function CancelJobDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
+      error={cancel.error}
       title="Cancel this job?"
       description="Pending sessions will be cancelled; running steps finish and keep their results. Already-applied changes stay (revertible from the journal)."
       confirmLabel="Cancel the job"

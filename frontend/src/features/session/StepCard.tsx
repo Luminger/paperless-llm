@@ -544,13 +544,15 @@ export function StepCard({
   const [folded, setFolded] = useState(false);
   return (
     <Card className={cn("gap-0 overflow-hidden py-0", collapsed && "border-dashed")}>
-      {/* Uniform header strip — click anywhere to fold the whole turn. */}
-      <div
-        role="button"
+      {/* Uniform header strip — click anywhere to fold the whole turn.
+          A REAL button (AUDIT UI-U2/FS-14): keyboard-operable and
+          aria-expanded for free. */}
+      <button
+        type="button"
         aria-expanded={!folded}
         className={cn(
           frameHeaderClass,
-          "cursor-pointer select-none",
+          "w-full cursor-pointer text-left select-none",
           !folded && "border-b",
         )}
         onClick={() => setFolded(!folded)}
@@ -584,7 +586,7 @@ export function StepCard({
         <span className="font-mono text-[11px] text-muted-foreground/60">
           {formatDateTime(step.started_at ?? step.created_at)}
         </span>
-      </div>
+      </button>
 
       {folded ? null : (
       <div className="space-y-3 px-4 py-3">

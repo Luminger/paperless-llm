@@ -6,6 +6,11 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 // Shared with StepCard so trace turns and page boxes are literally the
@@ -42,28 +47,48 @@ export function FramedCard({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const folded = collapsible && !open;
+  const headerInner = (
+    <>
+      {collapsible &&
+        (open ? (
+          <ChevronDown className="size-3.5 text-muted-foreground/60" />
+        ) : (
+          <ChevronRight className="size-3.5 text-muted-foreground/60" />
+        ))}
+      <span className={frameTitleClass}>{title}</span>
+      <span className="flex-1" />
+      {meta && <span className={frameMetaClass}>{meta}</span>}
+    </>
+  );
+  if (!collapsible) {
+    return (
+      <Card className={cn("gap-0 overflow-hidden py-0", className)}>
+        <div className={cn(frameHeaderClass, "border-b")}>{headerInner}</div>
+        <div className={cn("p-4", bodyClassName)}>{children}</div>
+        {footer && <div className={frameFooterClass}>{footer}</div>}
+      </Card>
+    );
+  }
+  // AUDIT UI-U2: the header is a REAL trigger (Radix Collapsible) —
+  // keyboard-operable, aria-expanded, visible to AT. The strip layout
+  // is unchanged; the trigger button spans it.
   return (
     <Card className={cn("gap-0 overflow-hidden py-0", className)}>
-      <div
-        className={cn(
-          frameHeaderClass,
-          !folded && "border-b",
-          collapsible && "cursor-pointer select-none",
-        )}
-        onClick={collapsible ? () => setOpen(!open) : undefined}
-      >
-        {collapsible &&
-          (open ? (
-            <ChevronDown className="size-3.5 text-muted-foreground/60" />
-          ) : (
-            <ChevronRight className="size-3.5 text-muted-foreground/60" />
-          ))}
-        <span className={frameTitleClass}>{title}</span>
-        <span className="flex-1" />
-        {meta && <span className={frameMetaClass}>{meta}</span>}
-      </div>
-      {!folded && <div className={cn("p-4", bodyClassName)}>{children}</div>}
-      {!folded && footer && <div className={frameFooterClass}>{footer}</div>}
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger
+          className={cn(
+            frameHeaderClass,
+            "w-full cursor-pointer text-left select-none",
+            !folded && "border-b",
+          )}
+        >
+          {headerInner}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className={cn("p-4", bodyClassName)}>{children}</div>
+          {footer && <div className={frameFooterClass}>{footer}</div>}
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 }

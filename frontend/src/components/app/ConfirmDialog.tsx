@@ -1,15 +1,21 @@
 // THE guard modal: any destructive or irreversible-feeling action asks
 // once, in the same voice, before doing anything.
+//
+// Built on AlertDialog (AUDIT UI-U3): role="alertdialog", focus starts
+// on "Keep it", and there is NO outside-click/Esc-accident path to
+// confirming — the user must choose. Failures render inline (FP-M3):
+// a guard modal that fails silently defeats its own purpose.
 
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { ErrorNotice } from "./states";
 
 export function ConfirmDialog({
   open,
@@ -18,6 +24,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Confirm",
   busy = false,
+  error = null,
   onConfirm,
 }: {
   open: boolean;
@@ -26,17 +33,25 @@ export function ConfirmDialog({
   description: React.ReactNode;
   confirmLabel?: string;
   busy?: boolean;
+  /** Mutation error — rendered inline so a failed action is never silent. */
+  error?: unknown;
   onConfirm: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        {error != null && <ErrorNotice error={error} />}
+        <AlertDialogFooter>
+          <Button
+            variant="ghost"
+            size="sm"
+            autoFocus
+            onClick={() => onOpenChange(false)}
+          >
             Keep it
           </Button>
           <Button
@@ -47,8 +62,8 @@ export function ConfirmDialog({
           >
             {confirmLabel}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

@@ -40,7 +40,11 @@ export function ConnectionToast({
   const left = useCountdown(nextRetryAt ?? null);
   if (!show) return null;
   return (
-    <div className="fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning shadow-md backdrop-blur-sm">
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning shadow-md backdrop-blur-sm"
+    >
       <span className="inline-block size-2 animate-pulse rounded-full bg-warning" />
       <span>
         {label}

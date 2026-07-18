@@ -838,9 +838,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
   terminal sessions. Todo #84.
 
 ### FS-14 — LOW — clickable step header not keyboard-accessible
-- **Status:** OPEN — `StepCard.tsx` header `role="button"` without
-  tabIndex/keydown. Fixed together with UI-U2 (Collapsible rebuild).
-  Todo #67.
+- **Status:** FIXED — real <button> with aria-expanded (with UI-U2)
 
 ### FS-15 — notes / verified OK
 - Markdown injection safe (no rehype-raw; urlTransform whitelists
@@ -935,7 +933,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #87
 
 ### FP-M3 — MEDIUM — cancel-job failures completely silent (both surfaces)
-- **Status:** OPEN
+- **Status:** FIXED — ConfirmDialog error slot; Jobs + JobDetail pass cancel.error
 - **Where:** `pages/Jobs.tsx:205-211`, `pages/JobDetail.tsx:88-94`;
   ConfirmDialog has no error slot
 - **Detail:** POST fails (409/500) → dialog sits there, destructive
@@ -999,8 +997,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
   `getDocumentPreviewInfo`/`keys.documentPreview`. Todo #88.
 
 ### FP-L5 — LOW — FramedCard fold toggle mouse-only
-- **Status:** OPEN — duplicate of UI-U2; fixed by the Collapsible
-  rebuild. Todo #67.
+- **Status:** FIXED — see UI-U2
 
 ### FP-L6 — LOW — JobDetail polls attention every 5s forever
 - **Status:** OPEN — `JobDetail.tsx:32` unconditional refetchInterval
@@ -1085,7 +1082,7 @@ Collapsible vs native details, Oct-2025 component batch), Tailwind v4
 - **Todo:** #66
 
 ### UI-U2 — HIGH — FramedCard (THE box) hand-rolls disclosure with div+onClick
-- **Status:** OPEN
+- **Status:** FIXED — FramedCard header rebuilt on Radix Collapsible (CollapsibleTrigger spans the strip; keyboard + aria-expanded verified live via puppeteer); StepCard header is a real <button> (also FS-14/FP-L5)
 - **Where:** `components/app/Framed.tsx` header; `StepCard.tsx` header
   (`role="button"` no tabIndex/keydown — FS-14)
 - **Detail:** No keyboard access, no aria-expanded, invisible to AT — on
@@ -1097,7 +1094,7 @@ Collapsible vs native details, Oct-2025 component batch), Tailwind v4
 - **Todo:** #67
 
 ### UI-U3 — MEDIUM — ConfirmDialog uses Dialog; destructive confirmation wants AlertDialog
-- **Status:** OPEN
+- **Status:** FIXED — ui/alert-dialog.tsx vendored (dialog.tsx style); ConfirmDialog rebuilt on it (role=alertdialog, focus starts on "Keep it", no outside-click dismissal) with an inline ErrorNotice slot
 - **Where:** `components/app/ConfirmDialog.tsx`
 - **Detail:** Radix AlertDialog gives role=alertdialog, initial focus on
   Cancel, no outside-click/Esc accidental dismissal — meaningful for
@@ -1107,18 +1104,18 @@ Collapsible vs native details, Oct-2025 component batch), Tailwind v4
 - **Todo:** #68
 
 ### UI-U4 — MEDIUM — tooltip affordance split
-- **Status:** OPEN — `ui/tooltip` used once (RefChip) vs 44 native
+- **Status:** OPEN (accepted for now) — 44 native title= attrs remain; adopt ui/tooltip opportunistically when touching those surfaces — `ui/tooltip` used once (RefChip) vs 44 native
   `title=` attrs — no keyboard/touch access, inconsistent look. Adopt
   the wrapper for interactive elements; `title=` only for redundant
   hints. Todo #69.
 
 ### UI-U5 — LOW — components.json declares the wrong icon library
-- **Status:** OPEN — `"iconLibrary": "hugeicons"` vs project law
+- **Status:** FIXED — "lucide"  — `"iconLibrary": "hugeicons"` vs project law
   lucide-react; future `shadcn add` would scaffold unresolvable imports.
   One-line fix. Todo #69.
 
 ### UI-U6 — LOW — ConnectionToast lacks aria-live
-- **Status:** OPEN — hand-rolled toast (deliberate) is silent to screen
+- **Status:** FIXED — role=status aria-live=polite — hand-rolled toast (deliberate) is silent to screen
   readers; add `role="status" aria-live="polite"`. Todo #69.
 
 ### UI — verified canonical (keep)

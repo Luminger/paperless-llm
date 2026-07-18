@@ -310,6 +310,7 @@ export default function Jobs() {
       <ConfirmDialog
         open={cancelTarget != null}
         onOpenChange={(open) => !open && setCancelTarget(null)}
+        error={cancel.error}
         title="Cancel this job?"
         description={
           cancelTarget
