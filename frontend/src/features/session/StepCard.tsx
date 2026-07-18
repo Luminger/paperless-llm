@@ -17,7 +17,7 @@ import { ProposalCard, proposalKindLabel } from "../../components/ProposalCard";
 import { DiffView } from "../../components/DiffView";
 import { ProseBody, Transcript, UserMessage } from "./Transcript";
 import { Panel, PanelTitle, PanelTitleMuted } from "./Panel";
-import { StepTimingSummary, TimingChip } from "./timing";
+import { StepTimingSummary } from "./timing";
 import { StatusBadge } from "../../components/StatusBadge";
 import { OcrGateBody } from "./OcrGate";
 import { RedoDialog } from "./RedoDialog";
@@ -362,14 +362,11 @@ function TurnBody({
 
     if (idx === summaryIdx) {
       flush();
+      // The closing words are the agent speaking — plain prose, no box.
       out.push(
-        <Panel
-          key="summary"
-          title={<PanelTitle>Summary</PanelTitle>}
-          meta={<TimingChip t={item.timing} />}
-        >
+        <div key="summary" className="px-2 pt-1">
           <ProseBody content={item.content} />
-        </Panel>,
+        </div>,
       );
       return;
     }

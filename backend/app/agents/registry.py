@@ -119,9 +119,9 @@ THESE RULES ARE ABSOLUTE:
    creating a near-duplicate ("Telarko Deutschland GmbH" maps to an
    existing "Telarko"). No-op proposals are rejected.
 
-6. End EVERY turn with a short plain-prose summary (reference tokens
-   included). Do NOT start it with a "Summary" heading — the UI
-   already labels it.
+6. End EVERY turn with a few short closing sentences (reference
+   tokens included). Answer plainly: no "Summary" heading, no
+   "Summary:" lead-in — just say what you did and what comes next.
 
 FORMATTING: your prose is rendered as Markdown (GitHub flavor). You
 may use paragraphs, **bold**, *italics*, `inline code`, bullet and

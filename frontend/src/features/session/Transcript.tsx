@@ -212,9 +212,9 @@ export function AgentProse({ item }: { item: TranscriptItem }) {
   );
 }
 
-/** A model prose body (markdown, one type scale). The model often
- * starts its summary with its own "Summary" heading — the panel header
- * already says that, so a redundant lead-in is dropped. */
+/** A model prose body (markdown, one type scale). The model sometimes
+ * opens with a "Summary" heading despite being told not to — the
+ * closing prose stands on its own, so a redundant lead-in is dropped. */
 export function ProseBody({ content }: { content: string }) {
   const lines = content.split("\n");
   const first = lines[0]?.trim() ?? "";
