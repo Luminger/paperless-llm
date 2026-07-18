@@ -185,6 +185,7 @@ async def analyze_document(
         paperless,
         document_ids=[document_id],
         redo_ocr=body.redo_ocr,
+        ocr_only=body.ocr_only,
         instructions=body.instructions,
         skip_active=False,  # an explicit manual run is always honored
         kind="analyze",

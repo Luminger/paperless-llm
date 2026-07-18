@@ -48,3 +48,11 @@ proposals are revised, left pending, or their session archived.
 Proposals are reviewed **on their session's timeline**, in the context
 of the reasoning that produced them. The dashboard counts what awaits
 review; deep links to a proposal resolve to its session.
+
+## Per-document history
+
+Every document's detail page carries its **change history**: each
+applied change with the fields it touched, **who** applied it (the
+signed-in user by name, or *automatic* for auto-applied jobs), when,
+whether it was edited before applying or reverted since — and a link
+to the session that produced it.

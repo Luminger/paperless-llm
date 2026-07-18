@@ -33,6 +33,7 @@ export const keys = {
   settings: () => ["settings"] as const,
   config: () => ["settings", "config"] as const,
   webhookStatus: () => ["settings", "webhook"] as const,
+  documentHistory: (id: number) => ["document", id, "history"] as const,
   prefs: () => ["prefs"] as const,
 } as const;
 

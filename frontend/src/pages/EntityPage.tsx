@@ -3,17 +3,24 @@ import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
 import { InboxBadge } from "../components/StatusBadge";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, ScanText, Sparkles, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ErrorNotice, LoadingState } from "@/components/app/states";
-import { api, type EntityRef, type PaperlessDocument } from "../api";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { DocumentPreview } from "@/components/app/DocumentPreview";
+import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
+import { api, type DocumentHistory, type EntityRef, type PaperlessDocument } from "../api";
 import { keys, invalidateEntities } from "../lib/keys";
-import { formatDate, matchingRule } from "../lib/format";
+import { formatDate, formatDateTime, matchingRule } from "../lib/format";
 import { SessionList } from "../components/SessionList";
 import { errorMessage } from "../lib/errors";
 
@@ -78,10 +85,10 @@ function DocumentFacts({ doc }: { doc: PaperlessDocument }) {
   const { tags, correspondents, docTypes, storagePaths } = useTaxonomyLists();
   return (
     <div className="flex gap-6">
-      <img
-        src={`/api/entities/documents/${doc.id}/thumb`}
-        alt="document preview"
-        className="h-48 w-36 rounded-md border object-cover object-top"
+      <DocumentPreview
+        documentId={doc.id}
+        title={doc.title || "document"}
+        className="h-48 w-36"
       />
       <div className="flex-1">
         <FactRow label="Title">{doc.title || "—"}</FactRow>
@@ -197,24 +204,52 @@ function InstructionsEditor({
   );
 }
 
+/** The document's two distinct actions — each one visibly starts a
+ * session you land in: re-transcribe the text (stops at the review
+ * gate), or put the agent to work on the metadata. */
+function DocumentActions({ id }: { id: number }) {
+  const navigate = useNavigate();
+  const start = useMutation({
+    mutationFn: (opts: { ocr_only?: boolean; redo_ocr?: boolean }) =>
+      api.analyzeDocument(id, opts),
+    onSuccess: (s) => navigate(`/sessions/${s.id}`),
+  });
+  return (
+    <span className="flex items-center gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        title="Re-transcribe the document with the vision model; you review the result before anything is written. No metadata analysis."
+        disabled={start.isPending}
+        onClick={() => start.mutate({ ocr_only: true, redo_ocr: true })}
+      >
+        <ScanText className="size-3.5" />
+        Re-do OCR
+      </Button>
+      <Button
+        size="sm"
+        title="Start an analysis session: the agent reads the document and proposes metadata changes, one at a time."
+        disabled={start.isPending}
+        onClick={() => start.mutate({})}
+      >
+        <Sparkles className="size-3.5" />
+        Start analysis
+      </Button>
+      {start.error && (
+        <span className="text-xs text-destructive">{errorMessage(start.error)}</span>
+      )}
+    </span>
+  );
+}
+
 function AnalyzeButton({ entityType, id }: { entityType: string; id: number }) {
   const navigate = useNavigate();
-  const [redoOcr, setRedoOcr] = useState(false);
   const analyze = useMutation({
-    mutationFn: () =>
-      entityType === "document"
-        ? api.analyzeDocument(id, { redo_ocr: redoOcr })
-        : api.analyzeEntity(entityType, id),
+    mutationFn: () => api.analyzeEntity(entityType, id),
     onSuccess: (s) => navigate(`/sessions/${s.id}`),
   });
   return (
     <span className="flex items-center gap-3">
-      {entityType === "document" && (
-        <Label className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
-          <Checkbox checked={redoOcr} onCheckedChange={(v) => setRedoOcr(v === true)} />
-          re-do OCR
-        </Label>
-      )}
       <Button size="sm" onClick={() => analyze.mutate()} disabled={analyze.isPending}>
         Analyze
       </Button>
@@ -222,6 +257,136 @@ function AnalyzeButton({ entityType, id }: { entityType: string; id: number }) {
         <span className="text-xs text-destructive">{errorMessage(analyze.error)}</span>
       )}
     </span>
+  );
+}
+
+/** The stored text layer — what the agent reads, and the basis for
+ * judging whether a fresh OCR pass is needed. */
+function ContentPanel({ content }: { content: string }) {
+  const [openAll, setOpenAll] = useState(false);
+  const clamp = 1800;
+  const truncated = !openAll && content.length > clamp;
+  const shown = truncated ? content.slice(0, clamp) : content;
+  return (
+    <Card className="mb-8 gap-2 p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Content ({content.length.toLocaleString()} characters)
+        </h2>
+      </div>
+      {content.trim() ? (
+        <>
+          <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+            {shown}
+            {truncated && "…"}
+          </pre>
+          {content.length > clamp && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start text-muted-foreground"
+              onClick={() => setOpenAll(!openAll)}
+            >
+              {openAll ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+              {openAll ? "show less" : "show all"}
+            </Button>
+          )}
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No text layer — this document likely needs an OCR pass.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+const HISTORY_KINDS: Record<string, string> = {
+  update_document_metadata: "Metadata updated",
+  replace_content: "Content replaced (OCR)",
+  create_entity: "Entity created & assigned",
+};
+
+function Actor({ actor }: { actor: string }) {
+  const name = actor.startsWith("user:") ? actor.slice(5) : actor;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <User className="size-3.5 text-muted-foreground" />
+      {actor === "system" ? (
+        <span className="text-muted-foreground">automatic</span>
+      ) : (
+        <span className="font-medium">{name}</span>
+      )}
+    </span>
+  );
+}
+
+/** Everything this app changed on the document — attributed and linked
+ * to the session that produced it. */
+function HistorySection({ id }: { id: number }) {
+  const { data, error } = useQuery({
+    queryKey: keys.documentHistory(id),
+    queryFn: () => api.getDocumentHistory(id),
+  });
+  if (error) return <ErrorNotice error={error} />;
+  if (!data) return <LoadingState lines={2} />;
+  if (data.length === 0)
+    return <EmptyState title="No changes applied to this document yet." />;
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-44">When</TableHead>
+          <TableHead>Change</TableHead>
+          <TableHead className="w-40">By</TableHead>
+          <TableHead className="w-64">Session</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.map((h: DocumentHistory) => (
+          <TableRow key={h.proposal_id} className={h.reverted ? "opacity-60" : ""}>
+            <TableCell className="whitespace-nowrap text-muted-foreground">
+              {formatDateTime(h.applied_at)}
+            </TableCell>
+            <TableCell>
+              <span className="flex flex-wrap items-center gap-1.5">
+                {HISTORY_KINDS[h.kind] ?? h.kind.replaceAll("_", " ")}
+                {h.fields.length > 0 && h.kind !== "replace_content" && (
+                  <span className="text-xs text-muted-foreground">
+                    ({h.fields.join(", ")})
+                  </span>
+                )}
+                {h.edited && (
+                  <Badge variant="secondary" className="font-normal text-muted-foreground">
+                    edited
+                  </Badge>
+                )}
+                {h.reverted && (
+                  <Badge variant="secondary" className="font-normal text-muted-foreground">
+                    reverted
+                  </Badge>
+                )}
+              </span>
+            </TableCell>
+            <TableCell>
+              <Actor actor={h.applied_by} />
+            </TableCell>
+            <TableCell className="max-w-0">
+              {h.session_id != null ? (
+                <Link
+                  className="block truncate text-primary hover:underline"
+                  to={`/sessions/${h.session_id}`}
+                >
+                  {h.session_title || "session"}
+                </Link>
+              ) : (
+                <span className="text-muted-foreground/60">—</span>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -262,7 +427,9 @@ export default function EntityPage() {
           </p>
           <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         </div>
-        {!(entityType === "tag" && entityQuery.data?.is_inbox_tag) ? (
+        {entityType === "document" ? (
+          <DocumentActions id={id} />
+        ) : !(entityType === "tag" && entityQuery.data?.is_inbox_tag) ? (
           <AnalyzeButton entityType={entityType} id={id} />
         ) : (
           <span
@@ -292,6 +459,10 @@ export default function EntityPage() {
         )}
       </Card>
 
+      {entityType === "document" && (
+        <ContentPanel content={docQuery.data!.content ?? ""} />
+      )}
+
       {entityType !== "document" && entityQuery.data && (
         <InstructionsEditor
           key={`${entityType}-${id}-${entityQuery.data.instructions ?? ""}`}
@@ -303,6 +474,15 @@ export default function EntityPage() {
 
       <h2 className="mb-2 text-sm font-medium text-muted-foreground">Sessions</h2>
       <SessionList entityType={entityType} entityId={id} pageSize={5} showEntity={false} />
+
+      {entityType === "document" && (
+        <>
+          <h2 className="mt-8 mb-2 text-sm font-medium text-muted-foreground">
+            Change history
+          </h2>
+          <HistorySection id={id} />
+        </>
+      )}
     </div>
   );
 }

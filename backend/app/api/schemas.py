@@ -152,6 +152,9 @@ class ProposalPatch(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     redo_ocr: bool = False
+    # Re-OCR and STOP: no analysis follows (the document page's
+    # dedicated OCR action).
+    ocr_only: bool = False
     instructions: str | None = None
 
 
@@ -268,6 +271,23 @@ class DocumentOut(BaseModel):
     modified: str | None = None
     archive_serial_number: int | None = None
     original_file_name: str | None = None
+
+
+class DocumentHistoryOut(BaseModel):
+    """One applied change on a document: what, when, by whom, and the
+    session it came from."""
+
+    proposal_id: int
+    session_id: int | None = None
+    session_title: str = ""
+    kind: str
+    # Which fields the applied payload touched (identity keys stripped).
+    fields: list[str] = []
+    applied_at: UtcDateTime
+    # "user:<name>" or "system" (auto-apply).
+    applied_by: str
+    edited: bool = False
+    reverted: bool = False
 
 
 class DocumentSearchPage(BaseModel):

@@ -1560,3 +1560,70 @@ async def test_webhook_status_detects_paperless_workflow(client):
 
     route.mock(return_value=Response(404))
     assert (await client.get("/api/settings/webhook")).json()["workflow_found"] is None
+
+
+async def test_document_history(client, db):
+    """The journal, per document: attributed, session-linked, newest
+    first, with the touched fields extracted."""
+    from datetime import UTC, datetime
+
+    from app.db.models import AppliedChange, EntityType
+
+    s1 = Session(agent_kind=AgentKind.document, entity_type=EntityType.document,
+                 entity_id=7, title="First pass")
+    db.add(s1)
+    await db.flush()
+    p1 = Proposal(
+        session_id=s1.id, kind="update_document_metadata",
+        agent_payload={"kind": "update_document_metadata", "document_id": 7,
+                       "title": "Better title", "correspondent": 2},
+        status=ProposalStatus.applied,
+        entity_type=EntityType.document, entity_id=7,
+    )
+    p2 = Proposal(
+        session_id=s1.id, kind="replace_content",
+        agent_payload={"kind": "replace_content", "document_id": 7, "content": "x"},
+        status=ProposalStatus.applied,
+        entity_type=EntityType.document, entity_id=7,
+    )
+    db.add_all([p1, p2])
+    await db.flush()
+    db.add(AppliedChange(
+        proposal_id=p1.id, actor="user:simon",
+        paperless_before={}, paperless_after={},
+        applied_at=datetime(2026, 7, 2, tzinfo=UTC),
+    ))
+    db.add(AppliedChange(
+        proposal_id=p2.id, actor="system",
+        paperless_before={}, paperless_after={},
+        applied_at=datetime(2026, 7, 1, tzinfo=UTC),
+        reverted_at=datetime(2026, 7, 3, tzinfo=UTC),
+    ))
+    await db.commit()
+
+    r = await client.get("/api/entities/documents/7/history")
+    assert r.status_code == 200
+    rows = r.json()
+    assert [x["kind"] for x in rows] == ["update_document_metadata", "replace_content"]
+    assert rows[0]["applied_by"] == "user:simon"
+    assert rows[0]["fields"] == ["correspondent", "title"]
+    assert rows[0]["session_title"] == "First pass"
+    assert rows[1]["applied_by"] == "system"
+    assert rows[1]["reverted"] is True
+
+
+@respx.mock
+async def test_analyze_document_ocr_only(client, db):
+    """The document page's dedicated OCR action: session + first step
+    are OCR-only marked."""
+    from sqlalchemy import select as _select
+
+    from app.db.models import Step, StepKind
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    r = await client.post("/api/sessions/analyze/document/7", json={"ocr_only": True})
+    assert r.status_code == 200
+    session_id = r.json()["id"]
+    step = await db.scalar(_select(Step).where(Step.session_id == session_id))
+    assert step.kind == StepKind.ocr
+    assert step.input["ocr_only"] is True

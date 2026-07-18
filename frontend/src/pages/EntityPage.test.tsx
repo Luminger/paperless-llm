@@ -9,6 +9,7 @@ vi.mock("../api", () => ({
   api: {
     getMeta: vi.fn(),
     getDocument: vi.fn(),
+    getDocumentHistory: vi.fn(),
     getEntity: vi.fn(),
     listSessions: vi.fn(),
     listTags: vi.fn(),
@@ -33,6 +34,7 @@ describe("EntityPage (generic entity overview)", () => {
     mocked.listCorrespondents.mockResolvedValue([makeEntity({ id: 8, name: "Kraxi" })]);
     mocked.listDocumentTypes.mockResolvedValue([makeEntity({ id: 2, name: "Rechnung" })]);
     mocked.listStoragePaths.mockResolvedValue([]);
+    mocked.getDocumentHistory.mockResolvedValue([]);
   });
 
   it("documents: facts with entity links, paperless deep link, sessions list", async () => {
@@ -64,10 +66,17 @@ describe("EntityPage (generic entity overview)", () => {
     expect(
       screen.getByRole("link", { name: /open in paperless/ }).getAttribute("href"),
     ).toBe("http://paperless.example/documents/12/details");
-    // Preview + session list present.
-    expect(screen.getByAltText("document preview")).toBeInTheDocument();
+    // Preview (clickable), distinct actions, content, session list, history.
+    expect(screen.getByRole("button", { name: /open preview of Invoice 4-8/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /re-do ocr/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start analysis/i })).toBeInTheDocument();
+    expect(screen.getByText(/no text layer/i)).toBeInTheDocument();
     expect(screen.getByText("Sessions")).toBeInTheDocument();
     expect(await screen.findByText("No sessions yet.")).toBeInTheDocument();
+    expect(screen.getByText("Change history")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/no changes applied to this document yet/i),
+    ).toBeInTheDocument();
   });
 
   it("taxonomy entities use the same generic page", async () => {
@@ -133,5 +142,48 @@ describe("EntityPage — instructions & inbox", () => {
     });
     expect(await screen.findByText(/not analyzable \(inbox\)/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Analyze" })).not.toBeInTheDocument();
+  });
+});
+
+describe("EntityPage document history", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.getMeta.mockResolvedValue({ paperless_url: "http://paperless.example", version: "t" });
+    mocked.listSessions.mockResolvedValue({ count: 0, page: 1, page_size: 5, results: [] });
+    mocked.listTags.mockResolvedValue([]);
+    mocked.listCorrespondents.mockResolvedValue([]);
+    mocked.listDocumentTypes.mockResolvedValue([]);
+    mocked.listStoragePaths.mockResolvedValue([]);
+    mocked.getDocument.mockResolvedValue({
+      id: 12, title: "Invoice 4-8", correspondent: null, document_type: null,
+      storage_path: null, tags: [], created: "1958-05-02", added: "2026-07-16",
+      archive_serial_number: null, content: "some text",
+    });
+  });
+
+  it("attributes changes and links their sessions", async () => {
+    mocked.getDocumentHistory.mockResolvedValue([
+      {
+        proposal_id: 4, session_id: 9, session_title: "First pass",
+        kind: "update_document_metadata", fields: ["correspondent", "title"],
+        applied_at: "2026-07-02T10:00:00Z", applied_by: "user:simon",
+        edited: true, reverted: false,
+      },
+      {
+        proposal_id: 3, session_id: 9, session_title: "First pass",
+        kind: "replace_content", fields: ["content"],
+        applied_at: "2026-07-01T10:00:00Z", applied_by: "system",
+        edited: false, reverted: true,
+      },
+    ]);
+    renderWithProviders(<EntityPage />, { route: "/documents/12", path: "/documents/:id" });
+    expect(await screen.findByText("Metadata updated")).toBeInTheDocument();
+    expect(screen.getByText("(correspondent, title)")).toBeInTheDocument();
+    expect(screen.getByText("simon")).toBeInTheDocument();
+    expect(screen.getByText("automatic")).toBeInTheDocument();
+    expect(screen.getByText("Content replaced (OCR)")).toBeInTheDocument();
+    expect(screen.getByText("reverted")).toBeInTheDocument();
+    const links = screen.getAllByRole("link", { name: "First pass" });
+    expect(links[0].getAttribute("href")).toBe("/sessions/9");
   });
 });

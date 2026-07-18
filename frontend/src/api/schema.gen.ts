@@ -165,6 +165,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/entities/documents/{doc_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document History
+         * @description Every change this app applied to the document — journaled,
+         *     attributed, linked to the session that produced it.
+         */
+        get: operations["document_history_api_entities_documents__doc_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/entities/documents/{doc_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Info
+         * @description Page count of the archived rendition — drives the pager.
+         */
+        get: operations["preview_info_api_entities_documents__doc_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/entities/documents/{doc_id}/preview/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Page
+         * @description One page of the archived rendition as PNG (1-based).
+         */
+        get: operations["preview_page_api_entities_documents__doc_id__preview__page__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/entities/documents/{doc_id}/thumb": {
         parameters: {
             query?: never;
@@ -906,6 +967,11 @@ export interface components {
             /** Instructions */
             instructions?: string | null;
             /**
+             * Ocr Only
+             * @default false
+             */
+            ocr_only: boolean;
+            /**
              * Redo Ocr
              * @default false
              */
@@ -1033,6 +1099,43 @@ export interface components {
             processed: number;
             /** Total */
             total: number;
+        };
+        /**
+         * DocumentHistoryOut
+         * @description One applied change on a document: what, when, by whom, and the
+         *     session it came from.
+         */
+        DocumentHistoryOut: {
+            /** Applied At */
+            applied_at: string;
+            /** Applied By */
+            applied_by: string;
+            /**
+             * Edited
+             * @default false
+             */
+            edited: boolean;
+            /**
+             * Fields
+             * @default []
+             */
+            fields: string[];
+            /** Kind */
+            kind: string;
+            /** Proposal Id */
+            proposal_id: number;
+            /**
+             * Reverted
+             * @default false
+             */
+            reverted: boolean;
+            /** Session Id */
+            session_id?: number | null;
+            /**
+             * Session Title
+             * @default
+             */
+            session_title: string;
         };
         /**
          * DocumentOut
@@ -2153,6 +2256,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_history_api_entities_documents__doc_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentHistoryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_info_api_entities_documents__doc_id__preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_page_api_entities_documents__doc_id__preview__page__get: {
+        parameters: {
+            query?: {
+                dpi?: number;
+            };
+            header?: never;
+            path: {
+                doc_id: number;
+                page: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

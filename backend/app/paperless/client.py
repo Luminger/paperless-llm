@@ -261,6 +261,11 @@ class PaperlessClient:
         page-level metadata."""
         return await self._get_json(f"/api/documents/{doc_id}/metadata/")
 
+    async def download_archived(self, doc_id: int) -> tuple[bytes, str]:
+        """The archived (searchable-PDF) rendition — what previews show."""
+        resp = await self._request("GET", f"/api/documents/{doc_id}/download/")
+        return resp.content, resp.headers.get("content-type", "application/pdf")
+
     async def download_original(self, doc_id: int) -> tuple[bytes, str]:
         """Returns (bytes, content_type) of the original file."""
         resp = await self._request(

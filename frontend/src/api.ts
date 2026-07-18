@@ -32,6 +32,7 @@ export type Corpus = S["CorpusOut"];
 export type JobAttention = S["JobAttentionOut"];
 export type ConfigRow = S["ConfigRowOut"];
 export type WebhookStatus = S["WebhookStatusOut"];
+export type DocumentHistory = S["DocumentHistoryOut"];
 export type EntityRef = S["EntityOut"];
 export type PaperlessDocument = S["DocumentOut"];
 export type DocumentSearchPage = S["DocumentSearchPage"];
@@ -155,7 +156,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
-  analyzeDocument: (docId: number, opts: S["AnalyzeRequest"]) =>
+  analyzeDocument: (docId: number, opts: Partial<S["AnalyzeRequest"]>) =>
     request<Session>(`/api/sessions/analyze/document/${docId}`, {
       method: "POST",
       body: JSON.stringify(opts),
@@ -225,6 +226,8 @@ export const api = {
       params.set("document_type_ids", opts.document_type_ids.join(","));
     return request<DocumentSearchPage>(`/api/entities/documents?${params}`);
   },
+  getDocumentHistory: (id: number) =>
+    request<DocumentHistory[]>(`/api/entities/documents/${id}/history`),
   getDocument: (id: number) =>
     request<PaperlessDocument>(`/api/entities/documents/${id}`),
   listTags: () => request<EntityRef[]>("/api/entities/tags"),

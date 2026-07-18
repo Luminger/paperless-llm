@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_paperless
 from app.api.schemas import (
+    DocumentHistoryOut,
     DocumentOut,
     DocumentSearchPage,
     EntityOut,
@@ -115,6 +116,102 @@ async def get_document(
 ) -> DocumentOut:
     doc = await paperless.get_document(doc_id)
     return DocumentOut(**doc.model_dump(include=set(DocumentOut.model_fields)))
+
+
+# In-memory cache of the last few archived PDFs — paging through a
+# preview must not re-download the document per page.
+_preview_cache: dict[int, tuple[bytes, str]] = {}
+_PREVIEW_CACHE_MAX = 4
+
+
+async def _archived(paperless: PaperlessClient, doc_id: int) -> tuple[bytes, str]:
+    if doc_id not in _preview_cache:
+        _preview_cache[doc_id] = await paperless.download_archived(doc_id)
+        while len(_preview_cache) > _PREVIEW_CACHE_MAX:
+            _preview_cache.pop(next(iter(_preview_cache)))
+    return _preview_cache[doc_id]
+
+
+@router.get("/documents/{doc_id}/preview")
+async def preview_info(
+    doc_id: int, paperless: PaperlessClient = Depends(get_paperless)
+) -> dict:
+    """Page count of the archived rendition — drives the pager."""
+    import fitz
+
+    data, content_type = await _archived(paperless, doc_id)
+    doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
+    try:
+        return {"pages": doc.page_count}
+    finally:
+        doc.close()
+
+
+@router.get("/documents/{doc_id}/preview/{page}")
+async def preview_page(
+    doc_id: int,
+    page: int,
+    dpi: int = 130,
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> Response:
+    """One page of the archived rendition as PNG (1-based)."""
+    from app.llm.ocr import render_pages
+
+    data, content_type = await _archived(paperless, doc_id)
+    pages = render_pages(data, content_type, dpi=min(max(dpi, 50), 220), max_pages=page)
+    if page < 1 or page > len(pages):
+        raise HTTPException(404, "page out of range")
+    return Response(
+        content=pages[page - 1],
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.get("/documents/{doc_id}/history")
+async def document_history(
+    doc_id: int,
+    db: AsyncSession = Depends(get_session),
+) -> list[DocumentHistoryOut]:
+    """Every change this app applied to the document — journaled,
+    attributed, linked to the session that produced it."""
+    from app.db.models import AppliedChange, Proposal
+    from app.db.models import Session as SessionModel
+
+    rows = (
+        await db.execute(
+            select(Proposal, AppliedChange, SessionModel.title)
+            .join(AppliedChange, AppliedChange.proposal_id == Proposal.id)
+            .outerjoin(SessionModel, SessionModel.id == Proposal.session_id)
+            .where(
+                Proposal.entity_type == EntityType.document,
+                Proposal.entity_id == doc_id,
+            )
+            .order_by(AppliedChange.applied_at.desc())
+        )
+    ).all()
+    out: list[DocumentHistoryOut] = []
+    for proposal, change, session_title in rows:
+        payload = proposal.user_payload or proposal.agent_payload or {}
+        fields = sorted(
+            k for k, v in payload.items()
+            if k not in ("kind", "document_id", "entity_type", "entity_id")
+            and v is not None
+        )
+        out.append(
+            DocumentHistoryOut(
+                proposal_id=proposal.id,
+                session_id=proposal.session_id,
+                session_title=session_title or "",
+                kind=str(proposal.kind),
+                fields=fields,
+                applied_at=change.applied_at,
+                applied_by=change.actor,
+                edited=proposal.user_payload is not None,
+                reverted=change.reverted_at is not None,
+            )
+        )
+    return out
 
 
 @router.get("/documents/{doc_id}/thumb")
