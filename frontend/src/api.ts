@@ -194,9 +194,11 @@ export const api = {
       correspondent_id?: number;
       document_type_id?: number;
       page?: number;
+      page_size?: number;
     } = {},
   ) => {
     const params = new URLSearchParams({ page: String(opts.page ?? 1) });
+    if (opts.page_size) params.set("page_size", String(opts.page_size));
     if (opts.query) params.set("query", opts.query);
     if (opts.tag_id) params.set("tag_id", String(opts.tag_id));
     if (opts.correspondent_id) params.set("correspondent_id", String(opts.correspondent_id));

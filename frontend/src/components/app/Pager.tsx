@@ -1,7 +1,10 @@
-// THE pagination row for every paginated list: total count on the
-// left, the framework's pagination widget on the right. Numbered
-// pages with ellipsis; hidden entirely when there is nothing to page.
+// THE pagination row for every paginated list: total count (plus the
+// list's fetch status) on the left, page-size control and the
+// framework's pagination widget on the right. The page-size control
+// is always visible; the page numbers appear once there is something
+// to page.
 
+import { SimpleSelect } from "@/components/app/SimpleSelect";
 import {
   Pagination,
   PaginationContent,
@@ -26,19 +29,27 @@ function pageItems(page: number, pages: number): (number | "…")[] {
   return items;
 }
 
+export const PAGE_SIZES = ["10", "25", "50", "100"];
+
 export function Pager({
   page,
   pageSize,
   count,
   onPage,
+  onPageSize,
   label = "items",
+  status,
 }: {
   page: number;
   pageSize: number;
   count: number;
   onPage: (p: number) => void;
+  /** When given, a page-size control renders (always visible). */
+  onPageSize?: (n: number) => void;
   /** Noun for the count text ("13 documents"). */
   label?: string;
+  /** Fetch status / refresh affordance, shown next to the count. */
+  status?: React.ReactNode;
 }) {
   const pages = Math.max(1, Math.ceil(count / pageSize));
   const link = (p: number) => (e: React.MouseEvent) => {
@@ -47,9 +58,21 @@ export function Pager({
   };
   return (
     <div className="mt-2 flex items-center justify-between gap-4">
-      <p className="text-xs whitespace-nowrap text-muted-foreground">
-        {count} {label}
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="text-xs whitespace-nowrap text-muted-foreground">
+          {count} {label}
+        </p>
+        {status}
+      </div>
+      <div className="flex items-center gap-2">
+      {onPageSize && (
+        <SimpleSelect
+          ariaLabel="items per page"
+          value={String(pageSize)}
+          onValueChange={(v) => onPageSize(Number(v))}
+          options={PAGE_SIZES.map((n) => ({ value: n, label: `${n} / page` }))}
+        />
+      )}
       {pages > 1 && (
         <Pagination className="mx-0 w-auto justify-end">
           <PaginationContent>
@@ -87,6 +110,7 @@ export function Pager({
           </PaginationContent>
         </Pagination>
       )}
+      </div>
     </div>
   );
 }

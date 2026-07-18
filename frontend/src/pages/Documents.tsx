@@ -60,6 +60,7 @@ export default function Documents() {
   const [correspondentIdRaw] = useUrlNumber("correspondent");
   const [docTypeIdRaw] = useUrlNumber("type");
   const [page, setPage] = useUrlNumber("page", 1);
+  const [pageSize] = useUrlNumber("size", 25);
   const tagId = tagIdRaw || undefined;
   const correspondentId = correspondentIdRaw || undefined;
   const docTypeId = docTypeIdRaw || undefined;
@@ -86,8 +87,8 @@ export default function Documents() {
     document_type_id: docTypeId,
   };
   const { data, isLoading, isFetching, refetch, error } = useQuery({
-    queryKey: keys.documents(filters, page),
-    queryFn: () => api.listDocuments({ ...filters, page }),
+    queryKey: keys.documents({ ...filters, page_size: pageSize }, page),
+    queryFn: () => api.listDocuments({ ...filters, page, page_size: pageSize }),
   });
 
   const bulkAnalyze = useMutation({
@@ -136,10 +137,6 @@ export default function Documents() {
           </>
         }
       />
-
-      <div className="mb-2">
-        <FetchStatus resource="documents" isFetching={isFetching} onRefresh={() => refetch()} />
-      </div>
 
       <SelectionBar
         selection={selection}
@@ -205,10 +202,18 @@ export default function Documents() {
       )}
       <Pager
         page={page}
-        pageSize={data?.page_size ?? 25}
+        pageSize={pageSize}
         count={data?.count ?? 0}
         onPage={setPage}
+        onPageSize={(n) => patchUrl({ size: n === 25 ? null : n, page: null })}
         label="documents"
+        status={
+          <FetchStatus
+            resource="documents"
+            isFetching={isFetching}
+            onRefresh={() => refetch()}
+          />
+        }
       />
     </div>
   );

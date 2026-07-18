@@ -1,4 +1,4 @@
-import { useUrlParam } from "../hooks/useUrlState";
+import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { InboxBadge } from "../components/StatusBadge";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/app/PageHeader";
+import { Pager } from "@/components/app/Pager";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef, type MergeCandidate } from "../api";
 import { keys } from "../lib/keys";
@@ -74,7 +75,10 @@ function CandidateRow({ c, onReview }: { c: MergeCandidate; onReview: () => void
 export default function Taxonomy() {
   const params = useParams();
   const type = params.type as TypeKey;
-  const [filter, setFilter] = useUrlParam("name");
+  const [filter] = useUrlParam("name");
+  const [page, setPage] = useUrlNumber("page", 1);
+  const [pageSize] = useUrlNumber("size", 25);
+  const patchUrl = useUrlPatch();
   const navigate = useNavigate();
   const selection = useSelection();
   const typeDef = TYPES.find((t) => t.key === type);
@@ -116,11 +120,14 @@ export default function Taxonomy() {
     },
   });
 
-  const visible = (entities ?? []).filter(
+  const matching = (entities ?? []).filter(
     (e) => !filter || e.name.toLowerCase().includes(filter.toLowerCase()),
   );
-  // The inbox tag is a workflow marker — never analyzable.
+  const visible = matching.slice((page - 1) * pageSize, page * pageSize);
+  // The inbox tag is a workflow marker — never analyzable. Select-all
+  // in the header covers the page; the bar offers all matching.
   const selectable = visible.filter((e) => !e.is_inbox_tag).map((e) => e.id);
+  const allSelectable = matching.filter((e) => !e.is_inbox_tag).map((e) => e.id);
 
   if (!typeDef) return <Navigate to="/taxonomy" replace />;
 
@@ -134,18 +141,14 @@ export default function Taxonomy() {
             className="h-8 w-48"
             placeholder="filter by name…"
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => patchUrl({ name: e.target.value, page: null })}
           />
         }
       />
 
-      <div className="mb-3">
-        <FetchStatus resource={resource} isFetching={isFetching} onRefresh={() => refetch()} />
-      </div>
-
       <SelectionBar
         selection={selection}
-        allIds={selectable}
+        allIds={allSelectable}
         actionLabel={`Analyze ${selection.selected.size} ${type.replaceAll("_", " ")}(s)`}
         busy={bulkAnalyze.isPending}
         onAction={() => bulkAnalyze.mutate()}
@@ -225,6 +228,21 @@ export default function Taxonomy() {
           </TableBody>
         </Table>
       )}
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        count={matching.length}
+        onPage={setPage}
+        onPageSize={(n) => patchUrl({ size: n === 25 ? null : n, page: null })}
+        label={`${typeDef.label.toLowerCase()}`}
+        status={
+          <FetchStatus
+            resource={resource}
+            isFetching={isFetching}
+            onRefresh={() => refetch()}
+          />
+        }
+      />
       <div className="mt-2">
         <ErrorNotice error={reviewCandidate.error} />
       </div>
