@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
+import { errorMessage } from "../lib/errors";
 import { keys } from "../lib/keys";
 import { useSessionEvents } from "../hooks/useSessionEvents";
 import { entityHref } from "./EntityPage";
@@ -152,6 +153,8 @@ function EditableTitle({ id, title }: { id: number; title: string }) {
       <Input
         autoFocus
         aria-label="session name"
+        aria-invalid={rename.isError || undefined}
+        title={rename.isError ? errorMessage(rename.error) : undefined}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {

@@ -29,7 +29,13 @@ export default function JobDetail() {
   const { data: attention } = useQuery({
     queryKey: keys.jobAttention(jobId),
     queryFn: () => api.getJobAttention(jobId),
-    refetchInterval: 5000,
+    // Poll only while there is anything to wait for (AUDIT FP-L6) — a
+    // finished job left open in a tab must not hit the API forever.
+    refetchInterval: (q) => {
+      const active = job?.status === "queued" || job?.status === "running";
+      const remaining = (q.state.data?.remaining ?? 0) > 0;
+      return active || remaining ? 5000 : false;
+    },
   });
 
   if (error) return <ErrorNotice error={error} />;

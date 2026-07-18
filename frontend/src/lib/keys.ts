@@ -40,6 +40,7 @@ export const keys = {
   config: () => ["settings", "config"] as const,
   webhookStatus: () => ["settings", "webhook"] as const,
   documentHistory: (id: number) => ["document", id, "history"] as const,
+  documentPreview: (id: number) => ["document", id, "preview"] as const,
   prefs: () => ["prefs"] as const,
 } as const;
 

@@ -3,7 +3,7 @@
 // options (auto-apply, instructions, extra knobs) are in plain sight,
 // and nothing runs until Start.
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +40,15 @@ export function StartJobDialog({
 }) {
   const [auto, setAuto] = useState(false);
   const [instructions, setInstructions] = useState("");
+  // Fresh state per open (AUDIT FP-L9): dashboard callers keep this
+  // mounted, so stale auto/instructions/error must not leak into the
+  // next opening.
+  useEffect(() => {
+    if (open) {
+      setAuto(false);
+      setInstructions("");
+    }
+  }, [open]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">

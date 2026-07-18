@@ -1,5 +1,7 @@
-// List/filter/pagination state belongs in the URL: deep links work,
-// refresh keeps the view, back/forward navigates filter history.
+// List/filter/pagination state belongs in the URL: deep links work and
+// refresh keeps the view. Writes use replace (deliberate: debounced
+// searches and page flips must not spam the history stack — Back
+// leaves the page rather than replaying every filter state).
 // One tiny hook so every page does it the same way.
 
 import { useCallback } from "react";

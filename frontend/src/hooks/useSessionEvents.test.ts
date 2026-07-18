@@ -44,7 +44,7 @@ it("keeps the timeline chronological across model requests (part indices restart
   s = reduceProgress(s, { tool_done: "get_document", result: "{}" });
   s = reduceProgress(s, { part: 0, part_kind: "thinking", content: "second thoughts", tokens: 9 });
 
-  // FOUR items in order — request 2's part 0 must NOT overwrite
+  // THREE items in order — request 2's part 0 must NOT overwrite
   // request 1's item above the tool row.
   expect(s.items.map((i) => i.role)).toEqual(["thinking", "tool", "thinking"]);
   expect(s.items[0].content).toBe("planning");

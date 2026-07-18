@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { InboxBadge } from "../components/StatusBadge";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
@@ -125,6 +126,11 @@ export default function Taxonomy() {
   const matching = (entities ?? []).filter(
     (e) => !filter || e.name.toLowerCase().includes(filter.toLowerCase()),
   );
+  // Out-of-range deep links snap back to the last real page (FP-L2).
+  const lastPage = Math.max(1, Math.ceil(matching.length / pageSize));
+  useEffect(() => {
+    if (page > lastPage) setPage(lastPage);
+  }, [page, lastPage, setPage]);
   const visible = matching.slice((page - 1) * pageSize, page * pageSize);
   // The inbox tag is a workflow marker — never analyzable. Select-all
   // in the header covers the page; the bar offers all matching.

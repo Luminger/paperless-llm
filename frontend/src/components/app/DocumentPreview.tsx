@@ -4,6 +4,8 @@
 // inline in sessions next). Follows the theme — dark mode shows the
 // inverted rendition, so pages don't glare.
 
+import { api } from "../../api";
+import { keys } from "../../lib/keys";
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
@@ -70,11 +72,10 @@ export function DocumentViewerDialog({
 }) {
   const [page, setPage] = useState(1);
   const { data: info } = useQuery({
-    queryKey: ["document", documentId, "preview"],
-    queryFn: () =>
-      fetch(`/api/entities/documents/${documentId}/preview`).then(
-        (r) => r.json() as Promise<{ pages: number }>,
-      ),
+    // Through api.ts + keys.ts (AUDIT FP-L4): r.ok checked, 401s
+    // dispatch pllm:unauthorized like every other call.
+    queryKey: keys.documentPreview(documentId),
+    queryFn: () => api.getDocumentPreviewInfo(documentId),
     enabled: open,
     staleTime: 5 * 60_000,
   });

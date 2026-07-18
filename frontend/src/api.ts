@@ -233,6 +233,8 @@ export const api = {
   },
   getDocumentHistory: (id: number) =>
     request<DocumentHistory[]>(`/api/entities/documents/${id}/history`),
+  getDocumentPreviewInfo: (id: number) =>
+    request<{ pages: number }>(`/api/entities/documents/${id}/preview`),
   getDocument: (id: number) =>
     request<PaperlessDocument>(`/api/entities/documents/${id}`),
   listTags: () => request<EntityRef[]>("/api/entities/tags"),

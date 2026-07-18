@@ -1,3 +1,4 @@
+import { ErrorNotice } from "@/components/app/states";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -29,7 +30,7 @@ import { SessionList } from "../components/SessionList";
 function InboxBlock() {
   const navigate = useNavigate();
   const [dialog, setDialog] = useState(false);
-  const { data } = useQuery({
+  const { data, error: inboxError } = useQuery({
     queryKey: keys.inbox(),
     queryFn: api.getInbox,
     refetchInterval: 30_000,
@@ -40,6 +41,13 @@ function InboxBlock() {
       api.createJob({ inbox: true, ...opts }),
     onSuccess: (job) => navigate(`/jobs/${job.id}`),
   });
+  // A failing inbox query must not silently HIDE work items (FP-L7).
+  if (inboxError)
+    return (
+      <FramedCard title="Inbox" collapsible={false}>
+        <ErrorNotice error={inboxError} />
+      </FramedCard>
+    );
   if (!data || data.count === 0) return null;
   return (
     <FramedCard
@@ -110,7 +118,7 @@ function CorpusBlock() {
   const navigate = useNavigate();
   const [size, setSize] = useState("10");
   const [dialog, setDialog] = useState(false);
-  const { data } = useQuery({
+  const { data, error: corpusError } = useQuery({
     queryKey: keys.corpus(),
     queryFn: api.getCorpus,
     refetchInterval: 30_000,
@@ -120,6 +128,12 @@ function CorpusBlock() {
       api.createJob({ next_batch: Number(size), ...opts }),
     onSuccess: (job) => navigate(`/jobs/${job.id}`),
   });
+  if (corpusError)
+    return (
+      <FramedCard title="Corpus" collapsible={false}>
+        <ErrorNotice error={corpusError} />
+      </FramedCard>
+    );
   if (!data || data.total === 0) return null;
   const done = data.processed >= data.total;
   const pct = Math.round((data.processed / data.total) * 100);

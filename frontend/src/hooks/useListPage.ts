@@ -21,9 +21,17 @@ export function useClampPage(
   setPage: (n: number) => void,
   data: { count: number; results: unknown[] } | undefined,
   pageSize: number,
+  /** Proxied lists (paperless) answer out-of-range pages with a 404
+   * ERROR rather than an empty page — treat that as out-of-range too. */
+  error?: unknown,
 ) {
   useEffect(() => {
-    if (!data || data.results.length > 0 || data.count === 0 || page <= 1) return;
+    if (page <= 1) return;
+    if (error != null && data == null) {
+      setPage(1); // can't know the last page — restart at the front
+      return;
+    }
+    if (!data || data.results.length > 0 || data.count === 0) return;
     setPage(Math.max(1, Math.ceil(data.count / pageSize)));
-  }, [data, page, pageSize, setPage]);
+  }, [data, error, page, pageSize, setPage]);
 }

@@ -15,11 +15,12 @@ import { PageHeader } from "@/components/app/PageHeader";
 import { Pager } from "@/components/app/Pager";
 import { ResetFilters } from "@/components/app/ResetFilters";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
-import { EmptyState, ErrorNotice } from "@/components/app/states";
+import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type AuditEntry } from "../api";
 import { keys } from "../lib/keys";
 import { formatDateTime } from "../lib/format";
 import { AUDIT_KIND_TONE, TONE_BADGE, parseActor } from "../lib/labels";
+import { useClampPage } from "../hooks/useListPage";
 
 function ActorBadge({ actor }: { actor: string }) {
   const isUser = parseActor(actor).user;
@@ -232,11 +233,12 @@ export default function AuditLog() {
   // Filter changes reset the page in the SAME URL update.
   const setFilter = (v: string) => patchUrl({ kind: v, page: null });
   const pageSize = 20;
-  const { data, error } = useQuery({
+  const { data, error, isLoading } = useQuery({
     queryKey: keys.audit(filter, page),
     queryFn: () => api.listAudit(page, pageSize, filter || undefined),
     refetchInterval: 10000,
   });
+  useClampPage(page, setPage, data, pageSize);
 
   return (
     <div>
@@ -259,7 +261,9 @@ export default function AuditLog() {
         application made (with its from → to diff), attributed to who caused it.
       </p>
       <ErrorNotice error={error} />
-      {data && data.count === 0 ? (
+      {isLoading ? (
+        <LoadingState lines={6} />
+      ) : data && data.count === 0 ? (
         <EmptyState title="Nothing logged yet." />
       ) : (
         <Table>

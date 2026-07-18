@@ -15,6 +15,7 @@ import { MultiFilter } from "@/components/app/MultiFilter";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ResetFilters } from "@/components/app/ResetFilters";
 import { UrlSearchInput } from "@/components/app/UrlSearchInput";
+import { useClampPage } from "../hooks/useListPage";
 import { Pager } from "@/components/app/Pager";
 import {
   SelectAllHeader,
@@ -64,6 +65,7 @@ export default function Documents() {
     queryKey: keys.documents({ ...filters, page_size: pageSize }, page),
     queryFn: () => api.listDocuments({ ...filters, page, page_size: pageSize }),
   });
+  useClampPage(page, setPage, data, pageSize, error);
 
   const bulkAnalyze = useMutation({
     mutationFn: () => api.createJob({ document_ids: [...selection.selected] }),

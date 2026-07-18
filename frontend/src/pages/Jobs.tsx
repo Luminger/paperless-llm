@@ -27,7 +27,7 @@ import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Pager } from "@/components/app/Pager";
-import { useUrlNumber } from "../hooks/useUrlState";
+import { useListPage } from "../hooks/useListPage";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Job, type JobCreate } from "../api";
 import { keys } from "../lib/keys";
@@ -188,8 +188,7 @@ function NewJob({ onDone }: { onDone: () => void }) {
 export default function Jobs() {
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
-  const [page, setPage] = useUrlNumber("page", 1);
-  const pageSize = 25;
+  const { page, setPage, pageSize, setPageSize } = useListPage(25);
   const { data, error, isLoading } = useQuery({
     queryKey: keys.jobs(page),
     queryFn: () => api.listJobs(page, pageSize),
@@ -326,6 +325,7 @@ export default function Jobs() {
         pageSize={pageSize}
         count={data?.count ?? 0}
         onPage={setPage}
+        onPageSize={setPageSize}
         label="jobs"
       />
     </div>

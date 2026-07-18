@@ -965,10 +965,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
   Todo #88.
 
 ### FP-L2 — LOW — out-of-range page shows misleading "no results"
-- **Status:** OPEN — `Documents.tsx:152-157`, `Taxonomy.tsx:182`,
-  `Pager.tsx:54`: deep link `?page=40` after shrink → "No documents
-  match" while the count disagrees. Clamp to last page or say "page out
-  of range". Todo #88.
+- **Status:** FIXED — `useClampPage` wired into Documents (incl. the proxied-404 case; live-verified: ?page=99 snaps back with rows), AuditLog; Taxonomy clamps its client-side slice
 
 ### FP-L3 — LOW — `SessionList`/`PagedList` page state never resets on entity change
 - **Status:** FIXED — SessionList keyed by `entityType:id` on EntityPage — `SessionList.tsx:152` local useState survives
@@ -976,24 +973,16 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
   next entity. Key by entity identity. Todo #86.
 
 ### FP-L4 — LOW — `DocumentViewerDialog` bypasses api.ts and keys.ts
-- **Status:** OPEN — `DocumentPreview.tsx:73-78`: raw fetch, no r.ok
-  check (500 JSON → pages undefined), 401 doesn't dispatch
-  `pllm:unauthorized`, ad-hoc query key. Add
-  `getDocumentPreviewInfo`/`keys.documentPreview`. Todo #88.
+- **Status:** FIXED — `api.getDocumentPreviewInfo` + `keys.documentPreview` (r.ok + pllm:unauthorized like every call)
 
 ### FP-L5 — LOW — FramedCard fold toggle mouse-only
 - **Status:** FIXED — see UI-U2
 
 ### FP-L6 — LOW — JobDetail polls attention every 5s forever
-- **Status:** OPEN — `JobDetail.tsx:32` unconditional refetchInterval
-  (job query itself stops correctly). Gate on job active/remaining.
-  Todo #88.
+- **Status:** FIXED — polls only while the job is active or attention remains
 
 ### FP-L7 — LOW — silent failures on smaller mutations
-- **Status:** OPEN — EditableTitle rename (`SessionDetail.tsx:130-137`),
-  SessionRow archive toggle (`SessionList.tsx:24-28`), dashboard
-  inbox/corpus blocks return null on query error (HTTP 500 hides work
-  items). Thread ErrorNotice. Todo #88.
+- **Status:** FIXED — rename input flags aria-invalid + error tooltip; archive toggle shows "Failed — retry"; dashboard inbox/corpus blocks render ErrorNotice on HTTP errors instead of hiding work
 
 ### FP-L8 — LOW — `DateTimePrefs.exampleFor` mutates global pref state during render
 - **Status:** FIXED — pure `formatWithPrefs(prefs, iso, kind)`; no store round-trip (which would now notify app-wide per ticking second) — `DateTimePrefs.tsx:29-40,96,106`: temporary
@@ -1002,17 +991,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
   `formatWith(prefs, date)`. Todo #87.
 
 ### FP-L9 — LOW — misc consistency nits
-- **Status:** OPEN — todo #88
-  - `SystemInfo.tsx:15` ad-hoc `["meta"]` key vs `keys.meta()`.
-  - `Jobs.tsx:180` hard-coded page size 25, no size control (only
-    top-level list without it).
-  - `AuditLog.tsx` missing LoadingState skeleton on first load.
-  - ~~format.ts dead "system" branch~~ (fixed with FP-M2 rework).
-  - `App.tsx:135-139` opening Settings while `/settings` open pushes a
-    second entry → must close twice; guard `if (settingsOpen) return`.
-  - StartJobDialog state (auto/instructions/stale error) persists across
-    close/reopen on the dashboard (Jobs.tsx gates mount; dashboard
-    doesn't).
+- **Status:** FIXED — SystemInfo uses keys.meta(); Jobs page-size control via useListPage; AuditLog loading skeleton; dead "system" branch gone (FP-M2); double-/settings guard; StartJobDialog fresh per open; framed archived-sessions query lazy by construction (Radix unmounts closed content); test comment drift fixed
 
 ### FP — verified correct (keep)
 Batched URL updates via one `useUrlPatch` call everywhere; query keys

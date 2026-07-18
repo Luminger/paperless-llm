@@ -12,7 +12,7 @@ export function SystemInfo() {
     queryKey: keys.settings(),
     queryFn: api.getSettingsOverview,
   });
-  const { data: meta } = useQuery({ queryKey: ["meta"], queryFn: api.getMeta });
+  const { data: meta } = useQuery({ queryKey: keys.meta(), queryFn: api.getMeta });
   if (error) return <ErrorNotice error={error} />;
   if (isLoading || !s) return <LoadingState lines={6} />;
   return (

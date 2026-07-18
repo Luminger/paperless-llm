@@ -15,6 +15,7 @@ import {
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Session } from "../api";
 import { formatDateTime } from "../lib/format";
+import { errorMessage } from "../lib/errors";
 import { keys } from "../lib/keys";
 import { Pager } from "@/components/app/Pager";
 import { FramedCard } from "@/components/app/Framed";
@@ -89,13 +90,16 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
             size="sm"
             className="h-6 px-2 text-xs text-muted-foreground"
             title={
-              s.archived_at
-                ? "Unarchive (allows applying again)"
-                : "Archive (keeps history & revert, blocks applying)"
+              archive.isError
+                ? errorMessage(archive.error)
+                : s.archived_at
+                  ? "Unarchive (allows applying again)"
+                  : "Archive (keeps history & revert, blocks applying)"
             }
             onClick={() => archive.mutate()}
+            aria-invalid={archive.isError || undefined}
           >
-            {s.archived_at ? "Unarchive" : "Archive"}
+            {archive.isError ? "Failed — retry" : s.archived_at ? "Unarchive" : "Archive"}
           </Button>
         </TableCell>
       </TableRow>

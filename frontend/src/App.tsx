@@ -135,8 +135,10 @@ export default function App() {
   const section: SettingsSection = (SECTION_VALUES as readonly string[]).includes(hash)
     ? (hash as SettingsSection)
     : "preferences";
-  const openSettings = () =>
+  const openSettings = () => {
+    if (settingsOpen) return; // already open — no second history entry
     navigate("/settings", { state: { background: location } });
+  };
   const closeSettings = () => {
     if (background) navigate(-1);
     else navigate("/");
