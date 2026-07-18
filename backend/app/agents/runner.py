@@ -53,25 +53,52 @@ def _progress_handler(session_id: int, step_id: int | None):
     Passing a handler is also what switches pydantic-ai to streamed
     model requests — only used when the profile declares
     supports_streaming."""
-    from pydantic_ai.messages import TextPartDelta
+    from pydantic_ai.messages import (
+        PartStartEvent,
+        TextPart,
+        TextPartDelta,
+        ThinkingPart,
+        ThinkingPartDelta,
+    )
 
     async def handler(ctx, events) -> None:
         tokens = 0
-        text = ""
+        # part index -> (kind, accumulated content); the live UI renders
+        # the SAME items the finished transcript shows.
+        parts: dict[int, list] = {}
+        dirty: set[int] = set()
         last_publish = 0.0
+
+        def flush(now: float) -> None:
+            nonlocal last_publish
+            for i in sorted(dirty):
+                kind, content = parts[i]
+                bus.publish(
+                    session_id, "step_progress",
+                    step_id=step_id, part=i, part_kind=kind,
+                    content=content[-6000:], tokens=tokens,
+                )
+            dirty.clear()
+            last_publish = now
+
         async for ev in events:
+            if isinstance(ev, PartStartEvent):
+                if isinstance(ev.part, ThinkingPart):
+                    parts[ev.index] = ["thinking", ev.part.content or ""]
+                    dirty.add(ev.index)
+                elif isinstance(ev.part, TextPart):
+                    parts[ev.index] = ["text", ev.part.content or ""]
+                    dirty.add(ev.index)
             delta = getattr(ev, "delta", None)
             if delta is not None:
                 tokens += 1
-                if isinstance(delta, TextPartDelta):
-                    text += delta.content_delta
+                if isinstance(delta, (TextPartDelta, ThinkingPartDelta)) and ev.index in parts:
+                    parts[ev.index][1] += delta.content_delta or ""
+                    dirty.add(ev.index)
             now = time.monotonic()
-            if tokens and now - last_publish >= 1.0:
-                bus.publish(
-                    session_id, "step_progress",
-                    step_id=step_id, tokens=tokens, text_tail=text[-400:],
-                )
-                last_publish = now
+            if dirty and now - last_publish >= 1.0:
+                flush(now)
+        flush(time.monotonic())
 
     return handler
 
@@ -107,7 +134,14 @@ async def run_agent_turn(
     kept reviewable)."""
     settings = get_settings()
     profile = settings.llm.agent
-    agent = agent or build_agent(session.agent_kind)
+    from app.services.prefs import format_instructions, get_prefs
+
+    prefs = await get_prefs(db)
+    agent = agent or build_agent(
+        session.agent_kind,
+        base=prefs.get("agent_prompt_base", ""),
+        addition=prefs.get("agent_prompt_addition", ""),
+    )
 
     deps = AgentDeps(
         paperless=paperless,
@@ -128,9 +162,7 @@ async def run_agent_turn(
     preamble = _steering_preamble(session, open_proposals)
     # The model writes dates/times the way the user reads them — the UI
     # and the agent must agree on formatting.
-    from app.services.prefs import format_instructions, get_prefs
-
-    fmt = format_instructions(await get_prefs(db))
+    fmt = format_instructions(prefs)
     preamble = f"{preamble}\n\n{fmt}" if preamble else fmt
     if history_exists := bool(session.message_history):
         # Follow-up turns: promises don't change proposals — tools do.

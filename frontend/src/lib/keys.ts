@@ -24,6 +24,7 @@ export const keys = {
   syncStatus: () => ["sync-status"] as const,
   meta: () => ["meta"] as const,
   settings: () => ["settings"] as const,
+  prefs: () => ["prefs"] as const,
 } as const;
 
 import type { QueryClient } from "@tanstack/react-query";

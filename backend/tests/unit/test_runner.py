@@ -322,3 +322,21 @@ def test_all_agent_kinds_buildable(monkeypatch):
 
     for kind in AgentKind:
         assert build_agent(kind) is not None
+
+
+def test_prompt_composition():
+    """BASE (override or default) + task + user addition."""
+    from app.agents.registry import DEFAULT_BASE_PROMPT, compose_prompt
+    from app.db.models import AgentKind
+
+    default = compose_prompt(AgentKind.document)
+    assert default.startswith(DEFAULT_BASE_PROMPT)
+    assert "process ONE document" in default
+
+    tuned = compose_prompt(
+        AgentKind.tag, base="My tiny model prompt.", addition="Nur Deutsch."
+    )
+    assert tuned.startswith("My tiny model prompt.")
+    assert DEFAULT_BASE_PROMPT not in tuned
+    assert "review ONE tag" in tuned
+    assert "Nur Deutsch." in tuned

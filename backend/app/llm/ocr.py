@@ -103,12 +103,27 @@ async def run_ocr(
     data, content_type = await paperless.download_original(document_id)
     checksum = hashlib.sha256(data).hexdigest()
 
+    # The OCR prompt is user-tunable (Settings): base override + user
+    # addition. Tweaks invalidate the cache via a fingerprint.
+    from app.services.prefs import get_prefs
+
+    prefs = await get_prefs(db)
+    base_prompt = prefs.get("ocr_prompt_base", "").strip() or OCR_PROMPT
+    ocr_addition = prefs.get("ocr_prompt_addition", "").strip()
+    if ocr_addition:
+        base_prompt += (
+            "\nAdditional instructions from the archive's owner "
+            "(follow them):\n" + ocr_addition + "\n"
+        )
+    fingerprint = hashlib.sha256(base_prompt.encode()).hexdigest()[:16]
+
     cached = await db.scalar(
         select(OcrResult).where(
             OcrResult.document_id == document_id,
             OcrResult.checksum == checksum,
             OcrResult.model == model.model_name,
             OcrResult.prompt_version == profile.prompt_version,
+            OcrResult.prompt_fingerprint == fingerprint,
         )
     )
     if not force:
@@ -127,7 +142,7 @@ async def run_ocr(
 
     images = render_pages(data, content_type, dpi or profile.render_dpi, profile.max_pages)
 
-    prompt = OCR_PROMPT
+    prompt = base_prompt
     if instructions:
         prompt += f"\nAdditional instructions from the user (follow them):\n{instructions}\n"
     agent: Agent[None, str] = Agent(model, system_prompt=prompt, model_settings=model_settings)
@@ -184,6 +199,7 @@ async def run_ocr(
                 checksum=checksum,
                 model=model.model_name,
                 prompt_version=profile.prompt_version,
+                prompt_fingerprint=fingerprint,
                 pages=pages,
                 text=text,
                 similarity=similarity,

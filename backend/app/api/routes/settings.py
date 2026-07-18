@@ -10,7 +10,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.agents.registry import DEFAULT_BASE_PROMPT
 from app.config import get_settings
+from app.llm.ocr import OCR_PROMPT
 
 router = APIRouter(prefix="/api", tags=["settings"])
 
@@ -46,6 +48,11 @@ class WebhookOut(BaseModel):
     apply_policy: str
 
 
+class PromptDefaults(BaseModel):
+    agent_base: str
+    ocr_base: str
+
+
 class SettingsOut(BaseModel):
     llm_agent: ProfileOut
     llm_ocr: ProfileOut
@@ -55,6 +62,9 @@ class SettingsOut(BaseModel):
     queue: QueueOut
     webhook: WebhookOut
     database: str  # backend only (sqlite/postgresql), never the DSN
+    # System-supplied prompt bases (the Settings UI shows them as the
+    # reset/default state for user tweaking).
+    prompt_defaults: PromptDefaults
 
 
 @router.get("/settings")
@@ -113,4 +123,7 @@ async def get_settings_overview() -> SettingsOut:
             apply_policy=s.webhook.apply_policy,
         ),
         database=s.database_url.split(":", 1)[0].split("+", 1)[0],
+        prompt_defaults=PromptDefaults(
+            agent_base=DEFAULT_BASE_PROMPT, ocr_base=OCR_PROMPT
+        ),
     )

@@ -159,28 +159,16 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
 }
 
 function LiveTrace({ live }: { live: LiveActivity | undefined }) {
-  if (!live || (live.tools.length === 0 && live.tokens === 0)) return null;
+  if (!live || (live.items.length === 0 && live.tokens === 0)) return null;
+  // The streaming view IS the finished view: same rows, same
+  // expandability — just still growing.
   return (
-    <div className="space-y-1 rounded-md border border-blue-200 bg-blue-50/50 p-2 text-xs leading-5 dark:border-blue-900 dark:bg-blue-950/30">
-      {live.tools.map((t, i) => (
-        <p key={i} className="truncate font-mono text-muted-foreground">
-          → {t.tool}
-          {t.args && t.args !== "{}" && (
-            <span className="text-muted-foreground/60"> {t.args}</span>
-          )}
-        </p>
-      ))}
-      {live.tokens > 0 && (
-        <p className="text-muted-foreground">
-          <span className="mr-1 inline-block size-2 animate-pulse rounded-full bg-blue-500" />
-          streaming… {live.tokens} tokens
-        </p>
-      )}
-      {live.textTail && (
-        <p className="font-mono text-[11px] whitespace-pre-wrap text-muted-foreground/70">
-          …{live.textTail.slice(-200)}
-        </p>
-      )}
+    <div className="space-y-1">
+      <Transcript items={live.items} />
+      <p className="px-2 text-xs text-muted-foreground">
+        <span className="mr-1.5 inline-block size-2 animate-pulse rounded-full bg-blue-500" />
+        generating… {live.tokens} tokens
+      </p>
     </div>
   );
 }

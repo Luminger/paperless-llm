@@ -1074,11 +1074,10 @@ async def test_prefs_roundtrip_and_partial_update(client):
     """Prefs persist server-side; partial updates merge; unknown values
     are rejected."""
     body = (await client.get("/api/prefs")).json()
-    assert body == {
-        "date_format": "system",
-        "time_format": "24h-seconds",
-        "time_zone": "system",
-    }
+    assert body["date_format"] == "system"
+    assert body["time_format"] == "24h-seconds"
+    assert body["time_zone"] == "system"
+    assert body["agent_prompt_addition"] == ""
 
     r = await client.put(
         "/api/prefs", json={"date_format": "eu", "time_zone": "Europe/Berlin"}
@@ -1213,3 +1212,21 @@ async def test_no_continuation_while_other_proposals_are_open(client, db):
         )
     ).all()
     assert chats == []  # the user still has a decision to make
+
+
+async def test_prompt_tuning_roundtrip(client):
+    """Prompt base overrides + additions persist server-side; the
+    settings overview exposes the system defaults for the UI."""
+    long_addition = "Focus on tax documents. " * 30  # > 255 chars (Text column)
+    r = await client.put(
+        "/api/prefs",
+        json={"agent_prompt_addition": long_addition, "ocr_prompt_base": "Transcribe.\n"},
+    )
+    assert r.status_code == 200
+    body = (await client.get("/api/prefs")).json()
+    assert body["agent_prompt_addition"] == long_addition
+    assert body["ocr_prompt_base"] == "Transcribe.\n"
+
+    overview = (await client.get("/api/settings")).json()
+    assert "ONE proposal per turn" in overview["prompt_defaults"]["agent_base"]
+    assert "OCR engine" in overview["prompt_defaults"]["ocr_base"]

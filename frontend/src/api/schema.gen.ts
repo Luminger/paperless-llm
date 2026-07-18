@@ -1131,11 +1131,31 @@ export interface components {
         /** PrefsOut */
         PrefsOut: {
             /**
+             * Agent Prompt Addition
+             * @default
+             */
+            agent_prompt_addition: string;
+            /**
+             * Agent Prompt Base
+             * @default
+             */
+            agent_prompt_base: string;
+            /**
              * Date Format
              * @default system
              * @enum {string}
              */
             date_format: "system" | "iso" | "eu" | "us";
+            /**
+             * Ocr Prompt Addition
+             * @default
+             */
+            ocr_prompt_addition: string;
+            /**
+             * Ocr Prompt Base
+             * @default
+             */
+            ocr_prompt_base: string;
             /**
              * Time Format
              * @default 24h-seconds
@@ -1150,8 +1170,16 @@ export interface components {
         };
         /** PrefsUpdate */
         PrefsUpdate: {
+            /** Agent Prompt Addition */
+            agent_prompt_addition?: string | null;
+            /** Agent Prompt Base */
+            agent_prompt_base?: string | null;
             /** Date Format */
             date_format?: ("system" | "iso" | "eu" | "us") | null;
+            /** Ocr Prompt Addition */
+            ocr_prompt_addition?: string | null;
+            /** Ocr Prompt Base */
+            ocr_prompt_base?: string | null;
             /** Time Format */
             time_format?: ("24h" | "24h-seconds" | "12h" | "12h-seconds") | null;
             /** Time Zone */
@@ -1184,6 +1212,13 @@ export interface components {
             supports_streaming?: boolean | null;
             /** Thinking */
             thinking?: string | null;
+        };
+        /** PromptDefaults */
+        PromptDefaults: {
+            /** Agent Base */
+            agent_base: string;
+            /** Ocr Base */
+            ocr_base: string;
         };
         /** ProposalOut */
         ProposalOut: {
@@ -1419,6 +1454,7 @@ export interface components {
             llm_ocr: components["schemas"]["ProfileOut"];
             llm_reranker: components["schemas"]["ProfileOut"];
             paperless: components["schemas"]["PaperlessOut"];
+            prompt_defaults: components["schemas"]["PromptDefaults"];
             queue: components["schemas"]["QueueOut"];
             webhook: components["schemas"]["WebhookOut"];
         };

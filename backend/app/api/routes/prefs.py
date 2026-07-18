@@ -24,12 +24,21 @@ class PrefsOut(BaseModel):
     time_format: TimeFormat = "24h-seconds"
     # "system" or an IANA zone name.
     time_zone: str = "system"
+    # Prompt tuning (empty base = the system-supplied prompt).
+    agent_prompt_base: str = ""
+    agent_prompt_addition: str = ""
+    ocr_prompt_base: str = ""
+    ocr_prompt_addition: str = ""
 
 
 class PrefsUpdate(BaseModel):
     date_format: DateFormat | None = None
     time_format: TimeFormat | None = None
     time_zone: str | None = None
+    agent_prompt_base: str | None = None
+    agent_prompt_addition: str | None = None
+    ocr_prompt_base: str | None = None
+    ocr_prompt_addition: str | None = None
 
 
 async def _load(db: AsyncSession) -> PrefsOut:
@@ -54,7 +63,9 @@ async def put_prefs(
             db.add(UserPref(key=key, value=str(value)))
         else:
             row.value = str(value)
-        changed[key] = str(value)
+        changed[key] = (
+            str(value) if key.startswith(("date_", "time_")) else f"({len(str(value))} chars)"
+        )
     if changed:
         await record(db, "prefs", "updated", **changed)
     await db.commit()

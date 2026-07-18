@@ -13,6 +13,13 @@ DEFAULTS = {
     "date_format": "system",
     "time_format": "24h-seconds",
     "time_zone": "system",
+    # Prompt tuning: base overrides replace the system-supplied base
+    # prompt (empty = use the built-in); additions are appended. Both
+    # exist because small local models often need per-setup tuning.
+    "agent_prompt_base": "",
+    "agent_prompt_addition": "",
+    "ocr_prompt_base": "",
+    "ocr_prompt_addition": "",
 }
 
 

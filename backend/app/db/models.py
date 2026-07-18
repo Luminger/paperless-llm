@@ -364,6 +364,9 @@ class OcrResult(Base):
     checksum: Mapped[str] = mapped_column(String(64))
     model: Mapped[str] = mapped_column(String(200))
     prompt_version: Mapped[int] = mapped_column()
+    # Fingerprint of the EFFECTIVE prompt (base override + user
+    # addition) — user prompt tweaks must invalidate the cache.
+    prompt_fingerprint: Mapped[str] = mapped_column(String(16), default="")
     pages: Mapped[list[Any]] = mapped_column(default=list)  # per-page markdown
     text: Mapped[str] = mapped_column(Text, default="")
     # Similarity vs. the paperless `content` at OCR time (0..1).
@@ -387,7 +390,7 @@ class UserPref(Base):
     __tablename__ = "user_prefs"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str] = mapped_column(String(255), default="")
+    value: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
