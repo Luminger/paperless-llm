@@ -55,3 +55,14 @@ it("keeps the timeline chronological across model requests (part indices restart
   expect(s.items).toHaveLength(3);
   expect(s.items[2].content).toBe("second thoughts, extended");
 });
+
+it("AUDIT FS-2: tool_done matches FIFO — parallel same-name calls keep their own results", () => {
+  let s = reduceProgress(EMPTY, { tool: "get_document", args: '{"document_id": 1}' });
+  s = reduceProgress(s, { tool: "get_document", args: '{"document_id": 2}' });
+  // Backend serializes execution behind the tool lock: done events
+  // arrive in START order.
+  s = reduceProgress(s, { tool_done: "get_document", result: "doc one" });
+  s = reduceProgress(s, { tool_done: "get_document", result: "doc two" });
+  expect(s.items[0].tool_result).toBe("doc one");
+  expect(s.items[1].tool_result).toBe("doc two");
+});

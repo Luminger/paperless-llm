@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArchiveRestore, ArrowRight, Check, Pencil, X } from "lucide-react";
@@ -189,7 +189,7 @@ export default function SessionDetail() {
   const qc = useQueryClient();
   const [search] = useSearchParams();
   const inFlow = search.get("flow") != null;
-  const { live, connected, nextRetryAt } = useSessionEvents(sessionId);
+  const { live, connected, nextRetryAt, pruneLive } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: keys.session(sessionId),
     queryFn: () => api.getSession(sessionId),
@@ -198,6 +198,16 @@ export default function SessionDetail() {
     // sessions from appearing frozen forever.
     refetchInterval: connected ? false : 10_000,
   });
+  // State-driven live pruning (AUDIT FS-4): once the refetch shows a
+  // step settled, its streamed items are superseded by the transcript.
+  useEffect(() => {
+    if (!s) return;
+    pruneLive(
+      s.steps
+        .filter((st) => st.state === "running" || st.state === "pending")
+        .map((st) => st.id),
+    );
+  }, [s, pruneLive]);
 
   if (error) return <ErrorNotice error={error} />;
   if (!s) return <LoadingState lines={6} />;
@@ -257,7 +267,8 @@ export default function SessionDetail() {
             turn={turnByStep.get(step.id)}
           />
         ))}
-        {canContinue && <NextTurnBox sessionId={s.id} turn={turnNo + 1} />}
+        {/* keyed by turn (AUDIT FS-7): a finished turn always yields a fresh box */}
+        {canContinue && <NextTurnBox key={turnNo + 1} sessionId={s.id} turn={turnNo + 1} />}
       </div>
 
       {/* Connection state lives OUT of the content flow (the central

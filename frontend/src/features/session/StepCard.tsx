@@ -292,12 +292,17 @@ function TurnBody({
   // proposal (matched by the id in the tool result, order fallback).
   const out: React.ReactNode[] = [];
   let fold: typeof items = [];
+  let foldStart = 0; // index (in items) of the current fold's first item
   let cursor = 0;
   const consumed = new Set<number>();
   const flush = (liveTail = false) => {
     if (fold.length > 0) {
       out.push(
-        <WorkFold key={`fold-${out.length}`} items={fold} open={liveTail} />,
+        // Keyed by CONTENT position (AUDIT FS-10): the items array only
+        // appends during streaming, so a fold keeps its identity (and
+        // the user's expand/collapse state) when the composition around
+        // it shifts.
+        <WorkFold key={`fold-${foldStart}`} items={fold} open={liveTail} />,
       );
       fold = [];
     }
@@ -413,6 +418,7 @@ function TurnBody({
         return;
       }
     }
+    if (fold.length === 0) foldStart = idx;
     fold.push(item);
   });
   // While streaming the trailing fold stays OPEN (it is the live

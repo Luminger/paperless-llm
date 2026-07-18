@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { keys } from "../lib/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import type { TranscriptItem } from "../api";
@@ -97,8 +97,12 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
     };
   }
   if (ev.tool_done) {
+    // FIFO (AUDIT FS-2): the backend serializes execution behind a
+    // lock, so done events arrive in START order — matching from the
+    // END swapped args/results (and proposal attribution) of parallel
+    // same-name calls.
     const items = [...cur.items];
-    for (let i = items.length - 1; i >= 0; i--) {
+    for (let i = 0; i < items.length; i++) {
       if (items[i].role === "tool" && items[i].tool_name === ev.tool_done && items[i].tool_result == null) {
         items[i] = {
           ...items[i],
@@ -138,15 +142,23 @@ export function useSessionEvents(sessionId: number) {
     let es: EventSource | null = null;
     let timer: number | undefined;
     let disposed = false;
+    let closedRetries = 0;
 
     const connect = () => {
       if (disposed) return;
       es = new EventSource(`/api/sessions/${sessionId}/events`);
       es.onopen = () => {
+        closedRetries = 0;
         setConnected(true);
         setNextRetryAt(null);
-        // Anything that happened while we were away: refetch once.
-        qc.invalidateQueries({ queryKey: keys.session(sessionId) });
+        // AUDIT FS-3: events may have been missed (no replay on the
+        // bus) — the gen counter and part keys can be arbitrarily out
+        // of sync, which would overwrite items IN PLACE and scramble
+        // the timeline. Drop live state; the server accumulates part
+        // content, so a running step's prose reappears on the next
+        // flush. The refetch itself rides on the server's `hello`
+        // event (AUDIT FS-13: one refetch per reconnect, not two).
+        setLive({});
       };
       es.onerror = () => {
         setConnected(false);
@@ -155,8 +167,13 @@ export function useSessionEvents(sessionId: number) {
         // stays dead — it needs a fresh object. Poll until it sticks.
         if (es?.readyState === EventSource.CLOSED) {
           es.close();
-          setNextRetryAt(Date.now() + 3000);
-          timer = window.setTimeout(connect, 3000);
+          // Growing backoff (3s → 30s cap): a finished session left in
+          // a background tab must not hammer a restarting server
+          // every 3 seconds forever (AUDIT FS-13).
+          const delay = Math.min(30_000, 3000 * 2 ** Math.min(closedRetries, 4));
+          closedRetries += 1;
+          setNextRetryAt(Date.now() + delay);
+          timer = window.setTimeout(connect, delay);
         } else {
           // Browser-managed retry (transient error): imminent.
           setNextRetryAt(Date.now());
@@ -182,16 +199,12 @@ export function useSessionEvents(sessionId: number) {
         }
         return; // other progress — no refetch
       }
-      if (ev.type === "step_changed" && ev.step_id != null) {
-        const id = ev.step_id;
-        if (ev.state !== "running") {
-          setLive((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-        }
-      }
+      // AUDIT FS-4: live state is NOT deleted here — until the refetch
+      // lands, the cached step still reads 'running' and the streamed
+      // transcript would flash away to a bare pulse. The consumer
+      // prunes via pruneLive() once refetched data shows the step
+      // settled (which also collects entries whose step_changed event
+      // was dropped by the bus).
       qc.invalidateQueries({ queryKey: keys.session(sessionId) });
       qc.invalidateQueries({ queryKey: keys.sessionOcr(sessionId) });
     };
@@ -202,5 +215,15 @@ export function useSessionEvents(sessionId: number) {
       es?.close();
     };
   }, [sessionId, qc]);
-  return { live, connected, nextRetryAt };
+  const pruneLive = useCallback((activeStepIds: number[]) => {
+    setLive((prev) => {
+      const keep = new Set(activeStepIds);
+      const stale = Object.keys(prev).filter((k) => !keep.has(Number(k)));
+      if (stale.length === 0) return prev;
+      const next = { ...prev };
+      for (const k of stale) delete next[Number(k)];
+      return next;
+    });
+  }, []);
+  return { live, connected, nextRetryAt, pruneLive };
 }

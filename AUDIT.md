@@ -732,7 +732,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Todo:** #83
 
 ### FS-2 — MEDIUM — `tool_done` matches backwards: parallel same-name tool calls swap results
-- **Status:** OPEN
+- **Status:** FIXED — FIFO matching (backend lock serializes execution, done events arrive in start order); reducer test pins two parallel same-name calls
 - **Where:** `hooks/useSessionEvents.ts:95-110`; backend
   `registry.py:24-68`
 - **Detail:** Start events publish before the tool_lock, done events in
@@ -745,7 +745,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Todo:** #84
 
 ### FS-3 — MEDIUM — reconnect / dropped events desync the `gen` counter → scrambled live timeline
-- **Status:** OPEN
+- **Status:** FIXED — live state dropped on es.onopen (server accumulates part content; prose reappears next flush)
 - **Where:** `useSessionEvents.ts:56-64,137-160`; bus has no replay
   (`events.py:22-46` QueueFull drops)
 - **Detail:** `gen` only increments on a *received* tool event. Missed
@@ -759,7 +759,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Todo:** #84
 
 ### FS-4 — MEDIUM — live transcript flickers away at step completion
-- **Status:** OPEN
+- **Status:** FIXED — step_changed no longer deletes live state; SessionDetail prunes state-driven via pruneLive() once refetched data shows the step settled (also collects entries whose events were dropped). Live-verified: zero content dips across a full streamed analysis
 - **Where:** `useSessionEvents.ts:178-186` + `StepCard.tsx:283-297`
 - **Detail:** On `step_changed` (non-running) the hook deletes the live
   entry immediately, then invalidates; until the refetch lands the
@@ -797,10 +797,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
 - **Todo:** #85
 
 ### FS-7 — LOW — `NextTurnBox` can wedge on "sent" text
-- **Status:** OPEN — `ContinueBox.tsx:29-45`: `sent` never cleared on
-  success and the component has no key; if the chat step completes
-  before any refetch observes it busy, the box stays frozen with no
-  input until reload. `key={turnNo}`. Todo #84.
+- **Status:** FIXED — keyed by turn ordinal (a finished turn always yields a fresh box)
 
 ### FS-8 — LOW — scheduled-retry steps show a live "working…" pulse
 - **Status:** FIXED — `deriveTurnView` treats pending+scheduled_at as non-streaming (failed attempt's transcript renders, header badge carries the plan); unit test
@@ -812,10 +809,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
   nodes only) or document. Todo #85.
 
 ### FS-10 — LOW — positional keys remount work-folds/rows, losing toggle state
-- **Status:** OPEN — `StepCard.tsx` `key={fold-${out.length}}`,
-  `Transcript.tsx` `key={i}` within slices; recomposition shifts
-  positions → user-expanded folds snap shut during live runs. Stable
-  keys from content identity (`live_key ?? ts`). Todo #84.
+- **Status:** FIXED — folds keyed by their first item's index in the append-only items array (content identity, stable across recomposition)
 
 ### FS-11 — LOW — work-fold count label counts items the transcript hides
 - **Status:** FIXED — shared `isRenderable` exported from Transcript, used by rows AND fold counts
@@ -826,11 +820,7 @@ Scope: `features/session/*`, `useSessionEvents.ts`, `ProposalCard.tsx`,
   Todo #85.
 
 ### FS-13 — LOW — double refetch per reconnect; endless 3s reconnect loop on closed streams
-- **Status:** OPEN — `useSessionEvents.ts:139-159`: onopen invalidates +
-  hello invalidates again (two fetches per reconnect); server-closed
-  streams reconnect every 3s forever even for finished sessions in
-  background tabs. Let hello be the single trigger; back-off/stop for
-  terminal sessions. Todo #84.
+- **Status:** FIXED — hello is the single refetch trigger; closed-stream reconnects back off 3s→30s (reset on success)
 
 ### FS-14 — LOW — clickable step header not keyboard-accessible
 - **Status:** FIXED — real <button> with aria-expanded (with UI-U2)
