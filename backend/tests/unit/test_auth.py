@@ -1,4 +1,5 @@
-"""Auth modes: cookie integrity, proxy header trust, enforcement."""
+"""ONE auth story: paperless credentials -> signed cookie session.
+Cookie integrity, login/logout flow, enforcement on protected routes."""
 
 from __future__ import annotations
 
@@ -37,30 +38,9 @@ async def client(db, paperless_client, monkeypatch):
         yield c
 
 
-async def test_mode_none_is_open(client):
-    r = await client.get("/api/auth/me")
-    assert r.json() == {"mode": "none", "user": "user"}
-    assert (await client.get("/api/stats")).status_code == 200
-
-
-async def test_mode_proxy_trusts_header_and_401s_without(client, monkeypatch):
-    get_settings().auth.mode = "proxy"
-    try:
-        r = await client.get("/api/stats")
-        assert r.status_code == 401
-        assert r.json()["detail"]["code"] == "unauthorized"
-        r = await client.get("/api/stats", headers={"Remote-User": "simon"})
-        assert r.status_code == 200
-        me = await client.get("/api/auth/me", headers={"Remote-User": "simon"})
-        assert me.json() == {"mode": "proxy", "user": "simon"}
-    finally:
-        get_settings().auth.mode = "none"
-
-
-async def test_mode_paperless_login_flow(client, respx_mock, monkeypatch):
+async def test_login_flow(client, respx_mock, monkeypatch):
     from app.services import auth as auth_service
 
-    get_settings().auth.mode = "paperless"
     monkeypatch.setattr(auth_service, "_secret_cache", "test-secret")
     respx_mock.post("http://paperless.test/api/token/").mock(
         side_effect=lambda request: (
@@ -70,26 +50,21 @@ async def test_mode_paperless_login_flow(client, respx_mock, monkeypatch):
         )
     )
     get_settings().paperless.base_url = "http://paperless.test"
-    try:
-        # No cookie: 401 on protected routes, me shows the mode.
-        assert (await client.get("/api/stats")).status_code == 401
-        assert (await client.get("/api/auth/me")).json()["user"] is None
-        # Bad credentials rejected.
-        r = await client.post(
-            "/api/auth/login", json={"username": "evil", "password": "x"}
-        )
-        assert r.status_code == 401
-        # Good credentials: cookie set, protected routes open.
-        r = await client.post(
-            "/api/auth/login", json={"username": "simon", "password": "pw"}
-        )
-        assert r.status_code == 200
-        assert r.json() == {"mode": "paperless", "user": "simon"}
-        assert (await client.get("/api/stats")).status_code == 200
-        me = await client.get("/api/auth/me")
-        assert me.json()["user"] == "simon"
-        # Logout clears the cookie.
-        await client.post("/api/auth/logout")
-        assert (await client.get("/api/stats")).status_code == 401
-    finally:
-        get_settings().auth.mode = "none"
+    # No cookie: protected routes 401, me shows nobody, open routes stay open.
+    r = await client.get("/api/stats")
+    assert r.status_code == 401
+    assert r.json()["detail"]["code"] == "unauthorized"
+    assert (await client.get("/api/auth/me")).json() == {"user": None}
+    assert (await client.get("/api/health")).status_code == 200
+    # Bad credentials rejected.
+    r = await client.post("/api/auth/login", json={"username": "evil", "password": "x"})
+    assert r.status_code == 401
+    # Good credentials: cookie set, protected routes open.
+    r = await client.post("/api/auth/login", json={"username": "simon", "password": "pw"})
+    assert r.status_code == 200
+    assert r.json() == {"user": "simon"}
+    assert (await client.get("/api/stats")).status_code == 200
+    assert (await client.get("/api/auth/me")).json()["user"] == "simon"
+    # Logout clears the cookie.
+    await client.post("/api/auth/logout")
+    assert (await client.get("/api/stats")).status_code == 401

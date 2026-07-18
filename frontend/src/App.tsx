@@ -105,15 +105,11 @@ function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          {auth.mode === "none"
-            ? "Signed in locally"
-            : `Signed in as ${auth.user}`}
+          Signed in as {auth.user}
         </DropdownMenuLabel>
-        {auth.mode === "paperless" && (
-          <DropdownMenuItem onSelect={() => logout.mutate()} className="gap-2">
-            <LogOut className="size-4" /> Sign out
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem onSelect={() => logout.mutate()} className="gap-2">
+          <LogOut className="size-4" /> Sign out
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

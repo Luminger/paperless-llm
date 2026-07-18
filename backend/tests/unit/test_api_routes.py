@@ -30,9 +30,15 @@ DOC = {
 
 @pytest.fixture
 async def client(db, paperless_client):
+    from app.api.deps import require_user
+    from app.services.auth import CurrentUser
+
     app = create_app()
     app.dependency_overrides[get_session] = lambda: db
     app.dependency_overrides[get_paperless] = lambda: paperless_client
+    # Routes are exercised as an authenticated user; the login flow
+    # itself is covered in test_auth.py.
+    app.dependency_overrides[require_user] = lambda: CurrentUser(name="test")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

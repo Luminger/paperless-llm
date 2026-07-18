@@ -41,7 +41,6 @@ services:
 
       # --- access ---------------------------------------------------
       # none (trusted network) | proxy (Remote-User header) | paperless
-      PLLM_AUTH__MODE: ${PLLM_AUTH_MODE:-none}
       # Enables POST /api/webhooks/paperless with this shared secret.
       PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
     volumes:

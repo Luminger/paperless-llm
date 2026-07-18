@@ -296,7 +296,6 @@ class MetaOut(BaseModel):
 
 
 class AuthMeOut(BaseModel):
-    mode: Literal["none", "proxy", "paperless"]
     user: str | None = None
 
 

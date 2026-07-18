@@ -1,4 +1,4 @@
-// Login (paperless auth mode): credentials are validated against
+// Login: credentials are validated against
 // paperless itself — no user store of our own.
 
 import { useState } from "react";

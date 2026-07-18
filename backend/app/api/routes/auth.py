@@ -1,5 +1,6 @@
-"""Login/logout/me. The ``me`` endpoint is reachable without auth so
-the login page can know the configured mode."""
+"""Login/logout/me. Credentials are validated against paperless itself
+(``POST /api/token/``) — paperless is the user store; the signed cookie
+carries the user's own paperless token for attributed applies."""
 
 from __future__ import annotations
 
@@ -29,12 +30,6 @@ class LoginRequest(BaseModel):
 
 
 async def resolve_user(request: Request) -> CurrentUser | None:
-    cfg = get_settings().auth
-    if cfg.mode == "none":
-        return CurrentUser(name="user")
-    if cfg.mode == "proxy":
-        name = request.headers.get(cfg.proxy_header)
-        return CurrentUser(name=name) if name else None
     cookie = request.cookies.get(COOKIE_NAME)
     if not cookie:
         return None
@@ -44,7 +39,7 @@ async def resolve_user(request: Request) -> CurrentUser | None:
 @router.get("/me")
 async def me(request: Request) -> AuthMeOut:
     user = await resolve_user(request)
-    return AuthMeOut(mode=get_settings().auth.mode, user=user.name if user else None)
+    return AuthMeOut(user=user.name if user else None)
 
 
 @router.post("/login")
@@ -54,8 +49,6 @@ async def login(
     db: AsyncSession = Depends(get_session),
 ) -> AuthMeOut:
     cfg = get_settings().auth
-    if cfg.mode != "paperless":
-        raise HTTPException(409, "login is only available in paperless auth mode")
     token = await validate_paperless_credentials(body.username, body.password)
     if token is None:
         raise HTTPException(
@@ -73,7 +66,7 @@ async def login(
     )
     await record(db, "auth", "login", user=body.username)
     await db.commit()
-    return AuthMeOut(mode=cfg.mode, user=user.name)
+    return AuthMeOut(user=user.name)
 
 
 @router.post("/logout")
@@ -87,4 +80,4 @@ async def logout(
     if user is not None:
         await record(db, "auth", "logout", user=user.name)
         await db.commit()
-    return AuthMeOut(mode=get_settings().auth.mode, user=None)
+    return AuthMeOut(user=None)

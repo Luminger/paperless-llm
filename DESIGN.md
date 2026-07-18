@@ -443,19 +443,14 @@ fallback so deep links survive reloads.
 
 ## Authentication
 
-Required before the container is deployable outside a trusted network
-(lands in M6). Three modes, config-selected:
+ONE auth story (the none/proxy mode matrix shipped in M6 and was
+deliberately removed again — an unused decision surface): login is
+validated against paperless itself (`POST /api/token/`); no user store
+of our own. The per-user paperless token is used for that user's
+applied changes, so paperless's audit trail attributes changes to the
+real person and paperless permissions apply naturally.
 
-1. **`none`** (default) — trusted network / VPN, current behavior.
-2. **`proxy`** — trust a `Remote-User` header from an authenticating
-   reverse proxy (Authelia/authentik pattern); no in-app credentials.
-3. **`paperless`** — login form validated against paperless itself
-   (`POST /api/token/`); no user store of our own. The per-user
-   paperless token is used for that user's applied changes, so
-   paperless's audit trail attributes changes to the real person and
-   paperless permissions apply naturally.
-
-Common machinery: signed httpOnly session cookie,
+Machinery: signed httpOnly session cookie,
 `/api/auth/login|logout|me`, frontend 401 interceptor + login page.
 The webhook keeps its separate shared-secret header (machine-to-machine).
 Multi-user is access-control only in v1: one shared workspace, no
@@ -647,7 +642,7 @@ scenarios accumulate from M1 on.
      unschema'd route, no raw `String(error)` in the UI, no
      hand-maintained API types.
 6. **M6 — authentication, packaging & docs** *(shipped)*: auth modes
-   (none/proxy/paperless — see Authentication) with signed-cookie
+   (paperless credentials — see Authentication) with signed-cookie
    sessions and per-user paperless tokens, wired into the user menu +
    login page; production compose (`deploy/production`) and hardened
    Containerfile (non-root, healthcheck, /data volume); e2e smoke

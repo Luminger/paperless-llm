@@ -920,11 +920,6 @@ export interface components {
         };
         /** AuthMeOut */
         AuthMeOut: {
-            /**
-             * Mode
-             * @enum {string}
-             */
-            mode: "none" | "proxy" | "paperless";
             /** User */
             user?: string | null;
         };
@@ -1656,8 +1651,6 @@ export interface components {
         SessionStatus: "idle" | "running" | "failed";
         /** SettingsOut */
         SettingsOut: {
-            /** Auth Mode */
-            auth_mode: string;
             /** Database */
             database: string;
             llm_agent: components["schemas"]["ProfileOut"];

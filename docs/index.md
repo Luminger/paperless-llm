@@ -61,7 +61,7 @@ always allowed.
 
 - [Getting started](getting-started.md) — run it with podman/docker
   compose in a few minutes.
-- [Configuration](configuration.md) — model profiles, auth modes,
+- [Configuration](configuration.md) — model profiles, authentication,
   webhook, tuning knobs.
 - [Architecture](architecture.md) — how the step engine, proposals, and
   the journal fit together.

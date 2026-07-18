@@ -125,18 +125,13 @@ class PaperlessConfig(BaseModel):
 class AuthConfig(BaseModel):
     """Who may use the app (see DESIGN.md "Authentication").
 
-    - ``none`` (default): trusted network / VPN — no auth.
-    - ``proxy``: trust the username an authenticating reverse proxy
-      (Authelia/authentik) injects via ``proxy_header``.
-    - ``paperless``: login form validated against paperless itself
-      (``POST /api/token/``) — no user store of our own; the per-user
-      paperless token performs that user's applied changes so
-      paperless's own audit trail names the real person.
+    ONE auth story: the login form is validated against paperless
+    itself (``POST /api/token/``) — no user store of our own, no mode
+    matrix. The per-user paperless token performs that user's applied
+    changes, so paperless's own audit trail names the real person.
     """
 
-    mode: Literal["none", "proxy", "paperless"] = "none"
-    proxy_header: str = "Remote-User"
-    # Signed session cookie lifetime (paperless mode).
+    # Signed session cookie lifetime.
     session_hours: int = 24 * 7
     # HMAC secret for the session cookie. Empty = generated once and
     # persisted app-side (survives restarts).

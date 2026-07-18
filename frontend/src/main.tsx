@@ -15,15 +15,17 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <PrefsProvider>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            {/* Prefs are a signed-in concern: fetching them before the
+                session exists would just 401. */}
+            <PrefsProvider>
               <App />
-            </AuthProvider>
-          </BrowserRouter>
-        </QueryClientProvider>
-      </PrefsProvider>
+            </PrefsProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,
 );

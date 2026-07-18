@@ -43,7 +43,7 @@ export function SystemInfo() {
           <CardTitle className="text-base">Access</CardTitle>
         </CardHeader>
         <CardContent>
-          <Row label="Authentication">{s.auth_mode}</Row>
+          <Row label="Authentication">paperless credentials</Row>
         </CardContent>
       </Card>
       <Card>

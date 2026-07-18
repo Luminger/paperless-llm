@@ -49,6 +49,22 @@ async function visit(path, expectText) {
 
 console.log(`smoke against ${BASE}`);
 
+// Sign in first - auth is paperless credentials, always on.
+const USER = process.env.PLLM_E2E_USER ?? "admin";
+const PASS = process.env.PLLM_E2E_PASS ?? "admin";
+await page.goto(`${BASE}/`, { waitUntil: "load" });
+await new Promise((r) => setTimeout(r, 1200));
+if ((await page.evaluate(() => document.body.innerText)).includes("Sign in")) {
+  await page.type('#login-user', USER);
+  await page.type('#login-pass', PASS);
+  await page.click('button[type="submit"]');
+  await new Promise((r) => setTimeout(r, 1500));
+}
+check(
+  !(await page.evaluate(() => document.body.innerText)).includes("Sign in"),
+  "logged in with paperless credentials",
+);
+
 // Every top-level surface renders its key content.
 await visit("/", "Dashboard");
 await visit("/documents", "Documents");

@@ -33,10 +33,10 @@ What the app talks to, exhaustively:
 
 ## Authentication & exposure
 
-The default (`auth.mode = none`) assumes a trusted network. Before
-exposing the app beyond it, enable [an auth mode](configuration.md#authentication)
-— proxy-based or paperless-account login — and put it behind TLS (a
-reverse proxy). The webhook uses its own shared secret regardless.
+Signing in requires [paperless credentials](configuration.md#authentication)
+— always, there is no "open" mode. Before exposing the app beyond a
+trusted network, put it behind TLS (a reverse proxy). The webhook uses
+its own shared secret regardless.
 
 ## What the model can and cannot do
 

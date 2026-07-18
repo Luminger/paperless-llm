@@ -68,7 +68,6 @@ services:
       PLLM_LLM__RERANKER__MODEL: ${PLLM_RERANKER_MODEL:-}
       # Webhook ingress shared secret (empty disables the endpoint).
       PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
-      PLLM_AUTH__MODE: ${PLLM_AUTH_MODE:-none}
       # URL users reach paperless under (deep links); LAN-reachable.
       PLLM_PAPERLESS__EXTERNAL_URL: ${PLLM_PAPERLESS_EXTERNAL_URL:-}
       PLLM_DATABASE_URL: sqlite+aiosqlite:////data/paperless_llm.sqlite3

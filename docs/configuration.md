@@ -94,23 +94,20 @@ once per `find_documents` call.
 
 ## Authentication
 
-`auth.mode` (`PLLM_AUTH__MODE`) selects one of three modes:
+There is exactly **one** auth story: you sign in with your **paperless
+credentials**. The login form is validated against paperless itself
+(`POST /api/token/`) — paperless is the user store, there is no mode
+matrix and nothing to configure.
 
-| Mode | Behavior |
-| --- | --- |
-| `none` *(default)* | No auth — for trusted networks / VPNs. |
-| `proxy` | Trust the username your authenticating reverse proxy injects (header name: `auth.proxy_header`, default `Remote-User`). No in-app credentials. |
-| `paperless` | Login form validated against paperless itself (`POST /api/token/`). No user store of our own. |
-
-In `paperless` mode, each user's applied changes run under **their own
-paperless token** — paperless's audit trail names the real person and
-paperless permissions apply naturally. Sessions are signed httpOnly
-cookies (`auth.session_hours`, default one week); the signing secret is
+Each user's applied changes run under **their own paperless token** —
+paperless's audit trail names the real person and paperless
+permissions apply naturally. Sessions are signed httpOnly cookies
+(`auth.session_hours`, default one week); the signing secret is
 generated once and persisted, or set explicitly via
 `auth.session_secret`.
 
 The webhook is separate machine-to-machine auth (shared secret) and is
-unaffected by the user-auth mode.
+unaffected by user auth.
 
 ## Webhook
 

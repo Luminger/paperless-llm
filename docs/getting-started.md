@@ -52,15 +52,9 @@ Two options, freely combined:
   `X-PLLM-Token: <secret>`. New documents get analyzed as they arrive
   and wait for your review on the dashboard.
 
-## Enabling authentication
+## Signing in
 
-For anything beyond a trusted home network, set an auth mode in `.env`:
-
-```bash
-# Log in with paperless accounts (recommended):
-PLLM_AUTH_MODE=paperless
-# ... or trust your authenticating reverse proxy (Authelia, authentik):
-PLLM_AUTH_MODE=proxy
-```
-
-Details in [Configuration → Authentication](configuration.md#authentication).
+You sign in with your **paperless credentials** — paperless is the user
+store, there is nothing to configure. Applied changes run under your
+own paperless token, so paperless's audit trail names you. Details in
+[Configuration → Authentication](configuration.md#authentication).

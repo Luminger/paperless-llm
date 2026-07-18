@@ -13,8 +13,8 @@ from app.services.auth import CurrentUser
 
 
 async def require_user(request: Request) -> CurrentUser:
-    """Attached to every protected router. Resolves the caller per the
-    configured auth mode, 401s otherwise, and attributes all work of
+    """Attached to every protected router. Resolves the caller from the
+    signed session cookie, 401s otherwise, and attributes all work of
     this request to the named user (actor contextvar)."""
     from app.api.routes.auth import resolve_user
 
@@ -24,8 +24,7 @@ async def require_user(request: Request) -> CurrentUser:
             401, {"code": "unauthorized", "message": "authentication required"}
         )
     request.state.user = user
-    if get_settings().auth.mode != "none":
-        actor_var.set(f"user:{user.name}")
+    actor_var.set(f"user:{user.name}")
     return user
 
 
