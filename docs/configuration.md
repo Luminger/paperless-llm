@@ -74,9 +74,14 @@ Without a reranker the tool still works and keeps the full-text order.
 
 | Key | Meaning |
 | --- | --- |
-| `llm.reranker.base_url` | e.g. `https://hyperion.example.net` (with or without `/v1`) |
+| `llm.reranker.base_url` | e.g. `http://127.0.0.1:8091` — a bare host gets `/rerank` appended (TEI/Infinity's native path); a `…/v1` base gets `/v1/rerank` |
 | `llm.reranker.model` | Served model name, e.g. `bge-reranker-v2-m3` |
 | `llm.reranker.api_key` | Bearer token if the endpoint wants one |
+
+A 0.5–1B multilingual reranker (e.g. `BAAI/bge-reranker-v2-m3` via
+[Infinity](https://github.com/michaelfeil/infinity)) is enough — it
+even runs fine on CPU: ~6 s for 50 candidates on a desktop Ryzen,
+once per `find_documents` call.
 
 ## Paperless
 

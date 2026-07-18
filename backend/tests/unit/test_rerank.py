@@ -27,14 +27,14 @@ def reranker_enabled(monkeypatch):
 
 
 def test_endpoint_normalization():
-    assert _endpoint("http://x:8091") == "http://x:8091/v1/rerank"
+    assert _endpoint("http://x:8091") == "http://x:8091/rerank"
     assert _endpoint("http://x:8091/v1") == "http://x:8091/v1/rerank"
     assert _endpoint("http://x:8091/v1/") == "http://x:8091/v1/rerank"
 
 
 @respx.mock
 async def test_rerank_orders_by_score(reranker_enabled):
-    route = respx.post(f"{RERANK_URL}/v1/rerank").mock(
+    route = respx.post(f"{RERANK_URL}/rerank").mock(
         return_value=Response(200, json={"results": [
             {"index": 0, "relevance_score": 0.1},
             {"index": 2, "relevance_score": 0.9},
@@ -86,7 +86,7 @@ async def test_find_documents_reranked(paperless_client, reranker_enabled):
     from app.agents.tools import find_documents
 
     _mock_search()
-    respx.post(f"{RERANK_URL}/v1/rerank").mock(
+    respx.post(f"{RERANK_URL}/rerank").mock(
         return_value=Response(200, json={"results": [
             {"index": 2, "relevance_score": 0.95},
             {"index": 1, "relevance_score": 0.80},
@@ -104,7 +104,7 @@ async def test_find_documents_survives_rerank_outage(paperless_client, reranker_
     from app.agents.tools import find_documents
 
     _mock_search()
-    respx.post(f"{RERANK_URL}/v1/rerank").mock(return_value=Response(503))
+    respx.post(f"{RERANK_URL}/rerank").mock(return_value=Response(503))
     ctx = SimpleNamespace(deps=SimpleNamespace(paperless=paperless_client))
     out = await find_documents(ctx, "insurance", top_k=2)
     assert out["reranked"] is False

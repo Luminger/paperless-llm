@@ -64,6 +64,8 @@ services:
       # Optional local embeddings endpoint (entity index / merge candidates).
       PLLM_LLM__EMBEDDINGS__BASE_URL: ${PLLM_EMBEDDINGS_BASE_URL:-}
       PLLM_LLM__EMBEDDINGS__MODEL: ${PLLM_EMBEDDINGS_MODEL:-}
+      PLLM_LLM__RERANKER__BASE_URL: ${PLLM_RERANKER_BASE_URL:-}
+      PLLM_LLM__RERANKER__MODEL: ${PLLM_RERANKER_MODEL:-}
       # Webhook ingress shared secret (empty disables the endpoint).
       PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
       PLLM_AUTH__MODE: ${PLLM_AUTH_MODE:-none}

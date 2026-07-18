@@ -177,8 +177,10 @@ async def find_documents(
     reranked = False
     if docs and rerank_enabled():
         # Title + head of content is what a reranker can actually use;
-        # full documents would drown it.
-        texts = [f"{d.title}\n{(d.content or '')[:1500]}" for d in docs]
+        # full documents would drown it, and CPU rerankers are
+        # latency-bound on text length (~1000 chars ≈ 6s for 50 docs
+        # on a Ryzen 9700X — measured, not guessed).
+        texts = [f"{d.title}\n{(d.content or '')[:1000]}" for d in docs]
         try:
             order = await rerank(query, texts, top_n=top_k)
             reranked = True

@@ -14,10 +14,28 @@ A bulk job's document set is always an explicit, reproducible scope:
 - **Inbox** — everything carrying an inbox tag
 - **Untagged** — documents with no tags
 - **Tag** — everything with a given tag
+- **All documents** — the whole archive (offered for OCR-only jobs)
+- **Corpus batch** — the next N never-analyzed documents, oldest
+  first (see [Cleaning up an existing archive](corpus.md))
 - **Entities** — a set of tags/correspondents/types for taxonomy review
 
 There is deliberately no "documents matching this search text" scope —
-a job you re-run should mean the same thing every time.
+a job you re-run should mean the same thing every time. Every scope is
+resolved to concrete document ids at creation; the job page shows
+exactly what it covers. Documents that already have an active session
+are skipped.
+
+## Two kinds of document jobs
+
+- **Analyze metadata** (default) — the full pipeline: optional re-OCR
+  (gated), then the metadata analysis with its decision loop.
+- **Re-do OCR only** — every document is re-transcribed and the
+  pipeline **ends there**: no analysis, no metadata proposals. In
+  review mode each document gates for your decision; with auto-apply
+  (off by default) the new text is written directly — journaled and
+  revertible — and unchanged transcriptions are skipped. This is the
+  corpus-rehab opener: run it over **All documents** before starting
+  [metadata cleanup](corpus.md).
 
 ## Apply policy
 
@@ -47,6 +65,12 @@ a job like any other — visible, cancellable, audited. Configure
 `webhook.redo_ocr` and `webhook.apply_policy` for the hands-off
 pipeline of your choice: from "just propose, I'll review over coffee"
 to "fix the metadata and let me spot-check the journal".
+
+## Reviewing a job's output
+
+A review-mode job over many documents produces many waiting sessions.
+The job page's **Review N waiting** button walks them as a queue — see
+[flow-through review](sessions.md#reviewing-a-whole-job).
 
 ## Cancellation
 

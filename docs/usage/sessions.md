@@ -15,7 +15,9 @@ queued → [ocr_running → ocr_review] → analyzing → done
 ```
 
 The OCR stage only exists when you request re-OCR (per analysis, or as
-the webhook default).
+the webhook default). In an [OCR-only job](jobs.md#two-kinds-of-document-jobs)
+the pipeline deliberately ends at the gate — resolved gate, session
+done, no analysis.
 
 ## The OCR gate
 
@@ -59,6 +61,19 @@ Free-text steering appears wherever a decision is pending:
   check whether the date matches the letterhead"*.
 - **Per entity**: [instructions](taxonomy.md#per-entity-instructions)
   the agent must obey whenever it sees that entity.
+
+## Reviewing a whole job
+
+When a bulk job leaves dozens of sessions waiting on you, don't walk
+them from the dashboard one by one. The job page's **Review N
+waiting** button opens the first session that needs you, with a slim
+**flow bar** on top: the job it belongs to, how many sessions still
+wait, and **Next →**. Next jumps to the following session with an open
+gate or pending proposal, wrapping around until nothing waits.
+
+Advancing is deliberately manual: deciding a proposal often makes the
+*same* document continue with a follow-up proposal a few seconds later
+— you leave when this document is truly done, not when a timer fires.
 
 ## Steps can fail — and recover
 

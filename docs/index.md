@@ -22,6 +22,11 @@ an agent to work on the boring parts of document management:
   untagged, or a tag's worth of documents; optionally auto-apply with a
   full undo journal. A webhook analyzes new documents as paperless
   consumes them.
+- **Archive cleanup that scales** — re-OCR the whole corpus as one
+  job, then [work the metadata in batches](usage/corpus.md): the
+  dashboard tracks how much of the archive has been analyzed and
+  always offers the next slice, while matching rules make each batch
+  easier than the last.
 
 ## The two ideas that shape everything
 

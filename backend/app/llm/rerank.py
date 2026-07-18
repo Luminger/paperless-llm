@@ -23,9 +23,11 @@ log = logging.getLogger(__name__)
 
 def _endpoint(base_url: str) -> str:
     base = base_url.rstrip("/")
-    # Accept both ".../v1" bases (OpenAI-style config symmetry) and
-    # bare hosts; the Cohere-compatible path is /v1/rerank.
-    return f"{base}/rerank" if base.endswith("/v1") else f"{base}/v1/rerank"
+    # TEI and Infinity serve the Cohere shape at /rerank on a bare
+    # host; a ".../v1" base (OpenAI-style config symmetry, or an nginx
+    # alias) gets /v1/rerank. Measured against Infinity 0.0.77, which
+    # 404s /v1/rerank.
+    return f"{base}/rerank"
 
 
 def rerank_enabled() -> bool:

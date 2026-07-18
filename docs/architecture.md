@@ -51,6 +51,10 @@ search) and `propose_*` tools. Guardrails are code, not vibes:
   prompt.
 - Tool iterations are capped; tool results are clamped to the token
   budget; taxonomy listings attach the user's per-entity instructions.
+- Document *finding* is two-stage and context-budgeted: paperless
+  full-text recall, an optional local rerank, and only the top hits —
+  compact summaries with snippets — reach the model. Archives scale;
+  the context doesn't have to.
 
 The OCR pipeline runs **outside** the tool loop: page rendering,
 batched vision calls, similarity scoring, caching — deterministic
