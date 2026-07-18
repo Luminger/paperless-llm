@@ -158,3 +158,50 @@ async def test_auto_apply_refuses_archived_sessions(db, monkeypatch):
     monkeypatch.setattr("app.services.pipeline.apply_proposal", fake_apply)
     await _maybe_auto_apply(db, None, session, step)
     assert called["n"] == 0  # nothing applied
+
+
+async def test_audit_failure_does_not_poison_the_session(db):
+    """AUDIT SV-M4: a failed audit flush must roll back to a savepoint —
+    the caller's transaction stays usable (previously every later
+    statement raised PendingRollbackError, recording successful turns
+    as failed steps)."""
+    from app.db.models import AgentKind, Session
+    from app.services.audit import record
+
+    # Unserializable detail -> flush inside record() fails.
+    await record(db, "test", "boom", commit=False, bad=object())
+
+    # The caller can still do real work afterwards.
+    s = Session(agent_kind=AgentKind.document)
+    db.add(s)
+    await db.commit()
+    assert s.id is not None
+
+
+async def test_counter_failure_does_not_poison_the_session(db):
+    """Same savepoint guarantee for counters."""
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import AgentKind, Counter, Session
+    from app.services import counters
+
+    # Force the insert-race branch: UPDATE matches nothing, and the
+    # insert flush raises IntegrityError (as if another worker won).
+    real_flush = type(db).flush
+    calls = {"n": 0}
+
+    async def flaky_flush(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise IntegrityError("dup", None, Exception("unique"))
+        return await real_flush(self)
+
+    with patch.object(type(db), "flush", flaky_flush):
+        await counters.increment(db, test_counter=1)
+
+    s = Session(agent_kind=AgentKind.document)
+    db.add(s)
+    await db.commit()
+    assert s.id is not None

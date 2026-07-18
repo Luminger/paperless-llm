@@ -55,7 +55,11 @@ async def lifespan(app: FastAPI):
     await workers.start()
     yield
     await workers.stop()
+    # AUDIT SV-L5: await the cancellation — a writer mid-drain that is
+    # cancelled un-awaited loses the records it already popped and logs
+    # "Task was destroyed but it is pending".
     traffic_writer.cancel()
+    await asyncio.gather(traffic_writer, return_exceptions=True)
     from app.db.session import session_scope
 
     try:

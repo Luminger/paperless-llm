@@ -24,9 +24,15 @@ async def increment(db: AsyncSession, **deltas: int) -> None:
                 update(Counter).where(Counter.key == key).values(value=Counter.value + delta)
             )
             if result.rowcount == 0:
+                # AUDIT SV-M4: the insert race must roll back to a
+                # SAVEPOINT, not poison the caller's transaction — a
+                # bare flush failure would make every later statement
+                # of the caller raise PendingRollbackError (recording a
+                # successful agent turn as a failed step).
                 try:
-                    db.add(Counter(key=key, value=delta))
-                    await db.flush()
+                    async with db.begin_nested():
+                        db.add(Counter(key=key, value=delta))
+                        await db.flush()
                 except IntegrityError:
                     await db.execute(
                         update(Counter)

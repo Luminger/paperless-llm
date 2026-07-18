@@ -405,7 +405,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
 - **Todo:** #77
 
 ### SV-M4 — MEDIUM — `counters.increment` IntegrityError recovery poisons the caller's transaction
-- **Status:** OPEN
+- **Status:** FIXED — insert race wrapped in `begin_nested()` savepoint (counters) and audit.record's whole add+flush likewise; tests pin that the caller's session survives a failed flush
 - **Where:** `app/services/counters.py:27-45`; same pattern
   `app/services/audit.py:33-43`
 - **Detail:** On the insert race, `flush()` raising IntegrityError puts
@@ -464,7 +464,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
   it). `defer(message_history)` in engine paths. Todo #75.
 
 ### SV-L5 — LOW — traffic-log writer shutdown: cancel not awaited
-- **Status:** OPEN — `app/main.py:58-70`; writer may be mid-drain when
+- **Status:** FIXED — `cancel()` + `await gather(..., return_exceptions=True)` before the final drain — `app/main.py:58-70`; writer may be mid-drain when
   cancelled → records lost + "Task was destroyed" warning. `cancel()`
   then `await gather(..., return_exceptions=True)` before final drain.
   Todo #78.
@@ -476,7 +476,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
   denormalized `ocr_only` column; reuse the id set. Todo #77.
 
 ### SV-L7 — LOW — manual-retry attempt entry has a different shape
-- **Status:** OPEN — `steps.py:198` appends `{"manual_retry_at": ...}`
+- **Status:** WONTFIX — the frontend deliberately consumes `manual_retry_at` as a divider row in the attempts timeline (StepCard); the shape difference is a feature, not drift — `steps.py:198` appends `{"manual_retry_at": ...}`
   vs `{attempt, started_at, finished_at, error}` elsewhere. Unify.
   Todo #78.
 

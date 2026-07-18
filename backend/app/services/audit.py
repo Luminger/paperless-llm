@@ -27,10 +27,17 @@ async def record(
     from app.services.actor import current_actor
 
     try:
-        db.add(AuditLog(kind=kind, action=action, actor=actor or current_actor(), detail=detail))
+        # SAVEPOINT so a failed flush cannot poison the caller's
+        # transaction (AUDIT SV-M4 — same hazard as counters).
+        async with db.begin_nested():
+            db.add(
+                AuditLog(
+                    kind=kind, action=action,
+                    actor=actor or current_actor(), detail=detail,
+                )
+            )
+            await db.flush()
         if commit:
             await db.commit()
-        else:
-            await db.flush()
     except Exception:  # noqa: BLE001
         log.exception("audit record failed (%s/%s)", kind, action)
