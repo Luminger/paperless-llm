@@ -89,7 +89,10 @@ def test_propose_result_yields_structural_proposal_id():
             {
                 "part_kind": "tool-return",
                 "tool_call_id": "c1",
-                "content": "Proposal [[proposal:42]] (update_document_metadata) recorded for human review.",
+                "content": (
+                    "Proposal [[proposal:42]] (update_document_metadata) "
+                    "recorded for human review."
+                ),
             }
         ),
     ]

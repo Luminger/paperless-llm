@@ -54,6 +54,7 @@ export function makeEntity(over: Partial<EntityRef> & { id: number; name: string
   return {
     match: "",
     matching_algorithm: 0,
+    is_insensitive: true,
     document_count: 0,
     is_inbox_tag: false,
     instructions: "",

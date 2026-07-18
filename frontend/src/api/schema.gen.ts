@@ -959,6 +959,11 @@ export interface components {
              */
             is_inbox_tag: boolean;
             /**
+             * Is Insensitive
+             * @default true
+             */
+            is_insensitive: boolean;
+            /**
              * Match
              * @default
              */

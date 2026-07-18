@@ -243,3 +243,70 @@ async def test_one_proposal_per_turn(db, paperless_client):
     assert len(proposals) == 1  # only the first landed
     assert proposals[0].agent_payload.get("title") == "First"
     assert "One proposal per turn" in _retry_texts(session)
+
+
+@respx.mock
+async def test_pattern_algorithm_without_match_rejected(db, paperless_client):
+    _mock_paperless()
+    session = await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_create_entity",
+            args={"entity_type": "correspondent", "name": "Telarko AG",
+                  "matching_algorithm": 1},
+        ),
+    )
+    assert await _proposals(db) == []
+    assert "requires a `match` pattern" in _retry_texts(session)
+
+
+@respx.mock
+async def test_match_with_auto_algorithm_rejected(db, paperless_client):
+    _mock_paperless()
+    session = await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_create_entity",
+            args={"entity_type": "correspondent", "name": "Telarko AG",
+                  "match": "telarko", "matching_algorithm": 6},
+        ),
+    )
+    assert await _proposals(db) == []
+    assert "must not have one" in _retry_texts(session)
+
+
+@respx.mock
+async def test_rename_unaffected_by_inert_matching_state(db, paperless_client):
+    """Entities often sit at paperless's inert default (algorithm=1,
+    empty match); a plain rename must not trip the matching guard."""
+    _mock_paperless()
+    await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_update_entity",
+            args={"entity_type": "correspondent", "entity_id": 2,
+                  "name": "Telarko GmbH"},
+        ),
+    )
+    (p,) = await _proposals(db)
+    assert p.agent_payload["name"] == "Telarko GmbH"
+
+
+@respx.mock
+async def test_setting_word_match_rule(db, paperless_client):
+    _mock_paperless()
+    await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_update_entity",
+            args={"entity_type": "correspondent", "entity_id": 2,
+                  "match": "telarko", "matching_algorithm": 2},
+        ),
+    )
+    (p,) = await _proposals(db)
+    assert p.agent_payload["match"] == "telarko"
+    assert p.agent_payload["matching_algorithm"] == 2

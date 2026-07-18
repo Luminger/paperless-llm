@@ -353,7 +353,13 @@ async def _apply_create_entity(
     # (concurrent session): reuse it instead of erroring on a duplicate.
     created = await _find_existing_entity(paperless, p.entity_type, p.name)
     if created is None:
-        created = await spec.create(paperless, **_entity_fields(p))
+        fields = _entity_fields(p)
+        # Entities we create default to auto (ML) matching so paperless's
+        # own classifier keeps learning and pre-assigning — the agent can
+        # still propose an explicit rule instead.
+        if "match" not in fields:
+            fields.setdefault("matching_algorithm", 6)
+        created = await spec.create(paperless, **fields)
     after: dict[str, Any] = {"entity": created.model_dump(), "assigned_documents": []}
     if p.assign_to_documents:
         if p.entity_type == "tag":

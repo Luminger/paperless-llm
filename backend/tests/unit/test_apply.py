@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 import respx
 from httpx import Response
@@ -245,6 +247,40 @@ async def test_apply_create_entity_reuses_existing_name(db, paperless_client):
     assert change is not None and p.status == ProposalStatus.applied
     assert not create_route.called  # reused id=9
     assert bulk.called
+
+
+@respx.mock
+async def test_apply_create_entity_defaults_to_auto_matching(db, paperless_client):
+    """Entities we create default to auto (ML) matching so paperless's
+    classifier keeps learning; explicit rules pass through untouched."""
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/").mock(
+        return_value=Response(200, json={"count": 0, "next": None, "results": []})
+    )
+    create_route = respx.post(f"{PAPERLESS_URL}/api/correspondents/").mock(
+        return_value=Response(201, json={"id": 9, "name": "Neu", "document_count": 0,
+                                          "match": "", "matching_algorithm": 6})
+    )
+
+    p = await _make_proposal(
+        db, {"kind": "create_entity", "entity_type": "correspondent", "name": "Neu"}
+    )
+    await apply_proposal(paperless_client, db, p)
+    body = json.loads(create_route.calls.last.request.content)
+    assert body["matching_algorithm"] == 6
+    assert "match" not in body
+
+    p2 = await _make_proposal(
+        db, {"kind": "create_entity", "entity_type": "correspondent",
+             "name": "Neu Zwei", "match": "neu zwei", "matching_algorithm": 2}
+    )
+    respx.post(f"{PAPERLESS_URL}/api/correspondents/").mock(
+        return_value=Response(201, json={"id": 10, "name": "Neu Zwei",
+                                          "match": "neu zwei", "matching_algorithm": 2})
+    )
+    await apply_proposal(paperless_client, db, p2)
+    body = json.loads(respx.calls.last.request.content)
+    assert body["matching_algorithm"] == 2
+    assert body["match"] == "neu zwei"
 
 
 @respx.mock

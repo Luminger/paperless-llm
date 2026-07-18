@@ -85,7 +85,7 @@ describe("EntityPage (generic entity overview)", () => {
 
     expect(await screen.findByRole("heading", { name: "Kraxi" })).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
-    expect(screen.getByText("kraxi")).toBeInTheDocument();
+    expect(screen.getByText(/any word · “kraxi”/)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /open in paperless/ }).getAttribute("href"),
     ).toBe("http://paperless.example/correspondents");

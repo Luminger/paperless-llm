@@ -1264,6 +1264,7 @@ async def test_entity_scope_creates_one_job_with_sessions(client, respx_mock, db
     assert job["total"] == 2
     assert job["params"]["label"] == "2 tags"
     from sqlalchemy import select
+
     from app.db.models import Session as Sess
     sessions = (await db.scalars(select(Sess).where(Sess.job_id == job["id"]))).all()
     assert [s.title for s in sessions] == ["alpha", "beta"]

@@ -59,6 +59,37 @@ MATCHING_ALGORITHMS = {
     6: "auto (ML)",
 }
 
+# Algorithms that require a match pattern (word/regex/fuzzy matching).
+_PATTERN_ALGOS = {1, 2, 3, 4, 5}
+
+
+def _check_matching(match: str | None, matching_algorithm: int | None) -> None:
+    """Guard the paperless matching-rule combos before proposing."""
+    if matching_algorithm is not None and matching_algorithm not in MATCHING_ALGORITHMS:
+        raise ModelRetry(
+            f"Proposal rejected: unknown matching_algorithm {matching_algorithm}. "
+            "Valid: 0=none, 1=any word, 2=all words, 3=exact, 4=regex, "
+            "5=fuzzy, 6=auto (ML)."
+        )
+    if matching_algorithm in _PATTERN_ALGOS and not match:
+        raise ModelRetry(
+            f"Proposal rejected: matching_algorithm "
+            f"{MATCHING_ALGORITHMS[matching_algorithm]!r} requires a `match` "
+            "pattern. Provide one, or use 6 (auto) which learns from the "
+            "user's decisions and needs no pattern."
+        )
+    if match and matching_algorithm in (0, 6):
+        raise ModelRetry(
+            "Proposal rejected: a `match` pattern only makes sense with "
+            "algorithms 1-5; auto (6) and none (0) must not have one."
+        )
+    if match and matching_algorithm is None:
+        raise ModelRetry(
+            "Proposal rejected: a `match` pattern needs an explicit "
+            "matching_algorithm (1=any word, 2=all words, 3=exact, 4=regex, "
+            "5=fuzzy)."
+        )
+
 
 def _doc_summary(d: Any) -> dict[str, Any]:
     return {
@@ -371,13 +402,20 @@ async def propose_create_entity(
     name: str,
     match: str | None = None,
     matching_algorithm: int | None = None,
+    is_insensitive: bool | None = None,
     assign_to_documents: IntList = None,
 ) -> str:
     """Propose creating a new tag/correspondent/document_type. FIRST check
     the existing entities (list tools) — never create near-duplicates of
-    existing entries. matching_algorithm: 1=any word, 2=all words,
-    3=exact, 4=regex, 6=auto. Optionally assign the new entity to
-    documents immediately (JSON array or comma-separated string)."""
+    existing entries. matching_algorithm controls paperless's automatic
+    assignment on future documents: 1=any word, 2=all words, 3=exact,
+    4=regex, 5=fuzzy (all need a `match` pattern), 6=auto (ML, no
+    pattern — the default when omitted), 0=none. Prefer an explicit
+    word/exact rule when the document shows a reliable marker (sender
+    name, IBAN, letterhead); otherwise leave the default. Optionally
+    assign the new entity to documents immediately (JSON array or
+    comma-separated string)."""
+    _check_matching(match, matching_algorithm)
     for e in await ctx.deps.taxonomy(entity_type):
         if e.name.strip().lower() == name.strip().lower():
             raise ModelRetry(
@@ -390,6 +428,7 @@ async def propose_create_entity(
         name=name,
         match=match,
         matching_algorithm=matching_algorithm,
+        is_insensitive=is_insensitive,
         assign_to_documents=_int_list(assign_to_documents),
     )
     return await _persist(ctx, p, EntityType(entity_type), None)
@@ -402,14 +441,21 @@ async def propose_update_entity(
     name: str | None = None,
     match: str | None = None,
     matching_algorithm: int | None = None,
+    is_insensitive: bool | None = None,
 ) -> str:
-    """Propose renaming an entity or fixing its matching rule. Provide
+    """Propose renaming an entity or fixing its matching rule (see
+    propose_create_entity for the matching_algorithm values). Provide
     only the fields to change — values identical to the entity's current
     state are rejected as no-ops."""
     entity = await _require_entity(ctx, entity_type, entity_id)
     changes = {
         k: v
-        for k, v in (("name", name), ("match", match), ("matching_algorithm", matching_algorithm))
+        for k, v in (
+            ("name", name),
+            ("match", match),
+            ("matching_algorithm", matching_algorithm),
+            ("is_insensitive", is_insensitive),
+        )
         if v is not None and v != getattr(entity, k)
     }
     if not changes:
@@ -418,17 +464,22 @@ async def propose_update_entity(
             "current state. If nothing needs to change, finish without a "
             "proposal."
         )
-    name, match, matching_algorithm = (
-        changes.get("name"),
-        changes.get("match"),
-        changes.get("matching_algorithm"),
-    )
+    # Validate the matching rule the entity would END UP with — but only
+    # when it is being touched (plenty of existing entities carry
+    # paperless's inert default of algorithm=1 + empty match; a plain
+    # rename must not be held hostage to that).
+    if "match" in changes or "matching_algorithm" in changes:
+        _check_matching(
+            changes.get("match", entity.match or None),
+            changes.get("matching_algorithm", entity.matching_algorithm),
+        )
     p = UpdateEntity(
         entity_type=entity_type,
         entity_id=entity_id,
-        name=name,
-        match=match,
-        matching_algorithm=matching_algorithm,
+        name=changes.get("name"),
+        match=changes.get("match"),
+        matching_algorithm=changes.get("matching_algorithm"),
+        is_insensitive=changes.get("is_insensitive"),
     )
     snapshot = {k: getattr(entity, k) for k in changes}
     return await _persist(ctx, p, EntityType(entity_type), entity_id, snapshot)

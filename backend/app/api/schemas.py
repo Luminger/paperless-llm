@@ -220,6 +220,7 @@ class EntityOut(BaseModel):
     name: str
     match: str = ""
     matching_algorithm: int = 0
+    is_insensitive: bool = True
     document_count: int | None = None
     is_inbox_tag: bool = False
     color: str | None = None

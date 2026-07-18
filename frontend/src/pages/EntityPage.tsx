@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef, type PaperlessDocument } from "../api";
 import { keys, invalidateEntities } from "../lib/keys";
-import { formatDate } from "../lib/format";
+import { formatDate, matchingRule } from "../lib/format";
 import { SessionList } from "../components/SessionList";
 import { errorMessage } from "../lib/errors";
 
@@ -134,9 +134,7 @@ function TaxonomyFacts({ entity }: { entity: EntityRef }) {
       <FactRow label="Name">{entity.name}</FactRow>
       <FactRow label="Documents">{entity.document_count ?? 0}</FactRow>
       <FactRow label="Matching rule">
-        {entity.match ? (
-          `${entity.match}`
-        ) : (
+        {matchingRule(entity) ?? (
           <span className="text-muted-foreground/60">none</span>
         )}
       </FactRow>
