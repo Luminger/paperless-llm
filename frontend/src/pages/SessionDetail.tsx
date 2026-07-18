@@ -65,6 +65,15 @@ export default function SessionDetail() {
   // is the user's decision, made in context at the end of the feed.
   const canContinue = !archived && busyStep == null;
 
+  // Turns count up across the session's LIVE steps (superseded history
+  // keeps its kind label and doesn't shift the numbering).
+  const turnByStep = new Map<number, number>();
+  let turnNo = 0;
+  for (const st of s.steps) {
+    if (st.kind === "ocr" || st.state === "superseded") continue;
+    turnByStep.set(st.id, ++turnNo);
+  }
+
   return (
     <div>
       {s.entity_type != null && s.entity_id != null && (
@@ -78,11 +87,6 @@ export default function SessionDetail() {
         </nav>
       )}
       <h1 className="mb-4 text-xl font-semibold tracking-tight">{s.title}</h1>
-      {!connected && (
-        <p className="mb-3 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-          Live updates unavailable — refreshing every 10 seconds instead.
-        </p>
-      )}
       {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
 
       <div className="space-y-3">
@@ -94,10 +98,20 @@ export default function SessionDetail() {
             live={live[step.id]}
             onChanged={onChanged}
             archived={archived}
+            turn={turnByStep.get(step.id)}
           />
         ))}
         {canContinue && <ContinueBox sessionId={s.id} />}
       </div>
+
+      {/* Connection state lives OUT of the content flow; it vanishes
+          the moment the event stream reconnects. */}
+      {!connected && (
+        <div className="fixed right-4 bottom-4 z-50 flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-md dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+          <span className="inline-block size-2 animate-pulse rounded-full bg-amber-500" />
+          Live updates unavailable — reconnecting… (refreshing every 10s meanwhile)
+        </div>
+      )}
     </div>
   );
 }

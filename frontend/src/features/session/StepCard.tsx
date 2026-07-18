@@ -16,7 +16,7 @@ import { ProposalCard, proposalKindLabel } from "../../components/ProposalCard";
 import { DiffView } from "../../components/DiffView";
 import { ProseBody, Transcript, UserMessage } from "./Transcript";
 import { Panel, PanelTitle, PanelTitleMuted } from "./Panel";
-import { TimingChip } from "./timing";
+import { StepTimingSummary, TimingChip } from "./timing";
 import { StatusBadge } from "../../components/StatusBadge";
 import { OcrGateBody } from "./OcrGate";
 import { RedoDialog } from "./RedoDialog";
@@ -37,11 +37,13 @@ const KIND_LABEL: Record<Step["kind"], string> = {
   chat: "Conversation",
 };
 
-function stepLabel(step: Step): string {
-  // Decision-loop turns: the session continued on its own after the
-  // user decided on a proposal.
-  if (step.kind === "chat" && step.input.auto === true) return "Continuation";
-  return KIND_LABEL[step.kind];
+/** Turns count up: "Initial analysis", then "Turn 2", "Turn 3", … —
+ * the ordinal comes from the session (live turns only); steps without
+ * one (OCR, superseded history) keep their kind label. */
+function stepLabel(step: Step, turn?: number): string {
+  if (step.kind === "ocr" || turn == null) return KIND_LABEL[step.kind];
+  if (turn === 1 && step.kind === "analysis") return "Initial analysis";
+  return `Turn ${turn}`;
 }
 
 function stateSuffix(step: Step): string | null {
@@ -123,7 +125,7 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
       {(step.state === "failed" || scheduled || step.state === "cancelled") && (
         <Button
           size="sm"
-          className="h-6 px-2 text-xs"
+          className="h-7 px-2.5 text-xs"
           onClick={() => retry.mutate()}
           disabled={retry.isPending}
         >
@@ -133,8 +135,8 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
       {(step.state === "succeeded" || step.state === "failed") && (
         <Button
           size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-xs text-muted-foreground"
+          variant="outline"
+          className="h-7 px-2.5 text-xs"
           onClick={() => setRedoOpen(true)}
           title="Do this step over with adjusted parameters"
         >
@@ -398,12 +400,15 @@ export function StepCard({
   live,
   onChanged,
   archived,
+  turn,
 }: {
   step: Step;
   proposals: Proposal[];
   live: LiveActivity | undefined;
   onChanged: () => void;
   archived: boolean;
+  /** 1-based ordinal among the session's live turns (non-OCR steps). */
+  turn?: number;
 }) {
   const superseded = step.state === "superseded";
   // A finished turn whose proposals were ALL revised away is history —
@@ -428,7 +433,7 @@ export function StepCard({
           )}
         />
         <span className={cn("text-sm font-medium", collapsed && "text-muted-foreground/70")}>
-          {stepLabel(step)}
+          {stepLabel(step, collapsed ? undefined : turn)}
         </span>
         {suffix && (
           <Badge variant="secondary" className="text-xs font-normal text-muted-foreground">
@@ -436,7 +441,6 @@ export function StepCard({
           </Badge>
         )}
         <span className="flex-1" />
-        {!archived && !collapsed && <StepControls step={step} onChanged={onChanged} />}
         <span className="font-mono text-[11px] text-muted-foreground/60">
           {formatDateTime(step.started_at ?? step.created_at)}
         </span>
@@ -462,6 +466,50 @@ export function StepCard({
           </>
         )}
       </div>
+
+      {/* Footer: whole-turn cost on the left, step actions on the
+          right — actions live with the turn they act on. */}
+      {!collapsed && (
+        <StepFooter
+          step={step}
+          archived={archived}
+          onChanged={onChanged}
+        />
+      )}
     </Card>
+  );
+}
+
+function StepFooter({
+  step,
+  archived,
+  onChanged,
+}: {
+  step: Step;
+  archived: boolean;
+  onChanged: () => void;
+}) {
+  const timing =
+    step.kind !== "ocr" && step.transcript.length > 0 ? (
+      <StepTimingSummary items={step.transcript} />
+    ) : step.kind === "ocr" && step.result.duration_s != null ? (
+      <span className="text-xs text-muted-foreground/70">
+        {String(step.result.pages ?? "?")} page
+        {step.result.pages !== 1 ? "s" : ""} · {String(step.result.duration_s)}s
+      </span>
+    ) : null;
+  const showControls =
+    !archived &&
+    (step.state === "succeeded" ||
+      step.state === "failed" ||
+      step.state === "cancelled" ||
+      (step.state === "pending" && step.scheduled_at != null));
+  if (!timing && !showControls) return null;
+  return (
+    <div className="flex min-h-10 items-center gap-2 border-t bg-muted/20 px-4 py-1.5">
+      {timing}
+      <span className="flex-1" />
+      {showControls && <StepControls step={step} onChanged={onChanged} />}
+    </div>
   );
 }

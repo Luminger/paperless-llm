@@ -118,10 +118,32 @@ export function useSessionEvents(sessionId: number) {
     // A new session means new step ids: stale live state must not leak.
     setLive({});
     setConnected(true);
-    const es = new EventSource(`/api/sessions/${sessionId}/events`);
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.onmessage = (raw) => {
+    let es: EventSource | null = null;
+    let timer: number | undefined;
+    let disposed = false;
+
+    const connect = () => {
+      if (disposed) return;
+      es = new EventSource(`/api/sessions/${sessionId}/events`);
+      es.onopen = () => {
+        setConnected(true);
+        // Anything that happened while we were away: refetch once.
+        qc.invalidateQueries({ queryKey: keys.session(sessionId) });
+      };
+      es.onerror = () => {
+        setConnected(false);
+        // EventSource auto-retries transient network errors, but a
+        // stream the server CLOSED (502 during a restart, proxy reset)
+        // stays dead — it needs a fresh object. Poll until it sticks.
+        if (es?.readyState === EventSource.CLOSED) {
+          es.close();
+          timer = window.setTimeout(connect, 3000);
+        }
+      };
+      es.onmessage = onMessage;
+    };
+
+    const onMessage = (raw: MessageEvent) => {
       let ev: ProgressEvent = {};
       try {
         ev = JSON.parse(raw.data);
@@ -146,7 +168,12 @@ export function useSessionEvents(sessionId: number) {
       qc.invalidateQueries({ queryKey: keys.session(sessionId) });
       qc.invalidateQueries({ queryKey: keys.sessionOcr(sessionId) });
     };
-    return () => es.close();
+    connect();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      es?.close();
+    };
   }, [sessionId, qc]);
   return { live, connected };
 }
