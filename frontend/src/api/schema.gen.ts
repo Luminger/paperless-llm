@@ -1605,6 +1605,8 @@ export interface components {
              * @default false
              */
             applied: boolean;
+            /** Applied At */
+            applied_at?: string | null;
             /** Applied By */
             applied_by?: string | null;
             /** Base Snapshot */

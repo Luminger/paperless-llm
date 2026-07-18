@@ -166,6 +166,8 @@ function OcrBody({ step }: { step: Step }) {
   const resolution = step.result.resolution as string | undefined;
   const pages = step.result.pages as number | undefined;
   const duration = step.result.duration_s as number | undefined;
+  const text = step.result.text as string | undefined;
+  const prev = step.result.previous_content as string | undefined;
   const bits: string[] = [];
   if (typeof step.input.instructions === "string")
     bits.push(`instructions: “${step.input.instructions}”`);
@@ -175,10 +177,26 @@ function OcrBody({ step }: { step: Step }) {
     if (resolution === "kept_existing") bits.push("existing content kept");
   }
   if (bits.length === 0) return null;
-  return <p className="text-xs leading-5 text-muted-foreground">{bits.join(" · ")}</p>;
+  return (
+    <div className="space-y-3">
+      <p className="text-xs leading-5 text-muted-foreground">{bits.join(" · ")}</p>
+      {/* The decision is history, but WHAT changed stays inspectable —
+          the same diff, read-only (no edit affordance). */}
+      {resolution && text != null && (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted-foreground/70 select-none">
+            show the content diff
+          </summary>
+          <div className="mt-3">
+            <DiffView oldText={prev ?? ""} newText={text} />
+          </div>
+        </details>
+      )}
+    </div>
+  );
 }
 
-/** The user's decision is part of the record: who applied it. */
+/** The user's decision is part of the record: who applied it, when. */
 export function DecidedBy({ p }: { p: Proposal }) {
   if (!p.applied || !p.applied_by) return null;
   const label =
@@ -187,7 +205,12 @@ export function DecidedBy({ p }: { p: Proposal }) {
       : p.user_payload != null
         ? "accepted by you (edited)"
         : "accepted by you";
-  return <PanelTitleMuted>{label}</PanelTitleMuted>;
+  return (
+    <PanelTitleMuted>
+      {label}
+      {p.applied_at && ` · ${formatDateTime(p.applied_at)}`}
+    </PanelTitleMuted>
+  );
 }
 
 function stepProposals(step: Step, proposals: Proposal[]): Proposal[] {

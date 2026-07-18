@@ -142,6 +142,7 @@ class ProposalOut(BaseModel):
     reverted: bool = False
     # Who applied it: "user", "user:<name>", or "system" (auto-apply).
     applied_by: str | None = None
+    applied_at: UtcDateTime | None = None
 
     model_config = {"from_attributes": True}
 
