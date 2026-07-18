@@ -25,12 +25,18 @@ const SECTIONS = [
   { value: "system", label: "System", icon: Info },
 ] as const;
 
+export type SettingsSection = (typeof SECTIONS)[number]["value"];
+
 export function SettingsDialog({
   open,
   onOpenChange,
+  section,
+  onSectionChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  section: SettingsSection;
+  onSectionChange: (s: SettingsSection) => void;
 }) {
   const { data: overview } = useQuery({
     queryKey: keys.settings(),
@@ -48,7 +54,8 @@ export function SettingsDialog({
           </DialogDescription>
         </DialogHeader>
         <Tabs
-          defaultValue="preferences"
+          value={section}
+          onValueChange={(v) => onSectionChange(v as SettingsSection)}
           orientation="vertical"
           className="flex min-h-0 flex-1 flex-row gap-0"
         >

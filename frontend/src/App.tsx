@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { CircleUser, Monitor, Moon, Settings2, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +21,10 @@ import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
 import AuditLog from "./pages/AuditLog";
-import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import {
+  SettingsDialog,
+  type SettingsSection,
+} from "@/components/settings/SettingsDialog";
 
 const nav = [
   { to: "/documents", label: "Documents" },
@@ -66,8 +68,25 @@ function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
+const SECTION_VALUES = ["preferences", "prompts", "system"] as const;
+
 export default function App() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Settings is a routable modal: /settings opens it, the section
+  // travels in the #fragment (/settings#prompts). Closing returns to
+  // the page the user came from (or home on direct entry).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const settingsOpen = location.pathname === "/settings";
+  const hash = location.hash.replace("#", "");
+  const section: SettingsSection = (SECTION_VALUES as readonly string[]).includes(hash)
+    ? (hash as SettingsSection)
+    : "preferences";
+  const openSettings = () =>
+    navigate("/settings", { state: { from: location.pathname + location.search } });
+  const closeSettings = () => {
+    const from = (location.state as { from?: string } | null)?.from;
+    navigate(from ?? "/");
+  };
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b bg-card">
@@ -92,7 +111,7 @@ export default function App() {
             ))}
           </nav>
           <div className="ml-auto">
-            <UserMenu onOpenSettings={() => setSettingsOpen(true)} />
+            <UserMenu onOpenSettings={openSettings} />
           </div>
         </div>
       </header>
@@ -109,9 +128,20 @@ export default function App() {
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/log" element={<AuditLog />} />
+          {/* Backdrop for the settings modal on direct entry. */}
+          <Route path="/settings" element={<Dashboard />} />
         </Routes>
       </main>
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSettings();
+        }}
+        section={section}
+        onSectionChange={(sec) =>
+          navigate(`/settings#${sec}`, { replace: true, state: location.state })
+        }
+      />
     </div>
   );
 }
