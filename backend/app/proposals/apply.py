@@ -95,6 +95,11 @@ async def _apply_claimed(
             + "; ".join(conflicts)
         )
 
+    # AUDIT API-F14 (known window): the paperless write below lands
+    # BEFORE the journal row commits. A crash in between releases the
+    # claim; the retry then usually sees _is_noop and the change ends up
+    # unrevertible/unattributed. Accepted for now — a pre-write intent
+    # row would close it at the cost of journal noise.
     before, after = await _apply(paperless, typed)
 
     change = AppliedChange(
@@ -316,9 +321,13 @@ async def _apply_doc_metadata(
     if not fields:
         raise ApplyError("proposal contains no changes")
 
-    before = {"document": doc.model_dump(include={f for f in fields} | {"id", "tags"})}
+    # AUDIT API-F6: snapshot ONLY the fields this proposal touches —
+    # `tags` rides along only when tags were actually proposed, so a
+    # title-only revert can never clobber later tag edits.
+    snap = set(fields) | {"id"}
+    before = {"document": doc.model_dump(include=snap)}
     updated = await paperless.update_document(p.document_id, **fields)
-    after = {"document": updated.model_dump(include={f for f in fields} | {"id", "tags"})}
+    after = {"document": updated.model_dump(include=snap)}
     return before, after
 
 
@@ -351,8 +360,11 @@ async def _apply_create_entity(
     spec = TAXONOMY[p.entity_type]
     # An identically-named entity may have appeared since the proposal
     # (concurrent session): reuse it instead of erroring on a duplicate.
-    created = await _find_existing_entity(paperless, p.entity_type, p.name)
-    if created is None:
+    existing = await _find_existing_entity(paperless, p.entity_type, p.name)
+    reused = existing is not None
+    if existing is not None:
+        created = existing
+    else:
         fields = _entity_fields(p)
         # Entities we create default to auto (ML) matching so paperless's
         # own classifier keeps learning and pre-assigning — the agent can
@@ -360,7 +372,14 @@ async def _apply_create_entity(
         if "match" not in fields:
             fields.setdefault("matching_algorithm", 6)
         created = await spec.create(paperless, **fields)
-    after: dict[str, Any] = {"entity": created.model_dump(), "assigned_documents": []}
+    # AUDIT API-F1: an honest journal — when we REUSED an entity that
+    # appeared since the proposal, `before` snapshots it and `reused`
+    # marks it, so revert can never delete something we didn't create.
+    after: dict[str, Any] = {
+        "entity": created.model_dump(),
+        "assigned_documents": [],
+        "reused": reused,
+    }
     if p.assign_to_documents:
         if p.entity_type == "tag":
             await paperless.bulk_edit_documents(
@@ -371,7 +390,10 @@ async def _apply_create_entity(
                 p.assign_to_documents, _BULK_SET_METHOD[p.entity_type], {p.entity_type: created.id}
             )
         after["assigned_documents"] = p.assign_to_documents
-    return {"entity": None, "entity_type": p.entity_type}, after
+    return {
+        "entity": existing.model_dump() if existing is not None else None,
+        "entity_type": p.entity_type,
+    }, after
 
 
 async def _apply_update_entity(
@@ -506,6 +528,10 @@ async def revert_is_noop(
                 if e.status_code == 404:
                     return True  # already deleted — nothing to revert
                 raise
+            if _entity_was_reused(change):
+                # We only assigned documents; with none assigned there
+                # is nothing of ours to undo.
+                return not change.paperless_after.get("assigned_documents")
             return False
         case UpdateEntity():
             spec = TAXONOMY[typed.entity_type]
@@ -533,12 +559,42 @@ async def revert_is_noop(
     return False
 
 
+def _entity_was_reused(change: AppliedChange) -> bool:
+    """AUDIT API-F1: pre-`reused`-flag journals are recognized by the
+    honest `before` snapshot of the reused entity."""
+    return bool(change.paperless_after.get("reused")) or (
+        (change.paperless_before or {}).get("entity") is not None
+    )
+
+
 async def revert_change(
     paperless: PaperlessClient, db: AsyncSession, change: AppliedChange
 ) -> None:
-    """Best-effort undo from the journal snapshots."""
-    if change.reverted_at is not None:
+    """Best-effort undo from the journal snapshots.
+
+    AUDIT API-F5: the revert is CLAIMED first (guarded UPDATE on
+    ``reverted_at``) so two concurrent reverts can never both execute
+    the paperless writes; the claim is released on any failure."""
+    claimed = await db.execute(
+        sa_update(AppliedChange)
+        .where(AppliedChange.id == change.id, AppliedChange.reverted_at.is_(None))
+        .values(reverted_at=utcnow())
+    )
+    if claimed.rowcount == 0:
         raise ApplyError("change already reverted")
+    await db.commit()
+    await db.refresh(change)
+    try:
+        await _revert_claimed(paperless, db, change)
+    except Exception:
+        change.reverted_at = None  # release the claim
+        await db.commit()
+        raise
+
+
+async def _revert_claimed(
+    paperless: PaperlessClient, db: AsyncSession, change: AppliedChange
+) -> None:
     proposal = change.proposal
     if await revert_is_noop(paperless, proposal, change):
         raise ApplyError(
@@ -552,6 +608,18 @@ async def revert_change(
         case UpdateDocumentMetadata() | ReplaceContent():
             doc = dict(before["document"])
             doc_id = doc.pop("id")
+            saved_tags = doc.pop("tags", None)
+            after_doc = change.paperless_after.get("document") or {}
+            if saved_tags is not None and "tags" in after_doc:
+                # AUDIT API-F6: revert tags as a DELTA of what THIS apply
+                # changed — never overwrite with the full snapshot (tag
+                # edits made in paperless since must survive).
+                added = set(after_doc["tags"]) - set(saved_tags)
+                removed = set(saved_tags) - set(after_doc["tags"])
+                current = (await paperless.get_document(doc_id)).tags
+                doc["tags"] = [t for t in current if t not in added] + [
+                    t for t in removed if t not in current
+                ]
             await paperless.update_document(doc_id, **doc)
         case UpdateEntity():
             spec = TAXONOMY[typed.entity_type]
@@ -567,7 +635,24 @@ async def revert_change(
         case CreateEntity():
             created_id = change.paperless_after["entity"]["id"]
             spec = TAXONOMY[typed.entity_type]
-            await spec.delete(paperless, created_id)
+            if _entity_was_reused(change):
+                # AUDIT API-F1: we never created this entity — deleting
+                # it would take it away from every document using it.
+                # Undo only OUR document assignments.
+                doc_ids = change.paperless_after.get("assigned_documents") or []
+                if doc_ids:
+                    if typed.entity_type == "tag":
+                        await paperless.bulk_edit_documents(
+                            doc_ids, "modify_tags",
+                            {"add_tags": [], "remove_tags": [created_id]},
+                        )
+                    else:
+                        await paperless.bulk_edit_documents(
+                            doc_ids, _BULK_SET_METHOD[typed.entity_type],
+                            {typed.entity_type: None},
+                        )
+            else:
+                await spec.delete(paperless, created_id)
         case MergeEntities():
             # Recreate the source entity (new id) and reassign the docs back.
             spec = TAXONOMY[typed.entity_type]
@@ -617,7 +702,7 @@ async def revert_change(
         case _:
             raise ApplyError(f"revert not supported for {typed.kind}")
 
-    change.reverted_at = utcnow()
+    # reverted_at was already set by the claim.
     await record(
         db, "proposal", "reverted",
         proposal_id=proposal.id, proposal_kind=proposal.kind,

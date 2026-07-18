@@ -522,7 +522,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 `app/config.py`, `app/main.py`, `app/seeding.py`, `app/services/auth.py`.
 
 ### API-F1 — HIGH — reverting a `create_entity` proposal can delete a pre-existing entity
-- **Status:** OPEN
+- **Status:** FIXED — journal carries `reused` + honest `before` snapshot; revert of a reused entity only undoes OUR assignments (tag removal / field cleared), never deletes; `revert_is_noop` knows reused semantics; test pins the 41-document scenario
 - **Where:** `app/proposals/apply.py:353-362,567-570`
 - **Detail:** `_apply_create_entity` deliberately **reuses** an
   identically-named entity that appeared since the proposal; the journal
@@ -575,7 +575,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #80
 
 ### API-F5 — MEDIUM — revert has no atomic claim; concurrent reverts double-execute
-- **Status:** OPEN
+- **Status:** FIXED — guarded UPDATE on `reverted_at` claims the revert (loser gets 'already reverted'); claim released on any failure; test pins it
 - **Where:** `app/api/routes/proposals.py:452-466`,
   `app/proposals/apply.py:536-547`
 - **Detail:** Read-then-act: both concurrent requests load the change
@@ -587,7 +587,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #79
 
 ### API-F6 — MEDIUM — metadata revert always restores the `tags` snapshot
-- **Status:** OPEN
+- **Status:** FIXED — snapshot includes only proposed fields; tag reverts computed as a DELTA against current tags (later paperless edits survive); tests pin title-only + delta cases
 - **Where:** `app/proposals/apply.py:319,552-555`
 - **Detail:** Snapshot unconditionally includes `tags`; revert replays
   every saved field — reverting a title-only proposal also PATCHes tags
@@ -650,7 +650,7 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
   collision. Require `entity_type == document`. Todo #81.
 
 ### API-F14 — LOW — partial-apply window: paperless mutated, journal lost
-- **Status:** OPEN — `apply.py:62-68,98-117`: paperless writes happen
+- **Status:** WONTFIX (documented) — accepted window, explained in a comment at the `_apply` call site; a pre-write intent row would close it at the cost of journal noise — `apply.py:62-68,98-117`: paperless writes happen
   before the journal row commits; a crash in between releases the claim
   → retry lands in `_is_noop` → the change becomes unrevertible and
   unattributed. Rare, self-healing status-wise; document or add a

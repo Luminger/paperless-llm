@@ -422,3 +422,142 @@ async def test_revert_noop_for_deleted_created_entity(db, paperless_client):
                                           "match": "", "matching_algorithm": 0})
     )
     assert await revert_is_noop(paperless_client, p, change) is False
+
+
+# ----- AUDIT API-F1 / API-F5 / API-F6 regression tests -----------------
+
+
+@respx.mock
+async def test_revert_of_reused_entity_never_deletes_it(db, paperless_client):
+    """AUDIT API-F1: the apply REUSED a pre-existing entity — revert must
+    only undo our document assignments, never delete the entity."""
+    from app.proposals.apply import revert_change
+
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/").mock(
+        return_value=Response(200, json={"count": 1, "next": None, "results": [
+            {"id": 9, "name": "Kraxi", "document_count": 41, "match": "",
+             "matching_algorithm": 0}
+        ]})
+    )
+    respx.get(f"{PAPERLESS_URL}/api/correspondents/9/").mock(
+        return_value=Response(200, json={
+            "id": 9, "name": "Kraxi", "document_count": 41, "match": "",
+            "matching_algorithm": 0,
+        })
+    )
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
+    bulk = respx.post(f"{PAPERLESS_URL}/api/documents/bulk_edit/").mock(
+        return_value=Response(200, json={"result": "OK"})
+    )
+    delete_route = respx.delete(f"{PAPERLESS_URL}/api/correspondents/9/")
+
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "create_entity",
+            "entity_type": "correspondent",
+            "name": "Kraxi",
+            "assign_to_documents": [7],
+        },
+    )
+    change = await apply_proposal(paperless_client, db, p)
+    assert change is not None
+    assert change.paperless_after["reused"] is True
+    assert change.paperless_before["entity"]["id"] == 9  # honest snapshot
+
+    await revert_change(paperless_client, db, change)
+    assert not delete_route.called  # the 41-document entity survives
+    # Our assignment was undone (correspondent cleared on doc 7).
+    body = json.loads(bulk.calls[-1].request.content)
+    assert body["parameters"] == {"correspondent": None}
+    assert change.reverted_at is not None
+
+
+@respx.mock
+async def test_title_only_revert_does_not_touch_tags(db, paperless_client):
+    """AUDIT API-F6: the snapshot carries only proposed fields — a
+    title-only revert must not clobber tag edits made since."""
+    from app.proposals.apply import revert_change
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
+    patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Better title"})
+    )
+    p = await _make_proposal(
+        db,
+        {"kind": "update_document_metadata", "document_id": 7, "title": "Better title"},
+    )
+    change = await apply_proposal(paperless_client, db, p)
+    assert "tags" not in change.paperless_before["document"]
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(
+            200, json=DOC | {"title": "Better title", "tags": [1, 5, 99]}
+        )
+    )
+    await revert_change(paperless_client, db, change)
+    body = json.loads(patch_route.calls[-1].request.content)
+    assert body == {"title": "scan_0001"}  # no tags key at all
+
+
+@respx.mock
+async def test_tag_revert_is_a_delta(db, paperless_client):
+    """AUDIT API-F6: reverting a tag change re-adds/removes ONLY what the
+    apply changed — a tag added in paperless since survives."""
+    from app.proposals.apply import revert_change
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)  # tags [1, 5]
+    )
+    patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"tags": [1, 2]})
+    )
+    p = await _make_proposal(
+        db,
+        {
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "add_tags": [2],
+            "remove_tags": [5],
+        },
+    )
+    change = await apply_proposal(paperless_client, db, p)  # [1,5] -> [1,2]
+
+    # Since the apply, someone added tag 99 in paperless.
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"tags": [1, 2, 99]})
+    )
+    await revert_change(paperless_client, db, change)
+    body = json.loads(patch_route.calls[-1].request.content)
+    # 2 (added by us) removed, 5 (removed by us) restored, 99 SURVIVES.
+    assert sorted(body["tags"]) == [1, 5, 99]
+
+
+@respx.mock
+async def test_second_revert_conflicts(db, paperless_client):
+    """AUDIT API-F5: the revert claim is atomic — a second revert of the
+    same change raises instead of double-executing paperless writes."""
+    from app.proposals.apply import revert_change
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
+    respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Better title"})
+    )
+    p = await _make_proposal(
+        db,
+        {"kind": "update_document_metadata", "document_id": 7, "title": "Better title"},
+    )
+    change = await apply_proposal(paperless_client, db, p)
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Better title"})
+    )
+    await revert_change(paperless_client, db, change)
+    with pytest.raises(ApplyError, match="already reverted"):
+        await revert_change(paperless_client, db, change)
