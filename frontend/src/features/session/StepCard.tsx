@@ -37,6 +37,13 @@ const KIND_LABEL: Record<Step["kind"], string> = {
   chat: "Conversation",
 };
 
+function stepLabel(step: Step): string {
+  // Decision-loop turns: the session continued on its own after the
+  // user decided on a proposal.
+  if (step.kind === "chat" && step.input.auto === true) return "Continuation";
+  return KIND_LABEL[step.kind];
+}
+
 function stateSuffix(step: Step): string | null {
   switch (step.state) {
     case "pending":
@@ -429,7 +436,7 @@ export function StepCard({
           )}
         />
         <span className={cn("text-sm font-medium", collapsed && "text-muted-foreground/70")}>
-          {KIND_LABEL[step.kind]}
+          {stepLabel(step)}
         </span>
         {suffix && (
           <Badge variant="secondary" className="text-xs font-normal text-muted-foreground">

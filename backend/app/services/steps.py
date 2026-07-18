@@ -22,6 +22,7 @@ tokens/tool calls.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import timedelta
 from typing import Any
@@ -367,7 +368,8 @@ async def _maybe_auto_apply(
 ) -> None:
     """apply_policy=auto (bulk jobs/webhook): apply fresh proposals right
     away — validated, journaled, revertible. Failures stay pending for a
-    human instead of failing the step."""
+    human instead of failing the step. Under the decision loop this
+    auto-continues the session (bounded), so autonomous runs converge."""
     if session.params.get("apply_policy") != "auto":
         return
     proposals = (
@@ -382,6 +384,98 @@ async def _maybe_auto_apply(
             await apply_proposal(paperless, db, p)
         except Exception:  # noqa: BLE001
             log.exception("auto-apply failed for proposal %s", p.id)
+            continue
+        await continue_after_decision(db, session, p)
+
+
+# ----- the decision loop ----------------------------------------------
+
+# Runaway brake for autonomous (auto-apply) sessions: at most this many
+# auto-continuation turns per session. Manual continuations (user
+# applies) are driven by the user and never limited.
+CONTINUATION_LIMIT = 10
+
+
+def _decision_message(p: Proposal) -> str:
+    """Synthetic pipeline prompt telling the agent what the user did.
+    Hidden in the UI (the timeline already shows the decision); the
+    model needs it to continue the loop."""
+    kind = str(p.kind).replace("_", " ")
+    if p.status == ProposalStatus.no_change:
+        head = (
+            f"Paperless already matched your proposal ({kind}) — nothing "
+            "was written."
+        )
+    elif p.user_payload is not None:
+        head = (
+            f"The user edited your proposal ({kind}) before applying it. "
+            f"The APPLIED values are: {json.dumps(p.user_payload, ensure_ascii=False)}. "
+            "These are the user's preference and override yours."
+        )
+    else:
+        head = f"The user accepted your proposal ({kind}) as-is; it has been applied."
+    return (
+        f"{head} Continue the review: if further changes are needed, "
+        "propose the SINGLE next one; otherwise finish with a brief "
+        "closing summary."
+    )
+
+
+async def continue_after_decision(
+    db: DbSession, session: Session, proposal: Proposal
+) -> Step | None:
+    """After the user (or the auto policy) decided a proposal, the
+    session continues on its own: a new turn tells the agent what
+    happened. Skipped when the session is archived, other proposals
+    are still open, work is already in flight, or the auto brake hit."""
+    if session.archived_at is not None:
+        return None
+    if proposal.step_id is None or str(proposal.kind) == "replace_content":
+        return None
+    if proposal.status not in (ProposalStatus.applied, ProposalStatus.no_change):
+        return None
+    open_left = await db.scalar(
+        select(func.count()).select_from(Proposal).where(
+            Proposal.session_id == session.id,
+            Proposal.status == ProposalStatus.pending,
+            Proposal.kind != "replace_content",
+        )
+    )
+    if open_left:
+        return None  # legacy multi-proposal turns: the user decides each
+    busy = await db.scalar(
+        select(func.count()).select_from(Step).where(
+            Step.session_id == session.id,
+            Step.state.in_(
+                (StepState.pending, StepState.running, StepState.awaiting_user)
+            ),
+        )
+    )
+    if busy:
+        return None
+    if session.params.get("apply_policy") == "auto":
+        auto_turns = await db.scalar(
+            select(func.count()).select_from(Step).where(
+                Step.session_id == session.id,
+                Step.kind == StepKind.chat,
+                Step.input["auto"].as_boolean() == True,  # noqa: E712
+            )
+        )
+        if (auto_turns or 0) >= CONTINUATION_LIMIT:
+            log.warning(
+                "session %s hit the auto-continuation limit (%s)",
+                session.id, CONTINUATION_LIMIT,
+            )
+            return None
+    step_row = await db.get(Step, proposal.step_id)
+    lane = step_row.lane if step_row is not None else QueueLane.interactive
+    return await create_step(
+        db,
+        session,
+        StepKind.chat,
+        {"content": _decision_message(proposal), "auto": True},
+        lane=lane,
+    )
 
 
 # ----- resolvers (awaiting_user) --------------------------------------

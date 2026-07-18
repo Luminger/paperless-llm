@@ -7,9 +7,10 @@ import httpx
 import pytest
 import respx
 from httpx import Response
+from sqlalchemy import select
 
 from app.api.deps import get_paperless
-from app.db.models import AgentKind, Proposal, ProposalStatus, Session
+from app.db.models import AgentKind, EntityType, Proposal, ProposalStatus, Session
 from app.db.session import get_session
 from app.main import create_app
 from tests.conftest import PAPERLESS_URL
@@ -1096,3 +1097,119 @@ async def test_prefs_roundtrip_and_partial_update(client):
     assert (
         await client.put("/api/prefs", json={"date_format": "stardate"})
     ).status_code == 422
+
+
+async def _seed_stepped_proposal(db, user_payload=None) -> Proposal:
+    """A proposal that came from a real step — the decision loop only
+    continues those."""
+    from app.db.models import QueueLane, Step, StepKind, StepState
+
+    s = Session(agent_kind=AgentKind.document, entity_type=EntityType.document, entity_id=7)
+    db.add(s)
+    await db.flush()
+    step = Step(
+        session_id=s.id, kind=StepKind.analysis, state=StepState.succeeded,
+        lane=QueueLane.interactive, max_attempts=1,
+    )
+    db.add(step)
+    await db.flush()
+    p = Proposal(
+        session_id=s.id,
+        step_id=step.id,
+        kind="update_document_metadata",
+        agent_payload={
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "title": "Agent title",
+        },
+        user_payload=user_payload,
+        status=ProposalStatus.pending,
+    )
+    db.add(p)
+    await db.commit()
+    return p
+
+
+@respx.mock
+async def test_apply_continues_the_session(client, db):
+    """The decision loop: applying a proposal automatically queues a
+    continuation turn that tells the agent what the user did."""
+    from app.db.models import Step, StepKind
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Agent title"})
+    )
+    p = await _seed_stepped_proposal(db)
+    sid, pid = p.session_id, p.id
+
+    r = await client.post(f"/api/proposals/{pid}/apply")
+    assert r.json()["status"] == "applied"
+
+    chats = (
+        await db.scalars(
+            select(Step).where(Step.session_id == sid, Step.kind == StepKind.chat)
+        )
+    ).all()
+    assert len(chats) == 1
+    assert chats[0].input["auto"] is True
+    assert chats[0].input["content"].startswith("The user accepted your proposal")
+
+
+@respx.mock
+async def test_apply_with_edits_tells_the_agent_the_final_values(client, db):
+    from app.db.models import Step, StepKind
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "User title"})
+    )
+    p = await _seed_stepped_proposal(
+        db,
+        user_payload={
+            "kind": "update_document_metadata",
+            "document_id": 7,
+            "title": "User title",
+        },
+    )
+    sid = p.session_id
+
+    await client.post(f"/api/proposals/{p.id}/apply")
+    chat = await db.scalar(
+        select(Step).where(Step.session_id == sid, Step.kind == StepKind.chat)
+    )
+    assert chat is not None
+    assert chat.input["content"].startswith("The user edited your proposal")
+    assert "User title" in chat.input["content"]  # the applied values travel
+
+
+@respx.mock
+async def test_no_continuation_while_other_proposals_are_open(client, db):
+    from app.db.models import Step, StepKind
+
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(return_value=Response(200, json=DOC))
+    respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Agent title"})
+    )
+    p = await _seed_stepped_proposal(db)
+    sid = p.session_id
+    # A second open proposal in the same session (legacy multi-proposal).
+    db.add(
+        Proposal(
+            session_id=sid,
+            step_id=p.step_id,
+            kind="update_document_metadata",
+            agent_payload={"kind": "update_document_metadata", "document_id": 7,
+                           "created": "2020-01-01"},
+            status=ProposalStatus.pending,
+        )
+    )
+    await db.commit()
+
+    await client.post(f"/api/proposals/{p.id}/apply")
+    chats = (
+        await db.scalars(
+            select(Step).where(Step.session_id == sid, Step.kind == StepKind.chat)
+        )
+    ).all()
+    assert chats == []  # the user still has a decision to make

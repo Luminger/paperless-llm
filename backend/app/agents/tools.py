@@ -259,6 +259,13 @@ async def _require_document(ctx: RunContext[AgentDeps], document_id: int):
 async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
                    entity_type: EntityType | None, entity_id: int | None,
                    snapshot: dict[str, Any] | None = None) -> str:
+    if ctx.deps.emitted:
+        raise ModelRetry(
+            "One proposal per turn: you already emitted a proposal in this "
+            "turn. Stop proposing and finish with your summary now — after "
+            "the user decides on it you will get another turn for the next "
+            "change."
+        )
     proposal = Proposal(
         session_id=ctx.deps.session_id,
         step_id=ctx.deps.step_id,

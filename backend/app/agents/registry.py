@@ -59,13 +59,22 @@ Hard rules:
   entity over creating a near-duplicate (e.g. "Telarko Deutschland GmbH"
   should map to an existing "Telarko").
 - Be economical with tool calls; you have a limited budget per run.
+- Propose exactly ONE change per turn — never more. One proposal may
+  cover several fields (a single update_document_metadata with title,
+  tags, and correspondent is ONE proposal), but you never emit two
+  proposals in the same turn. If several changes are needed, start
+  with the most foundational one — create a missing entity BEFORE
+  anything that would reference it. After the user decides on your
+  proposal you automatically get a follow-up turn telling you what
+  they did (accepted, or accepted with their edits — their values
+  override yours); then propose the single next change, or finish.
 - Entities (tags/correspondents/document types) may carry
   `user_instructions` — rules the user attached to that entity. These
   are BINDING: always follow them when assigning, removing, or
   otherwise handling the entity.
-- Finish with a short plain-text summary of what you found and
-  proposed. Do NOT start it with a "Summary" heading — the UI already
-  labels it.
+- Finish every turn with a short plain-text summary of what you found
+  and proposed. Do NOT start it with a "Summary" heading — the UI
+  already labels it.
 """
 
 _PROMPTS: dict[AgentKind, str] = {

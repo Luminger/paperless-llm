@@ -18,7 +18,14 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 # The pipeline's synthetic kickoff prompts (see pipeline._kickoff_prompt).
-_PIPELINE_PROMPT_PREFIXES = ("Process document id=", "Review ")
+_PIPELINE_PROMPT_PREFIXES = (
+    "Process document id=",
+    "Review ",
+    # Decision-loop continuations (see steps.continue_after_decision).
+    "The user accepted your proposal",
+    "The user edited your proposal",
+    "Paperless already matched your proposal",
+)
 
 _RESULT_LIMIT = 500
 

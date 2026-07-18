@@ -203,3 +203,43 @@ async def test_update_entity_noop_rejected(db, paperless_client):
     )
     assert await _proposals(db) == []
     assert "current state" in _retry_texts(session)
+
+
+@respx.mock
+async def test_one_proposal_per_turn(db, paperless_client):
+    """The second propose call of a turn is rejected — the decision
+    loop works one proposal at a time."""
+    _mock_paperless()
+    respx.get(f"{PAPERLESS_URL}/api/documents/1/").mock(
+        return_value=Response(200, json=DOC | {"id": 1, "title": "Old"})
+    )
+    session = await _make_session(db)
+    agent = _scripted_agent(
+        [
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="propose_update_document_metadata",
+                        args={"document_id": 1, "title": "First"},
+                        tool_call_id="c1",
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="propose_update_document_metadata",
+                        args={"document_id": 1, "created": "2020-01-01"},
+                        tool_call_id="c2",
+                    )
+                ]
+            ),
+            ModelResponse(parts=[TextPart(content="done")]),
+        ]
+    )
+    await run_agent_turn(paperless_client, db, session, "go", agent=agent)
+
+    proposals = await _proposals(db)
+    assert len(proposals) == 1  # only the first landed
+    assert proposals[0].agent_payload.get("title") == "First"
+    assert "One proposal per turn" in _retry_texts(session)

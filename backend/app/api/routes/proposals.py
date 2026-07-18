@@ -127,6 +127,12 @@ async def apply(
         await apply_proposal(paperless, db, p)
     except ApplyError as e:
         raise HTTPException(409, str(e)) from e
+    # The decision loop: the session continues on its own, telling the
+    # agent what the user decided (incl. their edited values).
+    from app.services.steps import continue_after_decision
+
+    if session is not None:
+        await continue_after_decision(db, session, p)
     # The freshly committed AppliedChange isn't in the identity map's
     # cached relationship state (expire_on_commit=False); expire so the
     # reload sees it.
