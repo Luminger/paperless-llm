@@ -36,6 +36,8 @@ services:
       # Optional embeddings endpoint (entity index / duplicate finder).
       PLLM_LLM__EMBEDDINGS__BASE_URL: ${PLLM_EMBEDDINGS_BASE_URL:-}
       PLLM_LLM__EMBEDDINGS__MODEL: ${PLLM_EMBEDDINGS_MODEL:-}
+      PLLM_LLM__RERANKER__BASE_URL: ${PLLM_RERANKER_BASE_URL:-}
+      PLLM_LLM__RERANKER__MODEL: ${PLLM_RERANKER_MODEL:-}
 
       # --- access ---------------------------------------------------
       # none (trusted network) | proxy (Remote-User header) | paperless
