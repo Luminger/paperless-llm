@@ -182,16 +182,7 @@ function OcrBody({ step }: { step: Step }) {
       <p className="text-xs leading-5 text-muted-foreground">{bits.join(" · ")}</p>
       {/* The decision is history, but WHAT changed stays inspectable —
           the same diff, read-only (no edit affordance). */}
-      {resolution && text != null && (
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground/70 select-none">
-            show the content diff
-          </summary>
-          <div className="mt-3">
-            <DiffView oldText={prev ?? ""} newText={text} />
-          </div>
-        </details>
-      )}
+      {resolution && text != null && <DiffView oldText={prev ?? ""} newText={text} />}
     </div>
   );
 }
