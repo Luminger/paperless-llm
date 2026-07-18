@@ -454,7 +454,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
   Todo #75.
 
 ### SV-L3 — LOW — `recover()` is single-process only while `_claim` advertises multi-process safety
-- **Status:** OPEN — `steps.py:378-380` vs `:504-540`; a second app
+- **Status:** OPEN (accepted) — single-process deployment is the design; add owner/heartbeat before any multi-process move — `steps.py:378-380` vs `:504-540`; a second app
   process at startup clobbers the first's live steps. Guard comment or
   owner/heartbeat column before any multi-process move. Todo #75 (note).
 
@@ -470,7 +470,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
   Todo #78.
 
 ### SV-L6 — LOW — corpus endpoints are O(N) per call
-- **Status:** OPEN — `jobs.py:80-96` (loads+JSON-parses every done
+- **Status:** OPEN (accepted at current scale) — revisit with a denormalized ocr_only column when archives reach ~10k — `jobs.py:80-96` (loads+JSON-parses every done
   session's params in Python), `:99-124` (worst case ~100 HTTP calls per
   click at 10k docs), hit by dashboard polling. JSON-path filter or
   denormalized `ocr_only` column; reuse the id set. Todo #77.
@@ -487,7 +487,7 @@ instructions,counters,entity_index,audit,actor,paperless_log}.py`,
   periodic janitor. Todo #75.
 
 ### SV-C — centralization opportunities
-- **Status:** OPEN — todos #76, #77, #82
+- **Status:** LARGELY DONE — (1) update_job deleted, live derivation in services (#77); (2) ACTIVE_PHASES one constant (#77); (4) visible() predicate everywhere (#82); (5) commit-then-publish now followed at every site (#76; a structural helper remains nice-to-have); (6) make_client factory (#82); (7) SQLite pragmas live in db/session.py (#75); (8) defer(message_history) in engine paths (#75); (3) in-flight predicate variants remain deliberately distinct (semantics differ; documented)
   1. Job progress/status derivation exists 3.5× (`update_job`,
      `_live_job_counts`/`_apply_live`, stats `active_jobs`,
      `job_attention` variant) → one service function; delete
@@ -960,9 +960,7 @@ Scope: App/main/api, lib/*, hooks, all pages, `components/app/*`,
 - **Todo:** #87
 
 ### FP-L1 — LOW — `useUrlState` header contradicts `replace: true` behavior
-- **Status:** OPEN — comment promises back/forward filter history; every
-  write replaces. Correct the comment or push for discrete changes.
-  Todo #88.
+- **Status:** FIXED — comment states (and justifies) replace semantics
 
 ### FP-L2 — LOW — out-of-range page shows misleading "no results"
 - **Status:** FIXED — `useClampPage` wired into Documents (incl. the proxied-404 case; live-verified: ?page=99 snaps back with rows), AuditLog; Taxonomy clamps its client-side slice
