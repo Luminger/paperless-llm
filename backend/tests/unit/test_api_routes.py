@@ -1461,7 +1461,8 @@ async def test_entity_scope_creates_one_job_with_sessions(client, respx_mock, db
 
     from app.db.models import Session as Sess
     sessions = (await db.scalars(select(Sess).where(Sess.job_id == job["id"]))).all()
-    assert [s.title for s in sessions] == ["alpha", "beta"]
+    # Sessions are named for the RUN; entity names resolve live in lists.
+    assert [s.title for s in sessions] == ["Review", "Review"]
 
 
 async def test_config_rows_and_admin_override(client, db, monkeypatch):
@@ -1627,3 +1628,30 @@ async def test_analyze_document_ocr_only(client, db):
     step = await db.scalar(_select(Step).where(Step.session_id == session_id))
     assert step.kind == StepKind.ocr
     assert step.input["ocr_only"] is True
+
+
+async def test_job_state_computed_from_sessions(client, db):
+    """Stored counters can go stale; the API computes done/failed/status
+    from the sessions at read time."""
+    from app.db.models import Job, JobStatus, SessionPhase
+
+    job = Job(kind="bulk_ocr", params={}, total=2, done=0, failed=0,
+              status=JobStatus.running)
+    db.add(job)
+    await db.flush()
+    for i, phase in ((1, SessionPhase.done), (2, SessionPhase.done)):
+        db.add(Session(
+            agent_kind=AgentKind.document, entity_type=EntityType.document,
+            entity_id=i, job_id=job.id, phase=phase,
+        ))
+    await db.commit()
+
+    r = await client.get(f"/api/jobs/{job.id}")
+    assert r.status_code == 200
+    body = r.json()
+    # Stored says running/0 done — the sessions say otherwise.
+    assert body["done"] == 2 and body["failed"] == 0
+    assert body["status"] == "completed"
+    listed = (await client.get("/api/jobs")).json()["results"]
+    mine = next(j for j in listed if j["id"] == job.id)
+    assert mine["status"] == "completed" and mine["done"] == 2

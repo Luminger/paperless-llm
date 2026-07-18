@@ -669,7 +669,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename Session
+         * @description Sessions belong to the user — the name is theirs to change.
+         */
+        patch: operations["rename_session_api_sessions__session_id__patch"];
         trace?: never;
     };
     "/api/sessions/{session_id}/archive": {
@@ -1730,6 +1734,11 @@ export interface components {
             created_at: string;
             /** Entity Id */
             entity_id: number | null;
+            /**
+             * Entity Name
+             * @default
+             */
+            entity_name: string;
             entity_type: components["schemas"]["EntityType"] | null;
             /** Error */
             error: string | null;
@@ -1780,6 +1789,11 @@ export interface components {
             created_at: string;
             /** Entity Id */
             entity_id: number | null;
+            /**
+             * Entity Name
+             * @default
+             */
+            entity_name: string;
             entity_type: components["schemas"]["EntityType"] | null;
             /** Error */
             error: string | null;
@@ -1834,6 +1848,11 @@ export interface components {
          * @enum {string}
          */
         SessionPhase: "queued" | "ocr_running" | "ocr_review" | "analyzing" | "done";
+        /** SessionRename */
+        SessionRename: {
+            /** Title */
+            title: string;
+        };
         /**
          * SessionStatus
          * @enum {string}
@@ -3141,6 +3160,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_session_api_sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
                 };
             };
             /** @description Validation Error */

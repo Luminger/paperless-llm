@@ -238,7 +238,10 @@ async def create_job(
                 **({"instructions": instructions} if instructions else {}),
                 **({"trigger": trigger} if trigger else {}),
             },
-            title=titles.get(doc_id) or f"Document {doc_id}",
+            # Sessions are named for the RUN, not the entity — entity
+            # names go stale (the analysis itself renames documents);
+            # lists resolve them live instead.
+            title="OCR pass" if ocr_only else "Analysis",
         )
         db.add(session)
         await db.flush()
@@ -320,7 +323,7 @@ async def create_entities_job(
             entity_id=eid,
             job_id=job.id,
             params={**({"instructions": instructions} if instructions else {})},
-            title=names.get(eid) or f"{type_label} {eid}",
+            title="Review",
         )
         db.add(session)
         await db.flush()
@@ -376,7 +379,7 @@ async def create_entity_job(
         entity_id=entity_id,
         job_id=job.id,
         params={**({"instructions": instructions} if instructions else {})},
-        title=entity_name or f"{type_label} {entity_id}",
+        title="Review",
     )
     db.add(session)
     await db.flush()

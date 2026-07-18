@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Session } from "../api";
+import { formatDateTime } from "../lib/format";
 import { keys } from "../lib/keys";
 import { Pager } from "@/components/app/Pager";
 import { FramedCard } from "@/components/app/Framed";
@@ -33,9 +34,14 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
             className="truncate font-medium hover:text-primary hover:underline"
             to={`/sessions/${s.id}`}
           >
-            {s.title}
+            {/* Entity names resolve live server-side; the run title is
+                the session's own name. */}
+            {showEntity && s.entity_name ? s.entity_name : s.title}
           </Link>
-          {showEntity && s.entity_type && (
+          {showEntity && s.entity_name && (
+            <span className="ml-2 text-xs text-muted-foreground">{s.title}</span>
+          )}
+          {showEntity && !s.entity_name && s.entity_type && (
             <Badge
               variant="secondary"
               className="ml-2 shrink-0 font-normal text-muted-foreground"
@@ -43,6 +49,9 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
               {s.entity_type.replaceAll("_", " ")}
             </Badge>
           )}
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-muted-foreground">
+          {formatDateTime(s.created_at)}
         </TableCell>
         <TableCell>
           <span className="flex items-center gap-2">
@@ -87,7 +96,7 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
       </TableRow>
       {s.error && !s.archived_at && (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={4} className="py-1">
+          <TableCell colSpan={5} className="py-1">
             <p className="rounded-md bg-destructive/10 p-2 font-mono text-xs text-destructive">
               {s.error}
             </p>
@@ -111,6 +120,7 @@ export function SessionTable({
       <TableHeader>
         <TableRow>
           <TableHead>Session</TableHead>
+          <TableHead className="w-40">Started</TableHead>
           <TableHead className="w-44">Attention</TableHead>
           <TableHead className="w-32">Status</TableHead>
           <TableHead className="w-24 text-right" />

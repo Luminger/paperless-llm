@@ -38,7 +38,10 @@ class SessionOut(BaseModel):
     agent_kind: AgentKind
     entity_type: EntityType | None
     entity_id: int | None
+    # Run name ("Analysis", "OCR pass") — user-renamable.
     title: str
+    # Entity name resolved LIVE at read time (snapshots go stale).
+    entity_name: str = ""
     status: SessionStatus
     phase: SessionPhase | None
     params: dict[str, Any] = {}
@@ -149,6 +152,10 @@ class ProposalOut(BaseModel):
 
 class ProposalPatch(BaseModel):
     user_payload: dict[str, Any] | None = None
+
+
+class SessionRename(BaseModel):
+    title: str
 
 
 class AnalyzeRequest(BaseModel):

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 
 from app.api.deps import get_paperless
+from app.api.enrich import entity_names
 from app.api.pagination import count_of, paginate
 from app.api.presenters import proposal_out
 from app.api.schemas import (
@@ -22,6 +23,7 @@ from app.api.schemas import (
     SessionDetailOut,
     SessionOut,
     SessionPage,
+    SessionRename,
     StepOut,
 )
 from app.db.models import (
@@ -40,6 +42,7 @@ from app.db.models import (
 from app.db.session import get_session
 from app.paperless import PaperlessClient
 from app.services import steps as engine
+from app.services.audit import record
 from app.services.events import bus
 from app.services.transcript import derive_transcript
 
@@ -55,6 +58,7 @@ async def list_sessions(
     page: int = 1,
     page_size: int = 20,
     db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
 ) -> SessionPage:
     """Paginated session list, filterable by bound entity. Active and
     archived sessions are separate lists (archived=true for the
@@ -120,6 +124,10 @@ async def list_sessions(
         item.proposal_count = n
         item.pending_proposal_count = int(pending or 0)
         results.append(item)
+    names = await entity_names(paperless, [(r.entity_type, r.entity_id) for r in results])
+    for r in results:
+        if r.entity_type is not None and r.entity_id is not None:
+            r.entity_name = names.get((r.entity_type.value, r.entity_id), "")
     return SessionPage(
         count=win.count, page=win.page, page_size=win.page_size, results=results
     )
@@ -140,7 +148,9 @@ def _step_out(step: Step, history: list) -> StepOut:
 
 @router.get("/{session_id}")
 async def get_session_detail(
-    session_id: int, db: AsyncSession = Depends(get_session)
+    session_id: int,
+    db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
 ) -> SessionDetailOut:
     s = await db.get(Session, session_id)
     if s is None:
@@ -148,6 +158,9 @@ async def get_session_detail(
     # Build from the base schema: SessionDetailOut fields would otherwise
     # collide with same-named (lazy) ORM relationships.
     out = SessionDetailOut(**SessionOut.model_validate(s).model_dump())
+    if s.entity_type is not None and s.entity_id is not None:
+        names = await entity_names(paperless, [(s.entity_type, s.entity_id)])
+        out.entity_name = names.get((s.entity_type.value, s.entity_id), "")
     history = s.message_history or []
     step_rows = (
         await db.scalars(
@@ -165,6 +178,25 @@ async def get_session_detail(
     ).all()
     out.proposals = [proposal_out(p) for p in proposals]
     return out
+
+
+@router.patch("/{session_id}")
+async def rename_session(
+    session_id: int,
+    body: SessionRename,
+    db: AsyncSession = Depends(get_session),
+) -> SessionOut:
+    """Sessions belong to the user — the name is theirs to change."""
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(422, "the name cannot be empty")
+    s.title = title
+    await record(db, "session", "renamed", session_id=s.id, title=title)
+    await db.commit()
+    return SessionOut.model_validate(s)
 
 
 @router.post("/analyze/document/{document_id}")

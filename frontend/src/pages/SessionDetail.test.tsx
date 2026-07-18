@@ -82,6 +82,7 @@ function makeDetail(overrides: Partial<SessionDetailT> = {}): SessionDetailT {
     agent_kind: "document",
     entity_type: "document",
     entity_id: 7,
+    entity_name: "",
     title: "Document #7 analysis",
     status: "idle",
     phase: "done",

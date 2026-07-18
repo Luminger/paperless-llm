@@ -3,7 +3,13 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -68,7 +74,6 @@ function NewJob({ onDone }: { onDone: () => void }) {
   });
 
   return (
-    <Card className="mb-6 p-4">
       <form
         className="space-y-4"
         onSubmit={(e) => {
@@ -85,7 +90,6 @@ function NewJob({ onDone }: { onDone: () => void }) {
           });
         }}
       >
-        <p className="font-medium">New job</p>
         <RadioGroup
           value={mode}
           onValueChange={(v) => {
@@ -171,7 +175,6 @@ function NewJob({ onDone }: { onDone: () => void }) {
         </Button>
         <ErrorNotice error={create.error} />
       </form>
-    </Card>
   );
 }
 
@@ -201,19 +204,29 @@ export default function Jobs() {
       <PageHeader
         title="Jobs"
         actions={
-          <Button size="sm" onClick={() => setShowNew(!showNew)}>
-            {showNew ? "Close" : "New job"}
+          <Button size="sm" onClick={() => setShowNew(true)}>
+            New job
           </Button>
         }
       />
-      {showNew && (
-        <NewJob
-          onDone={() => {
-            setShowNew(false);
-            qc.invalidateQueries({ queryKey: keys.jobs() });
-          }}
-        />
-      )}
+      <Dialog open={showNew} onOpenChange={setShowNew}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>New job</DialogTitle>
+            <DialogDescription>
+              A job analyzes a whole set of documents — or re-does their OCR.
+            </DialogDescription>
+          </DialogHeader>
+          {showNew && (
+            <NewJob
+              onDone={() => {
+                setShowNew(false);
+                qc.invalidateQueries({ queryKey: keys.jobs() });
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <ErrorNotice error={error} />
       {isLoading ? (
         <LoadingState lines={3} />

@@ -199,6 +199,7 @@ class PaperlessClient:
         query: str | None = None,
         *,
         title_contains: str | None = None,
+        document_ids: list[int] | None = None,
         tag_ids: list[int] | None = None,
         tags_any: list[int] | None = None,
         tags_none: bool | None = None,
@@ -219,6 +220,7 @@ class PaperlessClient:
         """Full-text search (``query``) and/or field filters."""
         params: dict[str, Any] = {
             "query": query,
+            "id__in": ",".join(map(str, document_ids)) if document_ids else None,
             "title__icontains": title_contains,
             # __all = document carries ALL of these (agent/scope use);
             # __in = ANY of these (multiselect filters).

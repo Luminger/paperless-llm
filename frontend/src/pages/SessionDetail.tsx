@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, Check, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
 import { keys } from "../lib/keys";
@@ -10,32 +12,12 @@ import { entityHref } from "./EntityPage";
 import { StepCard } from "../features/session/StepCard";
 import { NextTurnBox } from "../features/session/ContinueBox";
 
-function ArchivedBanner({
-  sessionId,
-  onChanged,
-}: {
-  sessionId: number;
-  onChanged: () => void;
-}) {
-  const unarchive = useMutation({
-    mutationFn: () => api.unarchiveSession(sessionId),
-    onSuccess: onChanged,
-  });
+function ArchivedBanner() {
   return (
-    <div className="mb-4 flex items-center gap-3 rounded-lg border bg-muted/60 p-3 text-sm text-muted-foreground">
-      <span className="flex-1">
-        This session is <strong>archived</strong>: its proposals cannot be applied
-        anymore, but applied changes can still be reverted (going back in time is
-        always allowed).
-      </span>
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => unarchive.mutate()}
-        disabled={unarchive.isPending}
-      >
-        Unarchive
-      </Button>
+    <div className="mb-4 rounded-lg border bg-muted/60 p-3 text-sm text-muted-foreground">
+      This session is <strong>archived</strong>: its proposals cannot be applied
+      anymore, but applied changes can still be reverted (going back in time is
+      always allowed).
     </div>
   );
 }
@@ -89,6 +71,117 @@ function JobFlowBar({ sessionId, jobId }: { sessionId: number; jobId: number }) 
   );
 }
 
+function ArchiveToggle({
+  sessionId,
+  archived,
+  onChanged,
+}: {
+  sessionId: number;
+  archived: boolean;
+  onChanged: () => void;
+}) {
+  const qc = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: () =>
+      archived ? api.unarchiveSession(sessionId) : api.archiveSession(sessionId),
+    onSuccess: () => {
+      onChanged();
+      qc.invalidateQueries({ queryKey: keys.sessions() });
+    },
+  });
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={toggle.isPending}
+      title={
+        archived
+          ? "Unarchive: allow applying proposals again"
+          : "Archive: keeps history & revert, blocks new work and applies"
+      }
+      onClick={() => toggle.mutate()}
+    >
+      {archived ? (
+        <>
+          <ArchiveRestore className="size-3.5" /> Unarchive
+        </>
+      ) : (
+        <>
+          <Archive className="size-3.5" /> Archive
+        </>
+      )}
+    </Button>
+  );
+}
+
+/** The session's name is the user's — click the pencil, type, done. */
+function EditableTitle({ id, title }: { id: number; title: string }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const rename = useMutation({
+    mutationFn: () => api.renameSession(id, draft.trim()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.session(id) });
+      qc.invalidateQueries({ queryKey: keys.sessions() });
+      setEditing(false);
+    },
+  });
+  if (!editing) {
+    return (
+      <span className="group flex items-center gap-2">
+        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="rename session"
+          className="size-7 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+          onClick={() => {
+            setDraft(title);
+            setEditing(true);
+          }}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-2">
+      <Input
+        autoFocus
+        aria-label="session name"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && draft.trim()) rename.mutate();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="h-8 w-72 text-lg font-semibold"
+      />
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        aria-label="save name"
+        disabled={!draft.trim() || rename.isPending}
+        onClick={() => rename.mutate()}
+      >
+        <Check className="size-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        aria-label="cancel rename"
+        onClick={() => setEditing(false)}
+      >
+        <X className="size-4" />
+      </Button>
+    </span>
+  );
+}
+
 export default function SessionDetail() {
   const { id } = useParams();
   const sessionId = Number(id);
@@ -138,11 +231,18 @@ export default function SessionDetail() {
           </Link>
         </nav>
       )}
-      <h1 className="mb-4 text-xl font-semibold tracking-tight">{s.title}</h1>
+      <div className="mb-4 flex items-center gap-3">
+        <EditableTitle id={s.id} title={s.title} />
+        {s.entity_name && (
+          <span className="text-sm text-muted-foreground">· {s.entity_name}</span>
+        )}
+        <span className="flex-1" />
+        <ArchiveToggle sessionId={s.id} archived={archived} onChanged={onChanged} />
+      </div>
       {inFlow && s.job_id != null && (
         <JobFlowBar sessionId={s.id} jobId={s.job_id} />
       )}
-      {archived && <ArchivedBanner sessionId={s.id} onChanged={onChanged} />}
+      {archived && <ArchivedBanner />}
 
       <div className="space-y-3">
         {s.steps.map((step) => (

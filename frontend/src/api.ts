@@ -139,6 +139,11 @@ export const api = {
     const qs = params.toString();
     return request<SessionPage>(`/api/sessions${qs ? `?${qs}` : ""}`);
   },
+  renameSession: (id: number, title: string) =>
+    request<Session>(`/api/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
   archiveSession: (id: number) =>
     request<Session>(`/api/sessions/${id}/archive`, { method: "POST" }),
   unarchiveSession: (id: number) =>
