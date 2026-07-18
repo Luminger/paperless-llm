@@ -1,6 +1,6 @@
 import { reduceProgress, type LiveActivity } from "./useSessionEvents";
 
-const EMPTY: LiveActivity = { tokens: 0, items: [] };
+const EMPTY: LiveActivity = { tokens: 0, gen: 0, items: [] };
 
 describe("live progress reducer — streaming builds real transcript items", () => {
   it("thinking and text parts accumulate in place", () => {
@@ -35,4 +35,23 @@ describe("live progress reducer — streaming builds real transcript items", () 
     expect(propose.tool_rejected).toBe(true);
     expect(propose.tool_result).toContain("rejected:");
   });
+});
+
+it("keeps the timeline chronological across model requests (part indices restart)", () => {
+  // Request 1: thinking part 0 → tool call → request 2: thinking part 0 again.
+  let s = reduceProgress(EMPTY, { part: 0, part_kind: "thinking", content: "planning", tokens: 3 });
+  s = reduceProgress(s, { tool: "get_document", args: '{"document_id": 7}' });
+  s = reduceProgress(s, { tool_done: "get_document", result: "{}" });
+  s = reduceProgress(s, { part: 0, part_kind: "thinking", content: "second thoughts", tokens: 9 });
+
+  // FOUR items in order — request 2's part 0 must NOT overwrite
+  // request 1's item above the tool row.
+  expect(s.items.map((i) => i.role)).toEqual(["thinking", "tool", "thinking"]);
+  expect(s.items[0].content).toBe("planning");
+  expect(s.items[2].content).toBe("second thoughts");
+
+  // Streaming updates within request 2 still update in place.
+  s = reduceProgress(s, { part: 0, part_kind: "thinking", content: "second thoughts, extended", tokens: 12 });
+  expect(s.items).toHaveLength(3);
+  expect(s.items[2].content).toBe("second thoughts, extended");
 });

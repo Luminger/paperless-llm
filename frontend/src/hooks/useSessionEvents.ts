@@ -12,6 +12,8 @@ export type LiveTranscriptItem = TranscriptItem & { live_key?: string };
 export interface LiveActivity {
   tokens: number;
   items: LiveTranscriptItem[];
+  // Model-request generation within the turn (parts key per request).
+  gen: number;
 }
 
 export interface ProgressEvent {
@@ -32,7 +34,7 @@ export interface ProgressEvent {
   proposal_id?: number;
 }
 
-const EMPTY: LiveActivity = { tokens: 0, items: [] };
+const EMPTY: LiveActivity = { tokens: 0, items: [], gen: 0 };
 
 function liveItem(over: Partial<LiveTranscriptItem>): LiveTranscriptItem {
   return {
@@ -51,14 +53,19 @@ function liveItem(over: Partial<LiveTranscriptItem>): LiveTranscriptItem {
 }
 
 // Model parts get stable keys so deltas UPDATE instead of append.
-const partKey = (i: number) => `part:${i}`;
+// Part indices RESTART at 0 for every model request in the tool loop
+// (pydantic-ai numbers parts per response). Keys must therefore carry
+// the request generation, or request N's "part 0" would overwrite
+// request 1's item in place — above the tool rows, scrambling the
+// timeline. Tool events fire between requests, so they bump the gen.
+const partKey = (gen: number, i: number) => `g${gen}:part:${i}`;
 
 /** Pure reducer: one progress event onto the live state (exported for
  * tests). */
 export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivity {
   const tokens = ev.tokens ?? cur.tokens;
   if (ev.part != null && ev.part_kind) {
-    const key = partKey(ev.part);
+    const key = partKey(cur.gen, ev.part);
     const items = [...cur.items];
     const idx = items.findIndex((it) => it.live_key === key);
     const item = liveItem({
@@ -68,7 +75,7 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
     });
     if (idx >= 0) items[idx] = item;
     else items.push(item);
-    return { tokens, items };
+    return { ...cur, tokens, items };
   }
   if (ev.tool) {
     let args: Record<string, unknown> | null = null;
@@ -78,7 +85,11 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
       args = null;
     }
     return {
+      ...cur,
       tokens,
+      // The response that requested this tool is complete — the next
+      // request's parts are NEW items, never in-place updates.
+      gen: cur.gen + 1,
       items: [
         ...cur.items,
         liveItem({ role: "tool", tool_name: ev.tool, tool_args: args }),
@@ -99,7 +110,7 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
         break;
       }
     }
-    return { tokens, items };
+    return { ...cur, tokens, items };
   }
   return { ...cur, tokens };
 }

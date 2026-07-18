@@ -61,7 +61,7 @@ describe("StepCard streaming", () => {
           } as unknown as Step
         }
         proposals={[]}
-        live={{ tokens: 5, items: [] }}
+        live={{ tokens: 5, gen: 0, items: [] }}
         onChanged={() => {}}
         archived={false}
         turn={2}
@@ -98,6 +98,7 @@ describe("StepCard streaming", () => {
         proposals={[]}
         live={{
           tokens: 42,
+          gen: 0,
           items: [
             liveItem({ role: "thinking", content: "checking the taxonomy" }),
             liveItem({ role: "tool", tool_name: "list_tags", tool_args: {} }),
@@ -142,6 +143,7 @@ describe("StepCard streaming", () => {
         proposals={[proposal]}
         live={{
           tokens: 90,
+          gen: 0,
           items: [
             liveItem({ role: "thinking", content: "needs a new tag" }),
             liveItem({
