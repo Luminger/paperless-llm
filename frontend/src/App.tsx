@@ -28,7 +28,7 @@ import Documents from "./pages/Documents";
 import Dashboard from "./pages/Dashboard";
 import SessionDetail from "./pages/SessionDetail";
 import ProposalRedirect from "./pages/ProposalRedirect";
-import Taxonomy from "./pages/Taxonomy";
+import Taxonomy, { TaxonomyIndex } from "./pages/Taxonomy";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
@@ -151,7 +151,8 @@ export default function App() {
           <Route path="/proposals/:id" element={<ProposalRedirect />} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/documents/:id" element={<EntityPage />} />
-          <Route path="/taxonomy" element={<Taxonomy />} />
+          <Route path="/taxonomy" element={<TaxonomyIndex />} />
+          <Route path="/taxonomy/:type" element={<Taxonomy />} />
           <Route path="/taxonomy/:type/:id" element={<EntityPage />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />

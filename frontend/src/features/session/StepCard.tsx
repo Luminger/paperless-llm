@@ -160,21 +160,6 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
   );
 }
 
-function LiveTrace({ live }: { live: LiveActivity | undefined }) {
-  if (!live || (live.items.length === 0 && live.tokens === 0)) return null;
-  // The streaming view IS the finished view: same rows, same
-  // expandability — just still growing.
-  return (
-    <div className="space-y-1">
-      <Transcript items={live.items} />
-      <p className="px-2 text-xs text-muted-foreground">
-        <span className="mr-1.5 inline-block size-2 animate-pulse rounded-full bg-blue-500" />
-        generating… {live.tokens} tokens
-      </p>
-    </div>
-  );
-}
-
 function OcrBody({ step }: { step: Step }) {
   if (step.state === "awaiting_user") return <OcrGateBody step={step} />;
   const resolution = step.result.resolution as string | undefined;
@@ -192,6 +177,18 @@ function OcrBody({ step }: { step: Step }) {
   return <p className="text-xs leading-5 text-muted-foreground">{bits.join(" · ")}</p>;
 }
 
+/** The user's decision is part of the record: who applied it. */
+export function DecidedBy({ p }: { p: Proposal }) {
+  if (!p.applied || !p.applied_by) return null;
+  const label =
+    p.applied_by === "system"
+      ? "applied automatically"
+      : p.user_payload != null
+        ? "accepted by you (edited)"
+        : "accepted by you";
+  return <PanelTitleMuted>{label}</PanelTitleMuted>;
+}
+
 function stepProposals(step: Step, proposals: Proposal[]): Proposal[] {
   const ids = (step.result.proposal_ids as number[] | undefined) ?? [];
   const byId = new Map(proposals.map((p) => [p.id, p]));
@@ -200,7 +197,7 @@ function stepProposals(step: Step, proposals: Proposal[]): Proposal[] {
     .filter((p): p is Proposal => p != null && p.kind !== "replace_content");
 }
 
-function WorkFold({ items }: { items: TranscriptItem[] }) {
+function WorkFold({ items, open = false }: { items: TranscriptItem[]; open?: boolean }) {
   const toolCount = items.filter((it) => it.role === "tool").length;
   const thinkingCount = items.filter((it) => it.role === "thinking").length;
   const label =
@@ -212,11 +209,13 @@ function WorkFold({ items }: { items: TranscriptItem[] }) {
       .filter(Boolean)
       .join(" · ") || `${items.length} steps`;
   return (
+    // `open` flips false when the live tail gets sealed by a proposal —
+    // the panel closes itself and the timeline moves on.
     <Panel
-      defaultOpen={false}
+      defaultOpen={open}
       title={
         <>
-          <PanelTitle>The agent's work</PanelTitle>
+          <PanelTitle>{open ? "The agent's work…" : "The agent's work"}</PanelTitle>
           <PanelTitleMuted>{label}</PanelTitleMuted>
         </>
       }
@@ -226,28 +225,42 @@ function WorkFold({ items }: { items: TranscriptItem[] }) {
   );
 }
 
-/** A finished turn preserves the ACTUAL timeline of what the agent
- * emitted: work (reasoning, exploratory tool calls) folds into dashed
- * sections, while proposals render IN PLACE of their propose_* calls
- * and the final summary stays fixed — in chronological order. */
+/** ONE turn renderer for both the finished transcript and the live
+ * stream — the UI builds piece by piece out of the REAL components:
+ * work (reasoning, exploratory tool calls) folds into panels that
+ * auto-close as soon as the next proposal pops in, proposals render in
+ * place of their propose_* calls, the summary stays fixed. While
+ * streaming, the trailing work panel is open and growing. */
 function TurnBody({
   step,
   proposals,
   archived,
+  live,
 }: {
   step: Step;
   proposals: Proposal[];
   archived: boolean;
+  live?: LiveActivity;
 }) {
-  const mine = stepProposals(step, proposals);
-  const items = step.transcript;
+  const streaming = step.state === "running" || step.state === "pending";
+  // Live proposals are matched via step_id (result.proposal_ids only
+  // exists once the turn finished).
+  const mine = streaming
+    ? proposals.filter(
+        (p) => p.step_id === step.id && p.kind !== "replace_content",
+      )
+    : stepProposals(step, proposals);
+  const items = streaming ? (live?.items ?? []) : step.transcript;
 
-  // The summary is the LAST agent prose of the turn.
+  // The summary is the LAST agent prose — but only once the turn is
+  // done; mid-stream prose is just the growing tail of the work.
   let summaryIdx = -1;
-  for (let i = items.length - 1; i >= 0; i--) {
-    if (items[i].role === "agent") {
-      summaryIdx = i;
-      break;
+  if (!streaming) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].role === "agent") {
+        summaryIdx = i;
+        break;
+      }
     }
   }
 
@@ -257,12 +270,33 @@ function TurnBody({
   let fold: typeof items = [];
   let cursor = 0;
   const consumed = new Set<number>();
-  const flush = () => {
+  const flush = (liveTail = false) => {
     if (fold.length > 0) {
-      out.push(<WorkFold key={`fold-${out.length}`} items={fold} />);
+      out.push(
+        <WorkFold key={`fold-${out.length}`} items={fold} open={liveTail} />,
+      );
       fold = [];
     }
   };
+
+  // The user's own instructions for this turn lead it — their box,
+  // their styling, collapsible like everything else.
+  const instructions = step.input.instructions;
+  if (typeof instructions === "string" && instructions) {
+    out.push(
+      <Panel
+        key="instructions"
+        className="border-primary/25 bg-primary/5"
+        title={
+          <>
+            <PanelTitle>Your instructions</PanelTitle>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 whitespace-pre-wrap">{instructions}</p>
+      </Panel>,
+    );
+  }
   const renderProposal = (p: Proposal) =>
     p.status === "superseded" ? (
       <details key={`p-${p.id}`} className="rounded-md border border-dashed px-3 py-2">
@@ -281,6 +315,7 @@ function TurnBody({
             <PanelTitle>Proposal</PanelTitle>
             <PanelTitleMuted>{proposalKindLabel(p)}</PanelTitleMuted>
             <StatusBadge status={p.status} />
+            {p.applied && <DecidedBy p={p} />}
             {p.revision > 1 && <PanelTitleMuted>revision {p.revision}</PanelTitleMuted>}
           </>
         }
@@ -296,6 +331,9 @@ function TurnBody({
       out.push(<UserMessage key={`u-${idx}`} item={item} />);
       return;
     }
+    // Streaming: prose that may still become the summary stays in the
+    // open tail; never fold the item currently being generated.
+
     if (idx === summaryIdx) {
       flush();
       out.push(
@@ -331,15 +369,28 @@ function TurnBody({
     }
     fold.push(item);
   });
-  flush();
-  // Safety net: proposals not matched to a tool call still render.
-  for (const p of mine) {
-    if (!consumed.has(p.id)) out.push(renderProposal(p));
+  // While streaming the trailing fold stays OPEN (it is the live
+  // view); when the next proposal arrives, flush() runs with
+  // liveTail=false and the panel closes automatically.
+  flush(streaming);
+  if (!streaming) {
+    // Safety net: proposals not matched to a tool call still render.
+    for (const p of mine) {
+      if (!consumed.has(p.id)) out.push(renderProposal(p));
+    }
   }
 
   return (
     <div className="space-y-3">
       {out}
+      {streaming && (
+        <p className="px-2 text-xs text-muted-foreground">
+          <span className="mr-1.5 inline-block size-2 animate-pulse rounded-full bg-blue-500" />
+          {live && live.tokens > 0
+            ? `generating… ${live.tokens} tokens`
+            : "working…"}
+        </p>
+      )}
       {step.state === "succeeded" && step.kind === "analysis" && mine.length === 0 && (
         <p className="px-2 text-sm text-muted-foreground">No changes proposed.</p>
       )}
@@ -458,9 +509,13 @@ export function StepCard({
             {step.kind === "ocr" ? (
               <OcrBody step={step} />
             ) : (
-              <TurnBody step={step} proposals={proposals} archived={archived} />
+              <TurnBody
+                step={step}
+                proposals={proposals}
+                archived={archived}
+                live={live}
+              />
             )}
-            {step.state === "running" && <LiveTrace live={live} />}
             <AttemptHistory step={step} />
             {step.error && step.state === "failed" && <ErrorNotice error={step.error} />}
           </>

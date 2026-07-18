@@ -1155,6 +1155,11 @@ export interface components {
         MetaOut: {
             /** Paperless Url */
             paperless_url: string;
+            /**
+             * Version
+             * @default
+             */
+            version: string;
         };
         /** OcrBatchTiming */
         OcrBatchTiming: {
@@ -1309,6 +1314,8 @@ export interface components {
              * @default false
              */
             applied: boolean;
+            /** Applied By */
+            applied_by?: string | null;
             /** Base Snapshot */
             base_snapshot?: {
                 [key: string]: unknown;
@@ -1332,6 +1339,8 @@ export interface components {
             /** Session Id */
             session_id: number;
             status: components["schemas"]["ProposalStatus"];
+            /** Step Id */
+            step_id?: number | null;
             /** Supersedes Id */
             supersedes_id: number | null;
             /** Updated At */

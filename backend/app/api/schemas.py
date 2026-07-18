@@ -121,6 +121,8 @@ class SessionDetailOut(SessionOut):
 class ProposalOut(BaseModel):
     id: int
     session_id: int
+    # The turn that emitted it (live rendering matches on this).
+    step_id: int | None = None
     kind: str
     revision: int
     supersedes_id: int | None
@@ -135,6 +137,8 @@ class ProposalOut(BaseModel):
     updated_at: UtcDateTime
     applied: bool = False
     reverted: bool = False
+    # Who applied it: "user", "user:<name>", or "system" (auto-apply).
+    applied_by: str | None = None
 
     model_config = {"from_attributes": True}
 

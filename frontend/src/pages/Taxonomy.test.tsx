@@ -33,7 +33,7 @@ describe("Taxonomy", () => {
   });
 
   it("rows link to detail pages, show instructions, no Analyze button", async () => {
-    renderWithProviders(<Taxonomy />);
+    renderWithProviders(<Taxonomy />, { route: "/taxonomy/tag", path: "/taxonomy/:type" });
 
     const link = await screen.findByRole("link", { name: "Steuern" });
     expect(link.getAttribute("href")).toBe("/taxonomy/tag/1");
@@ -42,7 +42,7 @@ describe("Taxonomy", () => {
   });
 
   it("filters by name", async () => {
-    renderWithProviders(<Taxonomy />);
+    renderWithProviders(<Taxonomy />, { route: "/taxonomy/tag", path: "/taxonomy/:type" });
     await screen.findByText("Steuern");
     await userEvent.type(screen.getByLabelText("filter entities"), "vers");
     expect(screen.queryByText("Steuern")).not.toBeInTheDocument();
@@ -51,7 +51,7 @@ describe("Taxonomy", () => {
 
   it("multiselect: select all skips inbox, bulk analyze is ONE job", async () => {
     mocked.createJob.mockResolvedValue({ id: 9 } as never);
-    renderWithProviders(<Taxonomy />);
+    renderWithProviders(<Taxonomy />, { route: "/taxonomy/tag", path: "/taxonomy/:type" });
     await screen.findByText("Steuern");
 
     // Checkboxes are always visible; the inbox tag is not selectable.
@@ -69,7 +69,7 @@ describe("Taxonomy", () => {
   });
 
   it("selection can be cleared", async () => {
-    renderWithProviders(<Taxonomy />);
+    renderWithProviders(<Taxonomy />, { route: "/taxonomy/tag", path: "/taxonomy/:type" });
     await screen.findByText("Steuern");
     await userEvent.click(screen.getByLabelText("select Steuern"));
     expect(screen.getByText("1 selected")).toBeInTheDocument();

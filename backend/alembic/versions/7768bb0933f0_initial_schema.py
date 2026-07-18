@@ -1,8 +1,8 @@
 """initial schema
 
-Revision ID: 7d2b705f5572
+Revision ID: 7768bb0933f0
 Revises: 
-Create Date: 2026-07-18 09:31:27.884626
+Create Date: 2026-07-18 12:44:23.818911
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '7d2b705f5572'
+revision: str = '7768bb0933f0'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -155,7 +155,7 @@ def upgrade() -> None:
     sa.Column('agent_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('user_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
     sa.Column('base_snapshot', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
-    sa.Column('status', sa.Enum('draft', 'pending', 'applied', 'superseded', 'no_change', name='proposalstatus', native_enum=False), nullable=False),
+    sa.Column('status', sa.Enum('draft', 'pending', 'applying', 'applied', 'superseded', 'no_change', name='proposalstatus', native_enum=False), nullable=False),
     sa.Column('entity_type', sa.Enum('document', 'tag', 'correspondent', 'document_type', 'storage_path', name='entitytype', native_enum=False), nullable=True),
     sa.Column('entity_id', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
@@ -174,6 +174,7 @@ def upgrade() -> None:
     op.create_table('applied_changes',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('proposal_id', sa.Integer(), nullable=False),
+    sa.Column('actor', sa.String(length=100), nullable=False),
     sa.Column('paperless_before', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('paperless_after', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('applied_at', sa.DateTime(timezone=True), nullable=False),

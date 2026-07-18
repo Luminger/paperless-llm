@@ -211,6 +211,8 @@ class AppliedChange(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     proposal_id: Mapped[int] = mapped_column(ForeignKey("proposals.id"), unique=True)
+    # Who applied it ("user", "user:<name>", "system" for auto-apply).
+    actor: Mapped[str] = mapped_column(String(100), default="user")
     # Snapshot of the paperless state we touched, sufficient to restore.
     paperless_before: Mapped[dict[str, Any]] = mapped_column()
     paperless_after: Mapped[dict[str, Any]] = mapped_column()

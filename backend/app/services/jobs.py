@@ -178,10 +178,19 @@ async def create_job(
         )
         db.add(session)
         await db.flush()
+        # Analysis steps carry the user's instructions in their INPUT —
+        # the UI renders them as the user's own box on the turn. (An
+        # OCR-first pipeline stamps them on the analysis step at gate
+        # resolution instead.)
+        step_input = (
+            {"instructions": instructions}
+            if instructions and not redo_ocr
+            else None
+        )
         steps.append(
             await create_step(
                 db, session, StepKind.ocr if redo_ocr else StepKind.analysis,
-                lane=lane, commit=False,
+                step_input, lane=lane, commit=False,
             )
         )
     await record(
@@ -246,7 +255,9 @@ async def create_entities_job(
         await db.flush()
         steps.append(
             await create_step(
-                db, session, StepKind.analysis, lane=QueueLane.batch, commit=False
+                db, session, StepKind.analysis,
+                {"instructions": instructions} if instructions else None,
+                lane=QueueLane.batch, commit=False,
             )
         )
     await record(
@@ -299,7 +310,9 @@ async def create_entity_job(
     db.add(session)
     await db.flush()
     await create_step(
-        db, session, StepKind.analysis, lane=QueueLane.interactive
+        db, session, StepKind.analysis,
+        {"instructions": instructions} if instructions else None,
+        lane=QueueLane.interactive,
     )
     await record(
         db, "job", "created",

@@ -27,7 +27,7 @@ const mocked = vi.mocked(api);
 describe("EntityPage (generic entity overview)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocked.getMeta.mockResolvedValue({ paperless_url: "http://paperless.example" });
+    mocked.getMeta.mockResolvedValue({ paperless_url: "http://paperless.example", version: "test" });
     mocked.listSessions.mockResolvedValue({ count: 0, page: 1, page_size: 5, results: [] });
     mocked.listTags.mockResolvedValue([makeEntity({ id: 3, name: "Steuern" })]);
     mocked.listCorrespondents.mockResolvedValue([makeEntity({ id: 8, name: "Kraxi" })]);
@@ -98,7 +98,7 @@ describe("EntityPage (generic entity overview)", () => {
 describe("EntityPage — instructions & inbox", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocked.getMeta.mockResolvedValue({ paperless_url: "http://paperless.example" });
+    mocked.getMeta.mockResolvedValue({ paperless_url: "http://paperless.example", version: "test" });
     mocked.listSessions.mockResolvedValue({ count: 0, page: 1, page_size: 5, results: [] });
   });
 

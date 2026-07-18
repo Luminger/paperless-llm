@@ -29,6 +29,7 @@ export interface ProgressEvent {
   tool_done?: string;
   result?: string;
   rejected?: boolean;
+  proposal_id?: number;
 }
 
 const EMPTY: LiveActivity = { tokens: 0, items: [] };
@@ -93,6 +94,7 @@ export function reduceProgress(cur: LiveActivity, ev: ProgressEvent): LiveActivi
           tool_result: ev.rejected ? `rejected: ${ev.result ?? ""}` : (ev.result ?? ""),
           tool_result_full: ev.result ?? null,
           tool_rejected: ev.rejected === true,
+          proposal_id: ev.proposal_id ?? null,
         } as LiveTranscriptItem;
         break;
       }
@@ -153,7 +155,12 @@ export function useSessionEvents(sessionId: number) {
       if (ev.type === "step_progress" && ev.step_id != null) {
         const id = ev.step_id;
         setLive((prev) => ({ ...prev, [id]: reduceProgress(prev[id] ?? EMPTY, ev) }));
-        return; // progress only — no refetch
+        // A proposal just landed mid-run: fetch it so the real card
+        // pops into the streaming timeline.
+        if (ev.proposal_id != null) {
+          qc.invalidateQueries({ queryKey: keys.session(sessionId) });
+        }
+        return; // other progress — no refetch
       }
       if (ev.type === "step_changed" && ev.step_id != null) {
         const id = ev.step_id;

@@ -24,6 +24,7 @@ from app.proposals.schemas import (
     UpdateEntity,
     validate_payload,
 )
+from app.services.actor import current_actor
 from app.services.audit import record
 
 
@@ -97,7 +98,10 @@ async def _apply_claimed(
     before, after = await _apply(paperless, typed)
 
     change = AppliedChange(
-        proposal_id=proposal.id, paperless_before=before, paperless_after=after
+        proposal_id=proposal.id,
+        actor=current_actor(),
+        paperless_before=before,
+        paperless_after=after,
     )
     proposal.status = ProposalStatus.applied
     db.add(change)

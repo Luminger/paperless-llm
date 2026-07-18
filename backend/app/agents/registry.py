@@ -53,10 +53,17 @@ def _instrumented(fn: Callable) -> Callable:
             )[:500]
         except TypeError:
             result_preview = ""
+        extra: dict = {}
+        if fn.__name__.startswith("propose_") and isinstance(result, str):
+            from app.services.transcript import _PROPOSAL_TOKEN_RE
+
+            m = _PROPOSAL_TOKEN_RE.search(result)
+            if m:
+                extra["proposal_id"] = int(m.group(1))
         bus.publish(
             ctx.deps.session_id, "step_progress",
             step_id=ctx.deps.step_id, tool_done=fn.__name__,
-            result=result_preview, rejected=False,
+            result=result_preview, rejected=False, **extra,
         )
         return result
 
@@ -112,11 +119,15 @@ THESE RULES ARE ABSOLUTE:
    creating a near-duplicate ("Telarko Deutschland GmbH" maps to an
    existing "Telarko"). No-op proposals are rejected.
 
-6. Be economical with tool calls; the budget per turn is limited.
-
-7. End EVERY turn with a short plain-prose summary (reference tokens
+6. End EVERY turn with a short plain-prose summary (reference tokens
    included). Do NOT start it with a "Summary" heading — the UI
    already labels it.
+
+FORMATTING: your prose is rendered as Markdown (GitHub flavor). You
+may use paragraphs, **bold**, *italics*, `inline code`, bullet and
+numbered lists, tables, blockquotes, and fenced code blocks. Do not
+use headings (the UI provides structure) or links other than the
+[[type:id]] reference tokens.
 """
 
 _DOCUMENT_TASK = """

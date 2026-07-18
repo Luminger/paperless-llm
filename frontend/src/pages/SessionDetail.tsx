@@ -7,7 +7,7 @@ import { keys } from "../lib/keys";
 import { useSessionEvents } from "../hooks/useSessionEvents";
 import { entityHref } from "./EntityPage";
 import { StepCard } from "../features/session/StepCard";
-import { ContinueBox } from "../features/session/ContinueBox";
+import { NextTurnBox } from "../features/session/ContinueBox";
 
 function ArchivedBanner({
   sessionId,
@@ -101,7 +101,7 @@ export default function SessionDetail() {
             turn={turnByStep.get(step.id)}
           />
         ))}
-        {canContinue && <ContinueBox sessionId={s.id} />}
+        {canContinue && <NextTurnBox sessionId={s.id} turn={turnNo + 1} />}
       </div>
 
       {/* Connection state lives OUT of the content flow; it vanishes

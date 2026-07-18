@@ -289,23 +289,23 @@ describe("SessionDetail step feed", () => {
     expect(screen.getByRole("button", { name: "Retry now" })).toBeInTheDocument();
   });
 
-  it("chat: the continue affordance appears once work is settled and sends", async () => {
+  it("chat: the NEXT TURN box appears once work is settled and sends", async () => {
     mocked.getSession.mockResolvedValue(makeDetail({}));
     mocked.sendMessage.mockResolvedValue(mkStep({ kind: "chat", state: "pending" }));
     renderDetail();
 
-    // Contextual, not a fixed chat box: opens on demand.
-    await userEvent.click(
-      await screen.findByRole("button", { name: /Continue this session/ }),
-    );
+    // The coming turn renders as its own box; the input sits where the
+    // user prompt will appear.
     await userEvent.type(
-      screen.getByLabelText("steer the agent"),
+      await screen.findByLabelText("steer the agent"),
       "also add the invoice tag",
     );
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() =>
       expect(mocked.sendMessage).toHaveBeenCalledWith(9, "also add the invoice tag"),
     );
+    // The textbox transformed into the sent text.
+    expect(screen.getByText("also add the invoice tag")).toBeInTheDocument();
   });
 
   it("no continue affordance while a step runs", async () => {
@@ -317,9 +317,7 @@ describe("SessionDetail step feed", () => {
     );
     renderDetail();
     expect(await screen.findByText("running…")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Continue this session/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("steer the agent")).not.toBeInTheDocument();
   });
 
   it("chat turns render user bubble, tool trace and reply with metrics", async () => {
@@ -425,10 +423,8 @@ describe("SessionDetail — archive & breadcrumb", () => {
     expect(screen.getByText(/unarchive the session first/)).toBeInTheDocument();
     // Applied proposal: revert remains available (back in time is fine).
     expect(screen.getByRole("button", { name: "Revert" })).toBeInTheDocument();
-    // No continue affordance on archived sessions.
-    expect(
-      screen.queryByRole("button", { name: /Continue this session/ }),
-    ).not.toBeInTheDocument();
+    // No next-turn box on archived sessions.
+    expect(screen.queryByLabelText("steer the agent")).not.toBeInTheDocument();
   });
 });
 

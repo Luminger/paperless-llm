@@ -12,4 +12,5 @@ def proposal_out(p: Proposal) -> ProposalOut:
     if p.applied_change:
         out.applied = True
         out.reverted = p.applied_change.reverted_at is not None
+        out.applied_by = p.applied_change.actor
     return out

@@ -75,8 +75,9 @@ def _kickoff_prompt(session: Session, step: Step) -> str:
             "\nThe user reviewed a re-OCR of this document and chose to keep "
             "the existing content."
         )
-    if session.params.get("instructions"):
-        prompt += f"\nAdditional instructions from the user: {session.params['instructions']}"
+    instructions = step.input.get("instructions") or session.params.get("instructions")
+    if instructions:
+        prompt += f"\nAdditional instructions from the user: {instructions}"
     return prompt
 
 
@@ -280,7 +281,10 @@ async def _resolve_ocr(
     ).strip()
     step.result = {**step.result, "resolution": resolution, "edited": edited}
     session.params = {**session.params, "ocr_gate": resolution}
-    await create_step(db, session, StepKind.analysis, {"gate": resolution}, lane=step.lane)
+    analysis_input: dict[str, Any] = {"gate": resolution}
+    if session.params.get("instructions"):
+        analysis_input["instructions"] = session.params["instructions"]
+    await create_step(db, session, StepKind.analysis, analysis_input, lane=step.lane)
 
 
 EXECUTORS.update(
