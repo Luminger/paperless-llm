@@ -37,17 +37,21 @@ async def _exec_ocr(
     db: DbSession, paperless: PaperlessClient, session: Session, step: Step
 ) -> str | None:
     assert session.entity_id is not None
+    # Resolve the EFFECTIVE dpi here so the record shows what actually
+    # ran — the UI displays it even when it's just the default.
+    dpi = step.input.get("dpi") or get_settings().llm.ocr.render_dpi
     outcome = await run_ocr(
         paperless,
         db,
         session.entity_id,
         force=True,
         instructions=step.input.get("instructions"),
-        dpi=step.input.get("dpi"),
+        dpi=dpi,
     )
     step.result = {
         "pages": len(outcome.pages),
         "duration_s": round(sum(t.get("duration_s", 0) for t in outcome.timings or []), 1),
+        "dpi": dpi,
         "from_cache": outcome.from_cache,
         # Snapshots so a later superseded rendering can still show what
         # THIS run produced and the diff it presented at the time.

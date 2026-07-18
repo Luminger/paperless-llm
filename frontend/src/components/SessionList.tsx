@@ -16,6 +16,7 @@ import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Session } from "../api";
 import { keys } from "../lib/keys";
 import { Pager } from "@/components/app/Pager";
+import { FramedCard } from "@/components/app/Framed";
 
 function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
   const qc = useQueryClient();
@@ -182,6 +183,7 @@ export function SessionList({
   showEntity = true,
   unfinished = false,
   showArchived: showArchivedSection = true,
+  framed = false,
 }: {
   entityType?: string;
   entityId?: number;
@@ -189,19 +191,47 @@ export function SessionList({
   showEntity?: boolean;
   unfinished?: boolean;
   showArchived?: boolean;
+  /** Detail pages: sessions and archived sessions as trace-style boxes. */
+  framed?: boolean;
 }) {
   const [showArchived, setShowArchived] = useState(false);
+  const active = (
+    <PagedList
+      entityType={entityType}
+      entityId={entityId}
+      archived={false}
+      unfinished={unfinished}
+      pageSize={pageSize}
+      showEntity={showEntity}
+      emptyText={unfinished ? "Nothing needs attention." : "No sessions yet."}
+    />
+  );
+  const archivedList = (
+    <PagedList
+      entityType={entityType}
+      entityId={entityId}
+      archived={true}
+      pageSize={pageSize}
+      showEntity={showEntity}
+      emptyText="No archived sessions."
+    />
+  );
+  if (framed) {
+    // Detail pages: each list is a box of its own, in the trace frame.
+    return (
+      <div className="space-y-4">
+        <FramedCard title="Sessions">{active}</FramedCard>
+        {showArchivedSection && (
+          <FramedCard title="Archived sessions" collapsible defaultOpen={false}>
+            {archivedList}
+          </FramedCard>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="space-y-3">
-      <PagedList
-        entityType={entityType}
-        entityId={entityId}
-        archived={false}
-        unfinished={unfinished}
-        pageSize={pageSize}
-        showEntity={showEntity}
-        emptyText={unfinished ? "Nothing needs attention." : "No sessions yet."}
-      />
+      {active}
       {showArchivedSection && (
         <details
           onToggle={(e) => setShowArchived((e.target as HTMLDetailsElement).open)}
@@ -210,18 +240,7 @@ export function SessionList({
           <summary className="cursor-pointer text-xs text-muted-foreground select-none">
             Archived sessions
           </summary>
-          <div className="mt-2">
-            {showArchived && (
-              <PagedList
-                entityType={entityType}
-                entityId={entityId}
-                archived={true}
-                pageSize={pageSize}
-                showEntity={showEntity}
-                emptyText="No archived sessions."
-              />
-            )}
-          </div>
+          <div className="mt-2">{showArchived && archivedList}</div>
         </details>
       )}
     </div>

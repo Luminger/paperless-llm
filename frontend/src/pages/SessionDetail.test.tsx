@@ -207,15 +207,14 @@ describe("SessionDetail step feed", () => {
     expect(await screen.findByText("superseded")).toBeInTheDocument();
     // Collapsed summary shows the parameters it ran with.
     expect(screen.getByText(/instructions: “first try”/)).toBeInTheDocument();
-    expect(screen.getByText(/instructions: “mind the stamp”/)).toBeInTheDocument();
-    // Expanding reveals the diff of THAT run (read-only, no edit button).
-    await userEvent.click(screen.getByText(/instructions: “mind the stamp”/));
+    // The LIVE run renders its guidance the way agent turns do.
+    expect(screen.getByText("Your instructions")).toBeInTheDocument();
+    expect(screen.getByText("mind the stamp")).toBeInTheDocument();
+    // Expanding the superseded run reveals ITS diff (read-only).
+    await userEvent.click(screen.getByText(/instructions: “first try”/));
     await waitFor(() => expect(document.body.textContent).toContain("the old OCR output"));
     expect(document.body.textContent).toContain("paperless text then");
     expect(screen.queryByRole("button", { name: "edit new text" })).not.toBeInTheDocument();
-    // The successor shows its own params.
-    expect(screen.getByText(/instructions: “mind the stamp”/)).toBeInTheDocument();
-    expect(screen.getByText(/new content accepted/)).toBeInTheDocument();
   });
 
   it("renders proposals inside their step and no-changes note", async () => {

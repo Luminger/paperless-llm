@@ -14,6 +14,7 @@ import { api, type Proposal, type Step, type TranscriptItem } from "../../api";
 import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard, proposalKindLabel } from "../../components/ProposalCard";
+import { frameFooterClass, frameHeaderClass } from "@/components/app/Framed";
 import { DiffView } from "../../components/DiffView";
 import { ProseBody, Transcript, UserMessage } from "./Transcript";
 import { Panel, PanelTitle, PanelTitleMuted } from "./Panel";
@@ -161,25 +162,57 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
   );
 }
 
-function OcrBody({ step }: { step: Step }) {
-  if (step.state === "awaiting_user") return <OcrGateBody step={step} />;
+function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
   const resolution = step.result.resolution as string | undefined;
   const text = step.result.text as string | undefined;
   const prev = step.result.previous_content as string | undefined;
-  // Pages + duration live in the step FOOTER (the cost line) — the
-  // body only states the outcome.
-  const bits: string[] = [];
-  if (typeof step.input.instructions === "string")
-    bits.push(`instructions: “${step.input.instructions}”`);
-  if (resolution === "accepted") bits.push("new content accepted");
-  if (resolution === "kept_existing") bits.push("existing content kept");
-  if (bits.length === 0) return null;
+  // The accepted OCR text is written via an internal journaled
+  // proposal — the SAME record proposals use, so the outcome row can
+  // use the same badge + decided-by treatment as every proposal.
+  const contentProposal = proposals.find(
+    (p) => p.step_id === step.id && p.kind === "replace_content",
+  );
+  const instructions =
+    typeof step.input.instructions === "string" ? step.input.instructions : null;
   return (
     <div className="space-y-3">
-      <p className="text-xs leading-5 text-muted-foreground">{bits.join(" · ")}</p>
-      {/* The decision is history, but WHAT changed stays inspectable —
-          the same diff, read-only (no edit affordance). */}
-      {resolution && text != null && <DiffView oldText={prev ?? ""} newText={text} />}
+      {/* The user's guidance renders exactly like on agent turns. */}
+      {instructions && (
+        <Panel
+          className="border-primary/25 bg-primary/5"
+          title={<PanelTitle>Your instructions</PanelTitle>}
+        >
+          <p className="text-sm leading-6 whitespace-pre-wrap">{instructions}</p>
+        </Panel>
+      )}
+      {step.state === "awaiting_user" ? (
+        <OcrGateBody step={step} />
+      ) : (
+        resolution && (
+          <>
+            <p className="flex items-center gap-2 text-sm">
+              {contentProposal ? (
+                <>
+                  <StatusBadge status={contentProposal.status} />
+                  {contentProposal.applied && <DecidedBy p={contentProposal} />}
+                </>
+              ) : (
+                <>
+                  <StatusBadge status="no_change" />
+                  <PanelTitleMuted>
+                    {resolution === "kept_existing"
+                      ? "existing content kept"
+                      : "content unchanged"}
+                  </PanelTitleMuted>
+                </>
+              )}
+            </p>
+            {/* The decision is history, but WHAT changed stays
+                inspectable — the same diff, read-only. */}
+            {text != null && <DiffView oldText={prev ?? ""} newText={text} />}
+          </>
+        )
+      )}
     </div>
   );
 }
@@ -516,7 +549,8 @@ export function StepCard({
         role="button"
         aria-expanded={!folded}
         className={cn(
-          "flex h-10 cursor-pointer items-center gap-2.5 bg-muted/30 px-4 select-none",
+          frameHeaderClass,
+          "cursor-pointer select-none",
           !folded && "border-b",
         )}
         onClick={() => setFolded(!folded)}
@@ -563,7 +597,7 @@ export function StepCard({
         ) : (
           <>
             {step.kind === "ocr" ? (
-              <OcrBody step={step} />
+              <OcrBody step={step} proposals={proposals} />
             ) : (
               <TurnBody
                 step={step}
@@ -607,7 +641,10 @@ function StepFooter({
     ) : step.kind === "ocr" && step.result.duration_s != null ? (
       <span className="text-xs text-muted-foreground/70">
         {String(step.result.pages ?? "?")} page
-        {step.result.pages !== 1 ? "s" : ""} · {String(step.result.duration_s)}s
+        {step.result.pages !== 1 ? "s" : ""}
+        {step.result.dpi != null && ` · ${String(step.result.dpi)} DPI`}
+        {" · "}
+        {String(step.result.duration_s)}s
       </span>
     ) : null;
   const showControls =
@@ -618,7 +655,7 @@ function StepFooter({
       (step.state === "pending" && step.scheduled_at != null));
   if (!timing && !showControls) return null;
   return (
-    <div className="flex min-h-10 items-center gap-2 border-t bg-muted/20 px-4 py-1.5">
+    <div className={frameFooterClass}>
       {timing}
       <span className="flex-1" />
       {showControls && <StepControls step={step} onChanged={onChanged} />}

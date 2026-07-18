@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, ScanText, Sparkles, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -17,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DocumentPreview } from "@/components/app/DocumentPreview";
+import { FramedCard } from "@/components/app/Framed";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type DocumentHistory, type EntityRef, type PaperlessDocument } from "../api";
 import { keys, invalidateEntities } from "../lib/keys";
@@ -176,31 +176,38 @@ function InstructionsEditor({
   });
   const dirty = text !== initial;
   return (
-    <Card className="mb-8 gap-2 p-4">
-      <h2 className="text-sm font-medium text-muted-foreground">Agent instructions</h2>
-      <p className="text-xs text-muted-foreground/70">
-        Local to this application. The agent sees these whenever it works with this{" "}
-        {entityType.replaceAll("_", " ")} and is required to follow them.
-      </p>
-      <Textarea
-        aria-label="agent instructions"
-        rows={3}
-        placeholder="e.g. Only assign this tag to documents from the tax office…"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
-      <div className="flex items-center gap-2">
-        <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
-          Save instructions
-        </Button>
-        {save.isSuccess && !dirty && (
-          <span className="text-xs text-primary">saved</span>
-        )}
-        {save.error && (
-          <span className="text-xs text-destructive">{errorMessage(save.error)}</span>
-        )}
+    <FramedCard
+      className="mb-4"
+      title="Agent instructions"
+      footer={
+        <>
+          {save.isSuccess && !dirty && (
+            <span className="text-xs text-primary">saved</span>
+          )}
+          {save.error && (
+            <span className="text-xs text-destructive">{errorMessage(save.error)}</span>
+          )}
+          <span className="flex-1" />
+          <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+            Save instructions
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground/70">
+          Local to this application. The agent sees these whenever it works with this{" "}
+          {entityType.replaceAll("_", " ")} and is required to follow them.
+        </p>
+        <Textarea
+          aria-label="agent instructions"
+          rows={3}
+          placeholder="e.g. Only assign this tag to documents from the tax office…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
       </div>
-    </Card>
+    </FramedCard>
   );
 }
 
@@ -265,10 +272,11 @@ function AnalyzeButton({ entityType, id }: { entityType: string; id: number }) {
  * expand theater. */
 function ContentPanel({ content }: { content: string }) {
   return (
-    <Card className="mb-8 gap-2 p-4">
-      <h2 className="text-sm font-medium text-muted-foreground">
-        Content ({content.length.toLocaleString()} characters)
-      </h2>
+    <FramedCard
+      className="mb-4"
+      title="Content"
+      meta={`${content.length.toLocaleString()} characters`}
+    >
       {content.trim() ? (
         <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
           {content}
@@ -278,7 +286,7 @@ function ContentPanel({ content }: { content: string }) {
           No text layer — this document likely needs an OCR pass.
         </p>
       )}
-    </Card>
+    </FramedCard>
   );
 }
 
@@ -399,47 +407,59 @@ export default function EntityPage() {
       ? docQuery.data!.title || `Document #${id}`
       : entityQuery.data!.name;
 
+  const actions = (
+    <>
+      <span className="flex-1" />
+      {entityType === "document" ? (
+        <DocumentActions id={id} />
+      ) : !(entityType === "tag" && entityQuery.data?.is_inbox_tag) ? (
+        <AnalyzeButton entityType={entityType} id={id} />
+      ) : (
+        <span
+          className="text-xs text-muted-foreground/70"
+          title="The inbox tag is a workflow marker — there is nothing to analyze about it."
+        >
+          not analyzable (inbox)
+        </span>
+      )}
+      {meta && (
+        <Button asChild size="sm" variant="outline">
+          <a
+            href={paperlessHref(meta.paperless_url, entityType, id)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in paperless <ExternalLink className="size-3.5" />
+          </a>
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex-1">
-          <p className="text-xs text-muted-foreground/70 capitalize">
-            {entityType.replaceAll("_", " ")}
-          </p>
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        </div>
-        {entityType === "document" ? (
-          <DocumentActions id={id} />
-        ) : !(entityType === "tag" && entityQuery.data?.is_inbox_tag) ? (
-          <AnalyzeButton entityType={entityType} id={id} />
-        ) : (
-          <span
-            className="text-xs text-muted-foreground/70"
-            title="The inbox tag is a workflow marker — there is nothing to analyze about it."
-          >
-            not analyzable (inbox)
-          </span>
-        )}
-        {meta && (
-          <Button asChild size="sm" variant="outline">
-            <a
-              href={paperlessHref(meta.paperless_url, entityType, id)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open in paperless <ExternalLink className="size-3.5" />
-            </a>
-          </Button>
-        )}
-      </div>
+      <h1 className="mb-4 text-xl font-semibold tracking-tight">{title}</h1>
 
-      <Card className="mb-8 p-4">
+      {/* Every box on a detail page speaks the trace's visual language:
+          header strip, body, footer strip with the actions. */}
+      <FramedCard
+        className="mb-4"
+        title={
+          <span className="capitalize">{entityType.replaceAll("_", " ")}</span>
+        }
+        meta={
+          entityType === "document" && docQuery.data?.added
+            ? `added ${formatDate(docQuery.data.added)}`
+            : undefined
+        }
+        footer={actions}
+      >
         {entityType === "document" ? (
           <DocumentFacts doc={docQuery.data!} />
         ) : (
           <TaxonomyFacts entity={entityQuery.data!} />
         )}
-      </Card>
+      </FramedCard>
 
       {entityType === "document" && (
         <ContentPanel content={docQuery.data!.content ?? ""} />
@@ -454,16 +474,18 @@ export default function EntityPage() {
         />
       )}
 
-      <h2 className="mb-2 text-sm font-medium text-muted-foreground">Sessions</h2>
-      <SessionList entityType={entityType} entityId={id} pageSize={5} showEntity={false} />
+      <SessionList
+        entityType={entityType}
+        entityId={id}
+        pageSize={5}
+        showEntity={false}
+        framed
+      />
 
       {entityType === "document" && (
-        <>
-          <h2 className="mt-8 mb-2 text-sm font-medium text-muted-foreground">
-            Change history
-          </h2>
+        <FramedCard className="mt-4" title="Change history">
           <HistorySection id={id} />
-        </>
+        </FramedCard>
       )}
     </div>
   );
