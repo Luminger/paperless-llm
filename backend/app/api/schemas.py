@@ -261,6 +261,7 @@ class SyncStatusOut(BaseModel):
 
 
 class MetaOut(BaseModel):
+    version: str = ""
     paperless_url: str
 
 

@@ -102,8 +102,17 @@ def create_app() -> FastAPI:
 
     @app.get("/api/meta", dependencies=guard)
     async def meta() -> MetaOut:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            v = version("paperless-llm")
+        except PackageNotFoundError:  # editable/dev checkouts
+            v = "dev"
         p = get_settings().paperless
-        return MetaOut(paperless_url=(p.external_url or p.base_url).rstrip("/"))
+        return MetaOut(
+            version=v,
+            paperless_url=(p.external_url or p.base_url).rstrip("/"),
+        )
 
     # Serve the built frontend when present (production container),
     # with an SPA fallback so deep links (/sessions/2) survive reloads.

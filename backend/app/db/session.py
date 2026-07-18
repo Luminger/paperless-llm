@@ -29,8 +29,12 @@ def _get_engine():
         url = get_settings().database_url
         if url.startswith("sqlite"):
             # Ensure the parent directory exists for file-backed SQLite.
-            db_path = url.rsplit("///", 1)[-1]
-            if db_path and not db_path.startswith(":memory:"):
+            # Parsed properly: naive slash-splitting mangles absolute
+            # paths (sqlite:////data/x would become relative data/x).
+            from sqlalchemy.engine import make_url
+
+            db_path = make_url(url).database
+            if db_path and db_path != ":memory:":
                 Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         _engine = create_async_engine(url)
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)

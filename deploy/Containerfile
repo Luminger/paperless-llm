@@ -30,6 +30,20 @@ RUN uv sync --frozen --no-dev
 # Built frontend where app.main expects it (../frontend/dist).
 COPY --from=frontend /build/dist /app/frontend/dist
 
-ENV PATH="/app/backend/.venv/bin:$PATH"
+# Run as a dedicated non-root user; /data is the single writable state
+# directory (DB + OCR cache) — mount a volume there.
+RUN useradd -r -u 1000 app && mkdir /data && chown app:app /data
+USER app
+
+ENV PATH="/app/backend/.venv/bin:$PATH" \
+    PLLM_DATABASE_URL="sqlite+aiosqlite:////data/paperless_llm.sqlite3" \
+    PLLM_DATA_DIR="/data"
+
+LABEL org.opencontainers.image.title="paperless-llm" \
+      org.opencontainers.image.description="Local-LLM metadata assistant for paperless-ngx" \
+      org.opencontainers.image.source="https://github.com/dhs/paperless-llm"
+
 EXPOSE 8100
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/api/health', timeout=3).status==200 else 1)"]
 CMD ["paperless-llm", "serve", "--host", "0.0.0.0", "--port", "8100"]

@@ -1,0 +1,58 @@
+# paperless-llm — production deployment (single app container against
+# your EXISTING paperless-ngx and local LLM endpoints).
+#
+#   cp .env.example .env   # then edit
+#   podman compose up -d
+#
+# Privacy by construction: the app only ever talks to the endpoints
+# configured here. Point them at machines on your network and no
+# document data can leave it.
+
+services:
+  app:
+    image: paperless-llm
+    build:
+      context: ../..
+      dockerfile: deploy/Containerfile
+    restart: unless-stopped
+    ports:
+      - "${PLLM_PORT:-8100}:8100"
+    environment:
+      # --- paperless ------------------------------------------------
+      PLLM_PAPERLESS__BASE_URL: ${PLLM_PAPERLESS_BASE_URL:?set the paperless URL}
+      PLLM_PAPERLESS__TOKEN: ${PLLM_PAPERLESS_TOKEN:-}
+      # URL your browser reaches paperless under (UI deep links);
+      # defaults to base_url.
+      PLLM_PAPERLESS__EXTERNAL_URL: ${PLLM_PAPERLESS_EXTERNAL_URL:-}
+
+      # --- local LLM endpoints (OpenAI-compatible) ------------------
+      PLLM_LLM__AGENT__BASE_URL: ${PLLM_AGENT_BASE_URL:?set the agent LLM URL}
+      PLLM_LLM__AGENT__MODEL: ${PLLM_AGENT_MODEL:?set the agent model name}
+      PLLM_LLM__AGENT__MAX_CONCURRENT: ${PLLM_AGENT_MAX_CONCURRENT:-2}
+      PLLM_LLM__AGENT__SUPPORTS_STREAMING: ${PLLM_AGENT_SUPPORTS_STREAMING:-true}
+      # OCR profile falls back to the agent endpoint when unset.
+      PLLM_LLM__OCR__BASE_URL: ${PLLM_OCR_BASE_URL:-}
+      PLLM_LLM__OCR__MODEL: ${PLLM_OCR_MODEL:-}
+      # Optional embeddings endpoint (entity index / duplicate finder).
+      PLLM_LLM__EMBEDDINGS__BASE_URL: ${PLLM_EMBEDDINGS_BASE_URL:-}
+      PLLM_LLM__EMBEDDINGS__MODEL: ${PLLM_EMBEDDINGS_MODEL:-}
+
+      # --- access ---------------------------------------------------
+      # none (trusted network) | proxy (Remote-User header) | paperless
+      PLLM_AUTH__MODE: ${PLLM_AUTH_MODE:-none}
+      # Enables POST /api/webhooks/paperless with this shared secret.
+      PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
+    volumes:
+      - appdata:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/api/health', timeout=3).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+
+volumes:
+  appdata:
