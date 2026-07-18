@@ -164,18 +164,15 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
 function OcrBody({ step }: { step: Step }) {
   if (step.state === "awaiting_user") return <OcrGateBody step={step} />;
   const resolution = step.result.resolution as string | undefined;
-  const pages = step.result.pages as number | undefined;
-  const duration = step.result.duration_s as number | undefined;
   const text = step.result.text as string | undefined;
   const prev = step.result.previous_content as string | undefined;
+  // Pages + duration live in the step FOOTER (the cost line) — the
+  // body only states the outcome.
   const bits: string[] = [];
   if (typeof step.input.instructions === "string")
     bits.push(`instructions: “${step.input.instructions}”`);
-  if (pages != null && step.state !== "pending" && step.state !== "running") {
-    bits.push(`${pages} page${pages !== 1 ? "s" : ""}${duration ? ` · ${duration}s` : ""}`);
-    if (resolution === "accepted") bits.push("new content accepted");
-    if (resolution === "kept_existing") bits.push("existing content kept");
-  }
+  if (resolution === "accepted") bits.push("new content accepted");
+  if (resolution === "kept_existing") bits.push("existing content kept");
   if (bits.length === 0) return null;
   return (
     <div className="space-y-3">
