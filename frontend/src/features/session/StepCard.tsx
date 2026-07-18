@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { api, type Proposal, type Step, type TranscriptItem } from "../../api";
 import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
-import { ProposalCard } from "../../components/ProposalCard";
+import { ProposalCard, proposalKindLabel } from "../../components/ProposalCard";
 import { DiffView } from "../../components/DiffView";
 import { ProseBody, Transcript, UserMessage } from "./Transcript";
 import { Panel, PanelTitle, PanelTitleMuted } from "./Panel";
@@ -282,7 +282,7 @@ function TurnBody({
         title={
           <>
             <PanelTitle>Proposal</PanelTitle>
-            <PanelTitleMuted>{p.kind.replaceAll("_", " ")}</PanelTitleMuted>
+            <PanelTitleMuted>{proposalKindLabel(p)}</PanelTitleMuted>
             <StatusBadge status={p.status} />
             {p.revision > 1 && <PanelTitleMuted>revision {p.revision}</PanelTitleMuted>}
           </>

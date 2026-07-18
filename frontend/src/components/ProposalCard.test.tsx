@@ -293,3 +293,33 @@ describe("ProposalCard — date field", () => {
     localStorage.clear();
   });
 });
+
+describe("ProposalCard — creations", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupTaxonomy();
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+  });
+
+  it("names the entity type and hides the paperless column for new entities", async () => {
+    renderWithProviders(
+      <ProposalCard
+        proposal={makeProposal({
+          kind: "create_entity",
+          entity_type: "document_type",
+          entity_id: null,
+          agent_payload: {
+            kind: "create_entity",
+            entity_type: "document_type",
+            name: "Tax Return",
+          },
+        })}
+      />,
+    );
+    expect(await screen.findByText("create document type")).toBeInTheDocument();
+    // A new entity has no current paperless state — no such column.
+    expect(screen.queryByText(/In paperless \(at proposal time\)/)).not.toBeInTheDocument();
+    expect(screen.getByText("Proposed")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Tax Return")).toBeInTheDocument();
+  });
+});

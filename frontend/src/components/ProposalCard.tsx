@@ -320,6 +320,28 @@ function MetadataEditor({
 // shown as rows — merge context renders as prose from the snapshot.
 // ---------------------------------------------------------------------
 
+/** Human label naming the entity type: "create document type",
+ * "update tag", "merge correspondents", "update document metadata". */
+export function proposalKindLabel(p: Proposal): string {
+  const entity = (
+    (p.agent_payload.entity_type as string | undefined) ??
+    p.entity_type ??
+    "entity"
+  ).replaceAll("_", " ");
+  switch (p.kind) {
+    case "create_entity":
+      return `create ${entity}`;
+    case "update_entity":
+      return `update ${entity}`;
+    case "delete_entity":
+      return `delete ${entity}`;
+    case "merge_entities":
+      return `merge ${entity}s`;
+    default:
+      return p.kind.replaceAll("_", " ");
+  }
+}
+
 const HIDDEN = new Set([
   "kind",
   "document_id",
@@ -378,6 +400,9 @@ function GenericEditor({
   const [working, setWorking] = useState<Record<string, unknown> | null>(null);
   const current = working ?? effective;
   const snapshot = proposal.base_snapshot ?? {};
+  // A brand-new entity has no paperless state — the column would
+  // always be empty, so it isn't shown.
+  const isCreate = proposal.kind === "create_entity";
   const fieldKeys = [
     ...new Set([...Object.keys(proposal.agent_payload), ...Object.keys(current)]),
   ].filter((k) => !HIDDEN.has(k));
@@ -390,7 +415,7 @@ function GenericEditor({
           <thead>
             <tr className="border-b text-left text-xs tracking-wide text-muted-foreground/70 uppercase">
               <th className="w-40 py-1 pr-2">Field</th>
-              <th className="w-1/3 py-1 pr-2">In paperless (at proposal time)</th>
+              {!isCreate && <th className="w-1/3 py-1 pr-2">In paperless (at proposal time)</th>}
               <th className="py-1">Proposed</th>
             </tr>
           </thead>
@@ -403,9 +428,11 @@ function GenericEditor({
               return (
                 <tr key={k} className="border-b border-border/50 align-top">
                   <td className="py-2 pr-2 font-mono text-xs text-muted-foreground">{k}</td>
-                  <td className="py-2 pr-2 break-words whitespace-pre-wrap text-muted-foreground">
-                    {was !== undefined ? displayValue(was) || "—" : "—"}
-                  </td>
+                  {!isCreate && (
+                    <td className="py-2 pr-2 break-words whitespace-pre-wrap text-muted-foreground">
+                      {was !== undefined ? displayValue(was) || "—" : "—"}
+                    </td>
+                  )}
                   <td className={`py-2 ${editedByUser ? "rounded-md bg-amber-50 dark:bg-amber-950/40" : ""}`}>
                     <input
                       className="w-full rounded-md border border-input bg-transparent px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
@@ -564,7 +591,7 @@ export function ProposalCard({
         <div className="flex items-center gap-3">
           <span className="font-medium">
             Proposal{" "}
-            <span className="text-muted-foreground/70">{p.kind.replaceAll("_", " ")}</span>
+            <span className="text-muted-foreground/70">{proposalKindLabel(p)}</span>
           </span>
           <StatusBadge status={p.status} />
           {p.revision > 1 && (

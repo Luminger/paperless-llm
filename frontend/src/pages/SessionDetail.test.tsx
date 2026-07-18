@@ -243,7 +243,8 @@ describe("SessionDetail step feed", () => {
 
     expect(await screen.findByText("Summary here.")).toBeInTheDocument();
     expect(screen.getByText("update document metadata")).toBeInTheDocument();
-    expect(screen.getByText("create entity")).toBeInTheDocument();
+    // Proposals name the entity type they touch.
+    expect(screen.getByText("create correspondent")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Apply to paperless" })).toHaveLength(2);
   });
 

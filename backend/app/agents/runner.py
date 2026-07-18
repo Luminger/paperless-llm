@@ -126,6 +126,18 @@ async def run_agent_turn(
     # instructions, NOT prompt prefix — keeps the stored user message
     # (and thus the derived transcript) clean.
     preamble = _steering_preamble(session, open_proposals)
+    if history_exists := bool(session.message_history):
+        # Follow-up turns: promises don't change proposals — tools do.
+        followup = (
+            "This is a follow-up turn. If you conclude that a proposal "
+            "should change, you MUST call the appropriate propose_* tool "
+            "with the revised values — a textual reply alone never creates, "
+            "changes, or withdraws a proposal. A new proposal for the same "
+            "target automatically supersedes your earlier one. Only reply "
+            "without a tool call when no change to any proposal is needed."
+        )
+        preamble = f"{preamble}\n\n{followup}" if preamble else followup
+    del history_exists
     history_start = len(session.message_history or [])
 
     try:
