@@ -48,7 +48,8 @@ ENV PATH="/app/backend/.venv/bin:$PATH" \
 
 LABEL org.opencontainers.image.title="paperless-llm" \
       org.opencontainers.image.description="Local-LLM metadata assistant for paperless-ngx" \
-      org.opencontainers.image.source="https://github.com/dhs/paperless-llm"
+      org.opencontainers.image.source="https://github.com/Luminger/paperless-llm" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 EXPOSE 8100
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \

@@ -37,3 +37,10 @@ Full documentation (setup, configuration, usage, architecture) lives in
 Backend: `cd backend && uv sync && uv run pytest`.
 Frontend: `cd frontend && npm install && npm test`.
 See [docs/development.md](docs/development.md).
+
+## License
+
+Licensed under the GNU Affero General Public License v3.0 or later
+(SPDX `AGPL-3.0-or-later`). See [`LICENSE`](LICENSE).
+
+    Copyright (C) 2026  Simon Brakhane
