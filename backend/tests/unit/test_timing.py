@@ -129,7 +129,7 @@ async def test_no_timeout_means_no_cap():
 def test_ocr_timeout_falls_back_to_agent_profile(monkeypatch):
     """OCR without its own timeout inherits the agent's wall clock —
     same fallback family as endpoint/model/api_key."""
-    from app.config import get_settings, reset_settings_cache
+    from app.config import reset_settings_cache
     from app.llm.factory import ocr_model
 
     monkeypatch.setenv("PLLM_LLM__AGENT__TIMEOUT_SECONDS", "123")

@@ -116,9 +116,10 @@ async def list_auth_sessions(
 ) -> list[AuthSessionOut]:
     """Live login sessions: the caller's own — admins see everyone's.
     Revoked and expired sessions don't appear."""
+    from sqlalchemy import select
+
     from app.api.deps import require_user
     from app.db.models import AuthSession, utcnow
-    from sqlalchemy import select
 
     user = await require_user(request, db)
     q = (
@@ -152,15 +153,19 @@ async def revoke_session(
 ) -> AuthMeOut:
     """End a login session server-side. The CURRENT session is refused
     (sign out instead) — a one-click self-lockout helps nobody."""
+    from sqlalchemy import select
+
     from app.api.deps import require_user
     from app.db.models import AuthSession
-    from sqlalchemy import select
 
     user = await require_user(request, db)
     if sid == user.sid:
         raise HTTPException(
             409,
-            {"code": "current_session", "message": "sign out instead of revoking the current session"},
+            {
+                "code": "current_session",
+                "message": "sign out instead of revoking the current session",
+            },
         )
     row = await db.scalar(select(AuthSession).where(AuthSession.sid == sid))
     # Non-admins can only see/end their own; unknown-or-foreign is the

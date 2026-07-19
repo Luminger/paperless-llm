@@ -1,21 +1,42 @@
-name: docs
+name: Docs
 
-# Validation only: build the docs with --strict so broken links / nav
-# fail CI. Publishing to a docs host (GitHub Pages) isn't wired on this
-# CI instance, so there's no deploy job here.
+# Build the MkDocs site (strict: broken links / nav fail the build) and
+# publish it to GitHub Pages on pushes to main.
 on:
   push:
     branches: [main]
     paths: ["docs/**", "mkdocs.yml", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - run: pip install mkdocs-material
       - run: mkdocs build --strict
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -734,10 +734,12 @@ async def test_job_pause_resume_and_bulk_retry(client, db):
         AgentKind,
         EntityType,
         Job,
-        Session as DbSession,
         Step,
         StepKind,
         StepState,
+    )
+    from app.db.models import (
+        Session as DbSession,
     )
 
     job = Job(kind="bulk_analyze", params={}, total=3)
@@ -797,8 +799,10 @@ async def test_session_list_filters_by_job_and_status(client, db):
         AgentKind,
         EntityType,
         Job,
-        Session as DbSession,
         SessionStatus,
+    )
+    from app.db.models import (
+        Session as DbSession,
     )
 
     job = Job(kind="bulk_analyze", params={}, total=2)

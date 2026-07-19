@@ -59,3 +59,8 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 [tool.ruff.lint.per-file-ignores]
 # Depends(...) in argument defaults is the canonical FastAPI pattern.
 "app/api/**" = ["B008"]
+# Tests deliberately import after env/registry setup (populate EXECUTORS,
+# set PLLM_* before importing the app), so late module imports are fine.
+"tests/**" = ["E402"]
+# Alembic autogenerates long column-definition lines; not hand-wrapped.
+"alembic/**" = ["E501"]

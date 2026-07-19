@@ -5,12 +5,11 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from fastapi import Depends, HTTPException, Request
-
-from app.config import get_settings
-from app.paperless import PaperlessClient, make_client
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.session import get_session
+from app.paperless import PaperlessClient, make_client
 from app.services.actor import actor_var
 from app.services.auth import CurrentUser
 
