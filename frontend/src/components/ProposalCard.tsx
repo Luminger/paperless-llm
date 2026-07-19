@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import { Tip } from "@/components/app/Tip";
-import { hasDocumentEditor } from "../lib/proposal-kinds";
-import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
+import { hasDocumentEditor, hasEntityEditor } from "../lib/proposal-kinds";
+import { entityName, useEntityList, useTaxonomyLists } from "../hooks/useTaxonomy";
+import type { TaxonomyType } from "../hooks/useTaxonomy";
+import { RefChip } from "../features/session/RefChip";
+import { MATCHING_LABELS } from "../lib/format";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquareText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +20,18 @@ import { formatDate } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
 import { errorMessage } from "../lib/errors";
 import {
+  buildEntityPayload,
   buildPayload,
   deriveDesired,
+  deriveEntityDesired,
   displayValue,
+  entityRuleProblem,
   fieldKind,
   parseTyped,
   proposalKindLabel,
+  PATTERN_ALGORITHMS,
   type Desired,
+  type EntityDesired,
 } from "../lib/proposal-payload";
 
 export { proposalKindLabel };
@@ -45,10 +53,21 @@ function Row({
   children,
 }: {
   label: string;
-  current: string;
+  /** Omit for creations — there is no current state to compare. */
+  current?: string;
   changed: boolean;
   children: React.ReactNode;
 }) {
+  if (current === undefined) {
+    return (
+      <div className="grid grid-cols-[10rem_1fr] items-center gap-3 border-b border-border/50 py-2">
+        <div className="text-sm text-muted-foreground">{label}</div>
+        <div className={changed ? "rounded-md bg-warning/10 p-1" : "p-1"}>
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-[10rem_1fr_1.4fr] items-center gap-3 border-b border-border/50 py-2">
       <div className="text-sm text-muted-foreground">{label}</div>
@@ -257,6 +276,310 @@ function MetadataEditor({
       </Row>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------
+// Entity proposal editors (create/update/merge/delete): the SAME
+// standard as the document editor — named fields, live current values,
+// typed widgets. Raw ids, nulls and algorithm numbers stay backstage.
+// ---------------------------------------------------------------------
+
+const ALGORITHM_OPTIONS = Object.entries(MATCHING_LABELS).map(([v, label]) => ({
+  value: v,
+  label:
+    v === "6"
+      ? "Automatic (learns from your decisions)"
+      : v === "0"
+        ? "None (no automatic assignment)"
+        : `${label[0].toUpperCase()}${label.slice(1)} — needs a pattern`,
+}));
+
+const algorithmLabel = (n: number | undefined | null): string =>
+  n == null ? "—" : (MATCHING_LABELS[n] ?? `algorithm ${n}`);
+
+/** Chips of document titles (via the shared RefChip — tooltip + link),
+ * removable while editable, extendable via a small title search. */
+function AssignDocsEditor({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number[];
+  onChange: (v: number[]) => void;
+  disabled: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const search = useQuery({
+    queryKey: qk.documents({ query: q, page_size: 8 }, 1),
+    queryFn: () => api.listDocuments({ query: q, page_size: 8 }),
+    enabled: q.trim().length >= 2,
+  });
+  const addable = (search.data?.results ?? []).filter(
+    (d) => !value.includes(d.id),
+  );
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {value.length === 0 && (
+          <span className="text-sm text-muted-foreground">— none —</span>
+        )}
+        {value.map((id) => (
+          <span key={id} className="inline-flex items-center gap-0.5">
+            <RefChip type="document" id={id} />
+            {!disabled && (
+              <Tip content="Remove">
+                <button
+                  aria-label={`remove document ${id}`}
+                  className="text-muted-foreground opacity-60 hover:opacity-100"
+                  onClick={() => onChange(value.filter((v) => v !== id))}
+                >
+                  ×
+                </button>
+              </Tip>
+            )}
+          </span>
+        ))}
+      </div>
+      {!disabled && (
+        <div className="relative">
+          <Input
+            className="h-8"
+            placeholder="Search documents to add…"
+            aria-label="search documents to assign"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          {q.trim().length >= 2 && addable.length > 0 && (
+            <ul className="absolute z-10 mt-1 w-full rounded-md border bg-popover p-1 shadow-md">
+              {addable.map((d) => (
+                <li key={d.id}>
+                  <button
+                    className="w-full truncate rounded px-2 py-1 text-left text-sm hover:bg-accent"
+                    onClick={() => {
+                      onChange([...value, d.id]);
+                      setQ("");
+                    }}
+                  >
+                    {d.title || "(untitled)"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** create_entity / update_entity: name + matching rule + (create only)
+ * document assignment, diffed against the LIVE entity like the
+ * document editor diffs against the live document. */
+function EntityRuleEditor({
+  proposal,
+  editable,
+  onChange,
+}: {
+  proposal: Proposal;
+  editable: boolean;
+  onChange: (payload: Record<string, unknown> | null) => void;
+}) {
+  const effective = proposal.user_payload ?? proposal.agent_payload;
+  const isCreate = proposal.kind === "create_entity";
+  const entityType = effective.entity_type as TaxonomyType;
+  const entityId = effective.entity_id as number | undefined;
+  const { data: list } = useEntityList(entityType);
+  const base = isCreate ? null : (list ?? []).find((e) => e.id === entityId);
+  const [edited, setEdited] = useState<EntityDesired | null>(null);
+
+  const initial = useMemo(
+    () =>
+      isCreate || base ? deriveEntityDesired(effective, base ?? null) : null,
+    [isCreate, base, effective],
+  );
+  if (!initial)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {list && !base
+          ? "This entity no longer exists in paperless."
+          : "Loading entity…"}
+      </p>
+    );
+
+  const desired = edited ?? initial;
+  const problem = entityRuleProblem(desired);
+  const update = (patch: Partial<EntityDesired>) => {
+    const next = { ...desired, ...patch };
+    setEdited(next);
+    // Invalid states stay local (red hint below) — the last VALID
+    // payload remains what Save would persist, like FieldInput does.
+    if (entityRuleProblem(next) == null)
+      onChange(buildEntityPayload(next, base ?? null, proposal.agent_payload));
+  };
+  const usesPattern = PATTERN_ALGORITHMS.has(desired.matching_algorithm);
+  const cur = (v: string | undefined) => (isCreate ? undefined : v || "—");
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div
+        className={`grid ${isCreate ? "grid-cols-[10rem_1fr]" : "grid-cols-[10rem_1fr_1.4fr]"} gap-3 border-b pb-1 text-xs tracking-wide text-muted-foreground/70 uppercase`}
+      >
+        <div>Field</div>
+        {!isCreate && <div>Currently in paperless</div>}
+        <div>Proposed</div>
+      </div>
+      <Row
+        label="Name"
+        current={cur(base?.name)}
+        changed={!isCreate && desired.name !== (base?.name ?? "")}
+      >
+        <Input
+          aria-label="entity name"
+          className="h-8"
+          value={desired.name}
+          disabled={!editable}
+          onChange={(e) => update({ name: e.target.value })}
+        />
+      </Row>
+      <Row
+        label="Auto-assignment"
+        current={cur(algorithmLabel(base?.matching_algorithm))}
+        changed={
+          !isCreate &&
+          desired.matching_algorithm !== (base?.matching_algorithm ?? 0)
+        }
+      >
+        <SimpleSelect
+          ariaLabel="matching mode"
+          className="w-full"
+          disabled={!editable}
+          value={String(desired.matching_algorithm)}
+          onValueChange={(v) => update({ matching_algorithm: Number(v) })}
+          options={ALGORITHM_OPTIONS}
+        />
+      </Row>
+      {(usesPattern || (base != null && Boolean(base.match))) && (
+        <Row
+          label="Match pattern"
+          current={cur(base?.match)}
+          changed={!isCreate && desired.match !== (base?.match ?? "")}
+        >
+          <Input
+            aria-label="match pattern"
+            className="h-8"
+            placeholder={usesPattern ? "e.g. Telarko" : "not used by this mode"}
+            value={desired.match}
+            disabled={!editable || !usesPattern}
+            onChange={(e) => update({ match: e.target.value })}
+          />
+        </Row>
+      )}
+      {usesPattern && (
+        <Row
+          label="Case"
+          current={cur(base ? (base.is_insensitive ? "ignore case" : "match case") : undefined)}
+          changed={!isCreate && desired.is_insensitive !== (base?.is_insensitive ?? true)}
+        >
+          <SimpleSelect
+            ariaLabel="case sensitivity"
+            className="w-full"
+            disabled={!editable}
+            value={desired.is_insensitive ? "i" : "s"}
+            onValueChange={(v) => update({ is_insensitive: v === "i" })}
+            options={[
+              { value: "i", label: "Ignore case" },
+              { value: "s", label: "Match case exactly" },
+            ]}
+          />
+        </Row>
+      )}
+      {isCreate && (
+        <Row label="Assign to documents" changed={false}>
+          <AssignDocsEditor
+            value={desired.assign_to_documents}
+            disabled={!editable}
+            onChange={(v) => update({ assign_to_documents: v })}
+          />
+        </Row>
+      )}
+      {problem && editable && (
+        <p className="mt-2 text-xs text-destructive">
+          {problem} Fix it to save — until then the last valid state is
+          what Save persists.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** delete_entity: prose from the snapshot + the one option. */
+function DeleteEntityEditor({
+  proposal,
+  editable,
+  onChange,
+}: {
+  proposal: Proposal;
+  editable: boolean;
+  onChange: (payload: Record<string, unknown> | null) => void;
+}) {
+  const effective = proposal.user_payload ?? proposal.agent_payload;
+  const snap = proposal.base_snapshot as
+    | { name?: string; document_count?: number }
+    | null;
+  const [force, setForce] = useState(Boolean(effective.force));
+  const docs = snap?.document_count ?? 0;
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <p className="text-sm">
+        Delete <strong>{snap?.name ?? "this entity"}</strong>
+        <span className="text-muted-foreground/70">
+          {" "}
+          ({docs} document{docs === 1 ? "" : "s"} at proposal time)
+        </span>
+        {" "}— this cannot be reverted from the journal.
+      </p>
+      <Row label="If still in use" changed={force !== Boolean(effective.force)}>
+        <SimpleSelect
+          ariaLabel="delete behavior"
+          className="w-full"
+          disabled={!editable}
+          value={force ? "force" : "refuse"}
+          onValueChange={(v) => {
+            const f = v === "force";
+            setForce(f);
+            onChange({
+              entity_type: proposal.agent_payload.entity_type,
+              entity_id: proposal.agent_payload.entity_id,
+              force: f,
+            });
+          }}
+          options={[
+            { value: "refuse", label: "Refuse — keep it if documents still use it" },
+            { value: "force", label: "Detach it from all documents first" },
+          ]}
+        />
+      </Row>
+    </div>
+  );
+}
+
+/** Dispatch inside the entity family. merge_entities is prose-only —
+ * its context sentence IS the whole review. */
+function EntityEditor(props: {
+  proposal: Proposal;
+  editable: boolean;
+  onChange: (payload: Record<string, unknown> | null) => void;
+}) {
+  const kind = props.proposal.kind;
+  if (kind === "merge_entities") {
+    return (
+      <div className="rounded-lg border bg-card p-4">
+        <MergeContext p={props.proposal} />
+      </div>
+    );
+  }
+  if (kind === "delete_entity") return <DeleteEntityEditor {...props} />;
+  return <EntityRuleEditor {...props} />;
 }
 
 // ---------------------------------------------------------------------
@@ -565,7 +888,11 @@ export function ProposalCard({
   // just `dirty` — a PATCH against a decided proposal must be
   // impossible, and the user deserves a word about what happened.
   const decidedWhileEditing = dirty && !editable;
-  const Editor = hasDocumentEditor(p.kind) ? MetadataEditor : GenericEditor;
+  const Editor = hasDocumentEditor(p.kind)
+    ? MetadataEditor
+    : hasEntityEditor(p.kind)
+      ? EntityEditor
+      : GenericEditor;
 
   return (
     <div className="space-y-3">

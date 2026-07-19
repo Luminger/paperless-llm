@@ -188,23 +188,22 @@ describe("ProposalCard — generic editor (other kinds)", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  it("update_entity shows paperless-at-proposal-time vs editable proposed value", async () => {
+  it("unknown kinds fall back to the generic field editor (safety net)", async () => {
     renderCard(makeProposal({
-        kind: "update_entity",
+        kind: "set_owner",
         agent_payload: {
-          kind: "update_entity",
+          kind: "set_owner",
           entity_type: "correspondent",
           entity_id: 7,
-          name: "Internal Revenue Service",
+          owner: "admin",
         },
-        base_snapshot: { name: "internal revenue service" },
+        base_snapshot: { owner: "nobody" },
       }),);
 
     expect(await screen.findByText("In paperless (at proposal time)")).toBeInTheDocument();
-    expect(screen.getByText("Proposed")).toBeInTheDocument();
-    // Left column: the snapshot value; right: editable input with proposal.
-    expect(screen.getByText("internal revenue service")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Internal Revenue Service")).toBeInTheDocument();
+    // Left column: the snapshot value; right: editable input.
+    expect(screen.getByText("nobody")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("admin")).toBeInTheDocument();
     const table = screen.getByRole("table");
     expect(within(table).queryByText("entity_id")).not.toBeInTheDocument();
   });
@@ -329,5 +328,115 @@ describe("ProposalCard — creations", () => {
     expect(screen.queryByText(/In paperless \(at proposal time\)/)).not.toBeInTheDocument();
     expect(screen.getByText("Proposed")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Tax Return")).toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — entity editors (named fields, no raw data)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupTaxonomy();
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+  });
+
+  function updateTagProposal() {
+    return makeProposal({
+      kind: "update_entity",
+      entity_type: "tag",
+      entity_id: 6,
+      agent_payload: {
+        kind: "update_entity",
+        entity_type: "tag",
+        entity_id: 6,
+        match: "scan scanned",
+        matching_algorithm: 1,
+      },
+      base_snapshot: { match: "", matching_algorithm: 0 },
+    });
+  }
+
+  it("update_entity: live current values, algorithm NAMES, no raw ids", async () => {
+    renderCard(updateTagProposal());
+
+    // named rows, not payload keys
+    expect(await screen.findByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Auto-assignment")).toBeInTheDocument();
+    expect(screen.getByText("Match pattern")).toBeInTheDocument();
+    // live current value from the taxonomy list (tag 6 = "scan")
+    expect(screen.getByLabelText("entity name")).toHaveValue("scan");
+    // the algorithm shows as a NAME in the select, not the number 1
+    expect(screen.getByLabelText("matching mode")).toHaveTextContent(/any word/i);
+    // current column: algorithm 0 shows its name
+    expect(screen.getByText("none")).toBeInTheDocument();
+    // nothing renders the raw payload key or numeric id
+    expect(screen.queryByText("matching_algorithm")).not.toBeInTheDocument();
+    expect(screen.queryByText("entity_id")).not.toBeInTheDocument();
+  });
+
+  it("update_entity: editing the name saves ONLY the changed field + identity", async () => {
+    mocked.patchProposal.mockResolvedValue(updateTagProposal());
+    renderCard(updateTagProposal());
+
+    const nameInput = await screen.findByLabelText("entity name");
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "scanned");
+    await userEvent.click(screen.getByRole("button", { name: "Save edits" }));
+
+    await waitFor(() => expect(mocked.patchProposal).toHaveBeenCalled());
+    const payload = mocked.patchProposal.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).toEqual({
+      entity_type: "tag",
+      entity_id: 6,
+      name: "scanned",
+      match: "scan scanned",
+      matching_algorithm: 1,
+    });
+  });
+
+  it("create_entity: two-column layout with document chips instead of id arrays", async () => {
+    mocked.getDocument.mockResolvedValue({ ...DOC, id: 7, title: "Telarko Rechnung" });
+    renderCard(
+      makeProposal({
+        kind: "create_entity",
+        entity_type: "correspondent",
+        entity_id: null,
+        agent_payload: {
+          kind: "create_entity",
+          entity_type: "correspondent",
+          name: "Telarko GmbH",
+          assign_to_documents: [7],
+        },
+      }),
+    );
+
+    expect(await screen.findByLabelText("entity name")).toHaveValue("Telarko GmbH");
+    // the assigned document appears as a TITLE chip, not "[7]"
+    expect(await screen.findByText("Telarko Rechnung")).toBeInTheDocument();
+    expect(screen.queryByText("[7]")).not.toBeInTheDocument();
+    expect(screen.queryByText("assign_to_documents")).not.toBeInTheDocument();
+    // no "currently in paperless" column for a creation
+    expect(screen.queryByText(/currently in paperless/i)).not.toBeInTheDocument();
+  });
+
+  it("merge_entities: prose only — names and doc counts from the snapshot", async () => {
+    renderCard(
+      makeProposal({
+        kind: "merge_entities",
+        entity_type: "tag",
+        entity_id: 3,
+        agent_payload: {
+          kind: "merge_entities",
+          entity_type: "tag",
+          source_id: 3,
+          target_id: 1,
+        },
+        base_snapshot: {
+          source: { id: 3, name: "wichtig", document_count: 2 },
+          target: { id: 1, name: "Rechnung", document_count: 40 },
+        },
+      }),
+    );
+    expect(await screen.findByText("wichtig")).toBeInTheDocument();
+    expect(screen.getByText("Rechnung")).toBeInTheDocument();
+    expect(screen.queryByText("source_id")).not.toBeInTheDocument();
   });
 });

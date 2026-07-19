@@ -14,8 +14,22 @@ export function isInternalKind(kind: string): boolean {
   return INTERNAL_KINDS.has(kind);
 }
 
-/** Kinds edited with the structured document-metadata editor; all
- * others fall back to the generic field editor. */
+/** Kinds edited with the structured document-metadata editor. */
 export function hasDocumentEditor(kind: string): boolean {
   return kind === "update_document_metadata";
+}
+
+/** Taxonomy kinds edited with the structured entity editor (named
+ * fields, typed widgets — same standard as the document editor).
+ * Anything not in either registry falls back to the generic field
+ * editor, which exists only as a safety net for future kinds. */
+const ENTITY_EDITOR_KINDS = new Set([
+  "create_entity",
+  "update_entity",
+  "merge_entities",
+  "delete_entity",
+]);
+
+export function hasEntityEditor(kind: string): boolean {
+  return ENTITY_EDITOR_KINDS.has(kind);
 }

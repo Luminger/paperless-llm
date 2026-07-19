@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildEntityPayload,
   buildPayload,
   deriveDesired,
+  deriveEntityDesired,
+  entityRuleProblem,
   fieldKind,
   parseTyped,
 } from "./proposal-payload";
@@ -65,5 +68,76 @@ describe("typed field coercion (the editor never guesses)", () => {
 
   it("empty input clears the field", () => {
     expect(parseTyped("", "string")).toEqual({ ok: true, value: undefined });
+  });
+});
+
+describe("entity proposal derivation & diff", () => {
+  const baseTag = {
+    name: "Rechnung",
+    match: "",
+    matching_algorithm: 0,
+    is_insensitive: true,
+  };
+
+  it("update: desired overlays the payload on the live entity", () => {
+    const d = deriveEntityDesired(
+      { entity_type: "tag", entity_id: 5, match: "rechnung", matching_algorithm: 1 },
+      baseTag,
+    );
+    expect(d.name).toBe("Rechnung"); // untouched -> live value
+    expect(d.match).toBe("rechnung");
+    expect(d.matching_algorithm).toBe(1);
+    expect(d.is_insensitive).toBe(true);
+  });
+
+  it("update: built payload carries ONLY changed fields + identity", () => {
+    const agent = { entity_type: "tag", entity_id: 5, name: "Invoices" };
+    const d = deriveEntityDesired(agent, baseTag);
+    const p = buildEntityPayload(d, baseTag, agent);
+    expect(p).toEqual({ entity_type: "tag", entity_id: 5, name: "Invoices" });
+    // user reverts the rename -> nothing but identity remains
+    const p2 = buildEntityPayload({ ...d, name: "Rechnung" }, baseTag, agent);
+    expect(p2).toEqual({ entity_type: "tag", entity_id: 5 });
+  });
+
+  it("create: defaults mirror apply time (auto matching, insensitive)", () => {
+    const agent = { entity_type: "correspondent", name: "Telarko", assign_to_documents: [7] };
+    const d = deriveEntityDesired(agent, null);
+    expect(d.matching_algorithm).toBe(6);
+    const p = buildEntityPayload(d, null, agent);
+    expect(p).toEqual({
+      entity_type: "correspondent",
+      name: "Telarko",
+      assign_to_documents: [7],
+    });
+  });
+
+  it("create: an explicit rule travels; switching to auto keeps the agent's explicit key", () => {
+    const agent = {
+      entity_type: "tag",
+      name: "Steuer",
+      matching_algorithm: 2,
+      match: "steuer finanzamt",
+      assign_to_documents: [],
+    };
+    const d = deriveEntityDesired(agent, null);
+    const p = buildEntityPayload(d, null, agent);
+    expect(p.matching_algorithm).toBe(2);
+    expect(p.match).toBe("steuer finanzamt");
+    const auto = buildEntityPayload(
+      { ...d, matching_algorithm: 6, match: "" },
+      null,
+      agent,
+    );
+    expect(auto.matching_algorithm).toBe(6); // agent proposed one -> stays explicit
+    expect(auto.match).toBeUndefined();
+  });
+
+  it("rule problems: empty name; pattern modes need a pattern", () => {
+    const ok = deriveEntityDesired({ name: "X" }, null);
+    expect(entityRuleProblem(ok)).toBeNull();
+    expect(entityRuleProblem({ ...ok, name: " " })).toMatch(/name/i);
+    expect(entityRuleProblem({ ...ok, matching_algorithm: 4, match: "" })).toMatch(/pattern/);
+    expect(entityRuleProblem({ ...ok, matching_algorithm: 4, match: "\\d+" })).toBeNull();
   });
 });

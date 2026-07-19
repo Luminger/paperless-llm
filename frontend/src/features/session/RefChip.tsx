@@ -19,7 +19,7 @@ import {
 import { api } from "../../api";
 import { keys } from "../../lib/keys";
 import { formatDate } from "../../lib/format";
-import { proposalKindLabel } from "../../components/ProposalCard";
+import { proposalKindLabel } from "../../lib/proposal-payload";
 import { entityHref } from "../../pages/EntityPage";
 
 export const REF_TOKEN_RE =

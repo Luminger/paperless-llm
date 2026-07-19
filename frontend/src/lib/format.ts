@@ -230,7 +230,7 @@ export function formatAgo(iso: string | null | undefined): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-const MATCHING_LABELS: Record<number, string> = {
+export const MATCHING_LABELS: Record<number, string> = {
   0: "none",
   1: "any word",
   2: "all words",
