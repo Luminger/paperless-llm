@@ -250,6 +250,13 @@ class InstructionsOut(BaseModel):
     instructions: str
 
 
+class CustomFieldValueOut(BaseModel):
+    """One custom-field value on a document."""
+
+    field: int
+    value: Any = None
+
+
 class CustomFieldOut(BaseModel):
     """A paperless custom-field definition, as the UI needs it: the name
     behind the id, the value type for the editor widget, and select
@@ -292,6 +299,8 @@ class DocumentOut(BaseModel):
     modified: str | None = None
     archive_serial_number: int | None = None
     original_file_name: str | None = None
+    # Names/types resolve via /api/entities/custom_fields.
+    custom_fields: list[CustomFieldValueOut] = []
 
 
 class DocumentHistoryOut(BaseModel):

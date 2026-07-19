@@ -325,7 +325,7 @@ async def list_custom_fields(
             data_type=f.data_type,
             select_options=[
                 o
-                for o in (f.extra_data.get("select_options") or [])
+                for o in ((f.extra_data or {}).get("select_options") or [])
                 if isinstance(o, dict) and o.get("id") is not None
             ],
         )

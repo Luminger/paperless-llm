@@ -22,6 +22,7 @@ export const keys = {
   document: (id: number) => ["document", id] as const,
   entities: (type: string) => ["entities", type] as const,
   entity: (type: string, id: number) => ["entity", type, id] as const,
+  customFields: () => ["custom_fields"] as const,
   mergeCandidates: (type: string) => ["merge-candidates", type] as const,
   jobs: (page?: number, pageSize?: number) =>
     page !== undefined

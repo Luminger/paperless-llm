@@ -110,6 +110,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/entities/custom_fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Custom Fields
+         * @description The custom-field registry: names, data types, select options.
+         *     Read-only — fields are defined in paperless; here they inform the
+         *     proposal editor's typed widgets and the document facts.
+         */
+        get: operations["list_custom_fields_api_entities_custom_fields_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/entities/document_types": {
         parameters: {
             query?: never;
@@ -1105,6 +1127,37 @@ export interface components {
             total: number;
         };
         /**
+         * CustomFieldOut
+         * @description A paperless custom-field definition, as the UI needs it: the name
+         *     behind the id, the value type for the editor widget, and select
+         *     options when the type is `select`.
+         */
+        CustomFieldOut: {
+            /** Data Type */
+            data_type: string;
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /**
+             * Select Options
+             * @default []
+             */
+            select_options: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * CustomFieldValueOut
+         * @description One custom-field value on a document.
+         */
+        CustomFieldValueOut: {
+            /** Field */
+            field: number;
+            /** Value */
+            value?: unknown;
+        };
+        /**
          * DocumentHistoryOut
          * @description One applied change on a document: what, when, by whom, and the
          *     session it came from.
@@ -1156,6 +1209,11 @@ export interface components {
             correspondent?: number | null;
             /** Created */
             created?: string | null;
+            /**
+             * Custom Fields
+             * @default []
+             */
+            custom_fields: components["schemas"]["CustomFieldValueOut"][];
             /** Document Type */
             document_type?: number | null;
             /** Id */
@@ -2209,6 +2267,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EntityOut"][];
+                };
+            };
+        };
+    };
+    list_custom_fields_api_entities_custom_fields_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldOut"][];
                 };
             };
         };

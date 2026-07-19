@@ -7,7 +7,7 @@ anything the agent wants ends up in paperless.
 
 | Kind | Example |
 | --- | --- |
-| `update_document_metadata` | Title, correspondent, type, storage path, tags, created date, ASN — any subset in one proposal |
+| `update_document_metadata` | Title, correspondent, type, storage path, tags, created date, ASN, custom-field values — any subset in one proposal |
 | `replace_content` | The OCR gate's accepted text |
 | `create_entity` | A new tag/correspondent/type the document needs |
 | `update_entity` | Rename, matching-rule change |
@@ -21,6 +21,12 @@ has *right now* (as the agent saw them) next to the proposed values,
 with entity ids resolved to names. Edit any field before applying —
 the agent's original payload is preserved separately, so you always see
 what was yours and what was the model's.
+
+Custom-field values are first-class rows: each field renders with its
+name and the widget its type calls for (date picker, yes/no, choice
+options by label, numbers), and the card offers setting a value for any
+other field defined in paperless. Only *changed* values travel — like
+every other field, and like the delta-based revert restores them.
 
 ## Applying — with three safety nets
 

@@ -12,6 +12,16 @@ export interface Desired {
   created: string | null;
   archive_serial_number: number | null;
   tags: number[];
+  /** Custom-field values keyed by field id (string — JSON keys);
+   * null = clear the value. */
+  custom_fields: Record<string, unknown>;
+}
+
+/** The document's custom-field values as a string-keyed map. */
+export function docCustomFieldMap(doc: PaperlessDocument): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const cf of doc.custom_fields ?? []) out[String(cf.field)] = cf.value;
+  return out;
 }
 
 export function deriveDesired(doc: PaperlessDocument, payload: Record<string, unknown>): Desired {
@@ -23,6 +33,11 @@ export function deriveDesired(doc: PaperlessDocument, payload: Record<string, un
     ...doc.tags.filter((t) => !removed.has(t)),
     ...added.filter((t) => !doc.tags.includes(t)),
   ];
+  const custom = docCustomFieldMap(doc);
+  for (const [k, v] of Object.entries(
+    (payload.custom_fields as Record<string, unknown> | undefined) ?? {},
+  ))
+    custom[String(k)] = v;
   return {
     title: scalar("title", doc.title),
     correspondent: scalar("correspondent", doc.correspondent ?? null),
@@ -31,6 +46,7 @@ export function deriveDesired(doc: PaperlessDocument, payload: Record<string, un
     created: scalar("created", doc.created?.slice(0, 10) ?? null),
     archive_serial_number: scalar("archive_serial_number", doc.archive_serial_number ?? null),
     tags,
+    custom_fields: custom,
   };
 }
 
@@ -56,6 +72,16 @@ export function buildPayload(
   const remove = doc.tags.filter((t) => !desired.tags.includes(t));
   if (add.length) payload.add_tags = add;
   if (remove.length) payload.remove_tags = remove;
+  // Custom fields: the DELTA vs. the document, same contract as every
+  // other field (and as apply/revert treat them).
+  const docCf = docCustomFieldMap(doc);
+  const cfChanges: Record<string, unknown> = {};
+  for (const k of new Set([...Object.keys(docCf), ...Object.keys(desired.custom_fields)])) {
+    const want = desired.custom_fields[k] ?? null;
+    const have = docCf[k] ?? null;
+    if (JSON.stringify(want) !== JSON.stringify(have)) cfChanges[k] = want;
+  }
+  if (Object.keys(cfChanges).length) payload.custom_fields = cfChanges;
   return payload;
 }
 

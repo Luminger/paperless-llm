@@ -24,6 +24,7 @@ import { api, type DocumentHistory, type EntityRef, type PaperlessDocument } fro
 import { keys, invalidateEntities } from "../lib/keys";
 import { formatDate, formatDateTime } from "../lib/format";
 import { matchingDescription, PATTERN_ALGORITHMS } from "../lib/matching";
+import { displayCustomValue } from "../lib/custom-fields";
 import { SessionList } from "../components/SessionList";
 import { errorMessage } from "../lib/errors";
 
@@ -86,6 +87,11 @@ function EntityLink({
 
 function DocumentFacts({ doc }: { doc: PaperlessDocument }) {
   const { tags, correspondents, docTypes, storagePaths } = useTaxonomyLists();
+  const { data: fieldDefs } = useQuery({
+    queryKey: keys.customFields(),
+    queryFn: api.listCustomFields,
+  });
+  const customFacts = (doc.custom_fields ?? []).filter((cf) => cf.value != null);
   return (
     <div className="flex gap-6">
       <DocumentPreview
@@ -133,6 +139,15 @@ function DocumentFacts({ doc }: { doc: PaperlessDocument }) {
         <FactRow label="Created">{formatDate(doc.created)}</FactRow>
         <FactRow label="Added">{formatDate(doc.added)}</FactRow>
         <FactRow label="ASN">{doc.archive_serial_number ?? "—"}</FactRow>
+        {/* Custom fields: names + typed values, never raw ids. */}
+        {customFacts.map((cf) => {
+          const def = (fieldDefs ?? []).find((d) => d.id === cf.field);
+          return (
+            <FactRow key={String(cf.field)} label={def?.name ?? `Custom field ${String(cf.field)}`}>
+              {displayCustomValue(def, cf.value)}
+            </FactRow>
+          );
+        })}
       </div>
     </div>
   );

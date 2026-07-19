@@ -59,8 +59,9 @@ class CustomField(_Permissive):
     name: str
     data_type: str
     # select fields carry their options here: {"select_options":
-    # [{"id": "...", "label": "..."}]}
-    extra_data: dict[str, Any] = {}
+    # [{"id": "...", "label": "..."}]}; paperless sends null for
+    # everything else.
+    extra_data: dict[str, Any] | None = None
 
 
 class CustomFieldInstance(_Permissive):

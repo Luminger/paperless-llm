@@ -14,7 +14,8 @@ import { DateField } from "@/components/app/DateField";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice } from "@/components/app/states";
-import { api, type EntityRef, type Proposal } from "../api";
+import { api, type CustomFieldDef, type EntityRef, type PaperlessDocument, type Proposal } from "../api";
+import { customFieldTypeLabel, displayCustomValue } from "../lib/custom-fields";
 import { keys as qk, invalidateProposalEffects } from "../lib/keys";
 import { formatDate } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
@@ -27,6 +28,7 @@ import {
   displayValue,
   entityRuleProblem,
   fieldKind,
+  docCustomFieldMap,
   parseTyped,
   proposalKindLabel,
   PATTERN_ALGORITHMS,
@@ -172,6 +174,10 @@ function MetadataEditor({
     queryFn: () => api.getDocument(docId),
   });
   const { tags, correspondents, docTypes, storagePaths } = useTaxonomyLists();
+  const { data: fieldDefs } = useQuery({
+    queryKey: qk.customFields(),
+    queryFn: api.listCustomFields,
+  });
   const [edited, setEdited] = useState<Desired | null>(null);
 
   const initial = useMemo(
@@ -274,8 +280,195 @@ function MetadataEditor({
           onChange={(v) => update({ created: v })}
         />
       </Row>
+      <CustomFieldRows
+        doc={doc}
+        defs={fieldDefs}
+        desired={desired.custom_fields}
+        editable={editable}
+        onChange={(cf) => update({ custom_fields: cf })}
+      />
     </div>
   );
+}
+
+/** Custom-field rows: one per field the document carries or the
+ * proposal touches, each with the widget its data_type calls for —
+ * plus a picker to set a value on any other defined field. */
+function CustomFieldRows({
+  doc,
+  defs,
+  desired,
+  editable,
+  onChange,
+}: {
+  doc: PaperlessDocument;
+  defs: CustomFieldDef[] | undefined;
+  desired: Record<string, unknown>;
+  editable: boolean;
+  onChange: (cf: Record<string, unknown>) => void;
+}) {
+  const docCf = docCustomFieldMap(doc);
+  const shown = [
+    ...new Set([...Object.keys(docCf), ...Object.keys(desired)]),
+  ].filter((k) => docCf[k] != null || desired[k] != null);
+  const byId = new Map((defs ?? []).map((d) => [String(d.id), d]));
+  const addable = (defs ?? []).filter(
+    (d) => !shown.includes(String(d.id)) && d.data_type !== "documentlink",
+  );
+  if (shown.length === 0 && (!editable || addable.length === 0)) return null;
+  return (
+    <>
+      {shown.map((k) => {
+        const def = byId.get(k);
+        const cur = docCf[k] ?? null;
+        const want = desired[k] ?? null;
+        return (
+          <Row
+            key={k}
+            label={def?.name ?? `Custom field ${k}`}
+            current={displayCustomValue(def, cur)}
+            changed={JSON.stringify(want) !== JSON.stringify(cur)}
+          >
+            <div className="flex items-center gap-1.5">
+              <CustomValueInput
+                def={def}
+                value={want}
+                disabled={!editable}
+                onChange={(v) => onChange({ ...desired, [k]: v })}
+              />
+              {editable && want != null && (
+                <Tip content="Clear this value">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0 text-muted-foreground"
+                    aria-label={`clear ${def?.name ?? k}`}
+                    onClick={() => onChange({ ...desired, [k]: null })}
+                  >
+                    ×
+                  </Button>
+                </Tip>
+              )}
+            </div>
+          </Row>
+        );
+      })}
+      {editable && addable.length > 0 && (
+        <div className="pt-2">
+          <SimpleSelect
+            ariaLabel="set a custom field"
+            placeholder="+ set custom field"
+            value={undefined}
+            onValueChange={(v) => {
+              const def = byId.get(v);
+              onChange({
+                ...desired,
+                [v]: def?.data_type === "boolean" ? false : "",
+              });
+            }}
+            options={addable.map((d) => ({
+              value: String(d.id),
+              label: `${d.name} (${customFieldTypeLabel(d.data_type)})`,
+            }))}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The widget a custom-field data_type calls for. */
+function CustomValueInput({
+  def,
+  value,
+  disabled,
+  onChange,
+}: {
+  def: CustomFieldDef | undefined;
+  value: unknown;
+  disabled: boolean;
+  onChange: (v: unknown) => void;
+}) {
+  const label = def?.name ?? "custom field";
+  switch (def?.data_type) {
+    case "boolean":
+      return (
+        <SimpleSelect
+          ariaLabel={label}
+          className="w-full"
+          disabled={disabled}
+          value={value === true ? "yes" : value === false ? "no" : undefined}
+          placeholder="—"
+          onValueChange={(v) => onChange(v === "yes")}
+          options={[
+            { value: "yes", label: "yes" },
+            { value: "no", label: "no" },
+          ]}
+        />
+      );
+    case "date":
+      return (
+        <DateField
+          ariaLabel={label}
+          value={value == null ? null : String(value).slice(0, 10)}
+          disabled={disabled}
+          onChange={(v) => onChange(v)}
+        />
+      );
+    case "select":
+      return (
+        <SimpleSelect
+          ariaLabel={label}
+          className="w-full"
+          disabled={disabled}
+          value={value == null ? undefined : String(value)}
+          placeholder="—"
+          onValueChange={(v) => onChange(v)}
+          options={(def.select_options ?? []).map((o) => ({
+            value: String(o.id),
+            label: String(o.label ?? o.id),
+          }))}
+        />
+      );
+    case "integer":
+    case "float":
+      return (
+        <Input
+          aria-label={label}
+          type="number"
+          className="h-8"
+          step={def.data_type === "integer" ? 1 : "any"}
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === "") return onChange(null);
+            const n = Number(raw);
+            if (Number.isFinite(n))
+              onChange(def.data_type === "integer" ? Math.trunc(n) : n);
+          }}
+        />
+      );
+    case "documentlink": {
+      const n = Array.isArray(value) ? value.length : 0;
+      return (
+        <span className="text-sm text-muted-foreground">
+          {n} linked document{n === 1 ? "" : "s"} (edited in paperless)
+        </span>
+      );
+    }
+    default:
+      // string / url / monetary — free text
+      return (
+        <Input
+          aria-label={label}
+          className="h-8"
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+        />
+      );
+  }
 }
 
 // ---------------------------------------------------------------------

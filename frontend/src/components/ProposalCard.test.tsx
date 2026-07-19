@@ -12,6 +12,7 @@ vi.mock("../api", () => ({
     proposalAction: vi.fn(),
     sendMessage: vi.fn(),
     getDocument: vi.fn(),
+    listCustomFields: vi.fn(),
     listTags: vi.fn(),
     listCorrespondents: vi.fn(),
     listDocumentTypes: vi.fn(),
@@ -34,6 +35,7 @@ const DOC = {
   created: "2024-04-17",
   added: "2026-07-17",
   archive_serial_number: null,
+  custom_fields: [],
 };
 
 /** Agent proposes: new title, type Rechnung, +tag Rechnung, -tag scan. */
@@ -53,6 +55,7 @@ function metadataProposal(overrides = {}) {
 
 function setupTaxonomy() {
   mocked.getDocument.mockResolvedValue(DOC);
+  mocked.listCustomFields.mockResolvedValue([]);
   mocked.listTags.mockResolvedValue([
     makeEntity({ id: 1, name: "Rechnung" }),
     makeEntity({ id: 6, name: "scan" }),
@@ -438,5 +441,70 @@ describe("ProposalCard — entity editors (named fields, no raw data)", () => {
     expect(await screen.findByText("wichtig")).toBeInTheDocument();
     expect(screen.getByText("Rechnung")).toBeInTheDocument();
     expect(screen.queryByText("source_id")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — custom fields in the metadata editor", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupTaxonomy();
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+    mocked.listCustomFields.mockResolvedValue([
+      { id: 1, name: "Invoice number", data_type: "string", select_options: [] },
+      { id: 2, name: "Due date", data_type: "date", select_options: [] },
+      {
+        id: 4,
+        name: "Status",
+        data_type: "select",
+        select_options: [
+          { id: "opt-a", label: "Paid" },
+          { id: "opt-b", label: "Open" },
+        ],
+      },
+    ]);
+    mocked.getDocument.mockResolvedValue({
+      ...DOC,
+      custom_fields: [
+        { field: 1, value: "R-4711" },
+        { field: 4, value: "opt-b" },
+      ],
+    });
+  });
+
+  it("shows field NAMES and typed values, select values as option labels", async () => {
+    renderCard(
+      makeProposal({
+        agent_payload: {
+          kind: "update_document_metadata",
+          document_id: 7,
+          custom_fields: { "4": "opt-a" },
+        },
+      }),
+    );
+    expect(await screen.findByText("Invoice number")).toBeInTheDocument();
+    expect(screen.getByText("Status")).toBeInTheDocument();
+    // current column shows the option LABEL, not the raw option id
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    // proposed select carries the label of the agent's choice
+    expect(screen.getByLabelText("Status")).toHaveTextContent("Paid");
+    expect(screen.queryByText("opt-a")).not.toBeInTheDocument();
+    expect(screen.queryByText("custom_fields")).not.toBeInTheDocument();
+  });
+
+  it("editing a custom field saves the DELTA only", async () => {
+    mocked.patchProposal.mockResolvedValue(makeProposal({}));
+    renderCard(
+      makeProposal({
+        agent_payload: { kind: "update_document_metadata", document_id: 7, title: "T2" },
+      }),
+    );
+    const inv = await screen.findByLabelText("Invoice number");
+    await userEvent.clear(inv);
+    await userEvent.type(inv, "R-4712");
+    await userEvent.click(screen.getByRole("button", { name: "Save edits" }));
+    await waitFor(() => expect(mocked.patchProposal).toHaveBeenCalled());
+    const payload = mocked.patchProposal.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.custom_fields).toEqual({ "1": "R-4712" });
+    expect(payload.title).toBe("T2");
   });
 });

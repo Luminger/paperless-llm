@@ -21,6 +21,7 @@ import { Pager } from "@/components/app/Pager";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef, type MergeCandidate } from "../api";
 import { matchingSummary } from "../lib/matching";
+import { customFieldTypeLabel } from "../lib/custom-fields";
 import { keys } from "../lib/keys";
 import { FetchStatus } from "../components/FetchStatus";
 import {
@@ -47,6 +48,18 @@ export const TYPES = [
     label: "Document types",
     description:
       "What kind of document it is — invoice, letter, contract. One per document.",
+  },
+] as const;
+
+/** The registry pages under Taxonomy that are NOT analyzable entities.
+ * Custom fields are defined in paperless; here they're listed so their
+ * names/types are visible where the proposal editor gets them from. */
+export const REGISTRY_TYPES = [
+  {
+    key: "custom_field",
+    label: "Custom fields",
+    description:
+      "Typed per-document values — defined in paperless, set by proposals. The agent may propose values for these fields.",
   },
 ] as const;
 
@@ -77,6 +90,71 @@ function CandidateRow({ c, onReview }: { c: MergeCandidate; onReview: () => void
 }
 
 export default function Taxonomy() {
+  const params = useParams();
+  if (params.type === "custom_field") return <CustomFieldsPage />;
+  return <EntityTaxonomy />;
+}
+
+/** Read-only registry of paperless custom-field definitions. */
+function CustomFieldsPage() {
+  const { data, isLoading, isFetching, refetch, error } = useQuery({
+    queryKey: keys.customFields(),
+    queryFn: api.listCustomFields,
+  });
+  return (
+    <div>
+      <PageHeader
+        title="Custom fields"
+        actions={
+          <FetchStatus
+            resource="custom fields"
+            isFetching={isFetching}
+            onRefresh={() => refetch()}
+          />
+        }
+      />
+      <p className="-mt-2 mb-3 max-w-3xl text-sm text-muted-foreground">
+        {REGISTRY_TYPES[0].description} Fields themselves are created and
+        deleted in paperless.
+      </p>
+      <ErrorNotice error={error} />
+      {isLoading ? (
+        <LoadingState lines={4} />
+      ) : (data ?? []).length === 0 ? (
+        <EmptyState title="No custom fields defined." />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Value type</TableHead>
+              <TableHead>Options</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(data ?? []).map((f) => (
+              <TableRow key={f.id}>
+                <TableCell className="font-medium">{f.name}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {customFieldTypeLabel(f.data_type)}
+                </TableCell>
+                <TableCell className="text-muted-foreground/70">
+                  {f.data_type === "select"
+                    ? (f.select_options ?? [])
+                        .map((o) => String(o.label ?? o.id))
+                        .join(", ") || "—"
+                    : "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function EntityTaxonomy() {
   const params = useParams();
   const type = params.type as TypeKey;
   const [filter] = useUrlParam("name");

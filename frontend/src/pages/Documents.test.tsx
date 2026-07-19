@@ -24,10 +24,10 @@ const DOCS = {
   results: [
     { id: 7, title: "scan_0001", correspondent: null, document_type: null,
       storage_path: null, tags: [], created: "2024-04-17", added: null,
-      archive_serial_number: null },
+      archive_serial_number: null, custom_fields: [] },
     { id: 12, title: "Invoice 4-8", correspondent: 1, document_type: 2,
       storage_path: null, tags: [3], created: "1958-05-02", added: null,
-      archive_serial_number: null },
+      archive_serial_number: null, custom_fields: [] },
   ],
 };
 

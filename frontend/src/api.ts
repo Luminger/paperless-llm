@@ -34,6 +34,7 @@ export type ConfigRow = S["ConfigRowOut"];
 export type WebhookStatus = S["WebhookStatusOut"];
 export type DocumentHistory = S["DocumentHistoryOut"];
 export type EntityRef = S["EntityOut"];
+export type CustomFieldDef = S["CustomFieldOut"];
 export type PaperlessDocument = S["DocumentOut"];
 export type DocumentSearchPage = S["DocumentSearchPage"];
 export type MergeCandidate = S["MergeCandidateOut"];
@@ -238,6 +239,8 @@ export const api = {
   getDocument: (id: number) =>
     request<PaperlessDocument>(`/api/entities/documents/${id}`),
   listTags: () => request<EntityRef[]>("/api/entities/tags"),
+  listCustomFields: () =>
+    request<CustomFieldDef[]>("/api/entities/custom_fields"),
   listCorrespondents: () => request<EntityRef[]>("/api/entities/correspondents"),
   listDocumentTypes: () => request<EntityRef[]>("/api/entities/document_types"),
   listStoragePaths: () => request<EntityRef[]>("/api/entities/storage_paths"),

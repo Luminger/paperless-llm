@@ -48,6 +48,7 @@ describe("EntityPage (generic entity overview)", () => {
       created: "1958-05-02",
       added: "2026-07-16",
       archive_serial_number: null,
+      custom_fields: [],
     });
     renderWithProviders(<EntityPage />, { route: "/documents/12", path: "/documents/:id" });
 
@@ -162,6 +163,7 @@ describe("EntityPage document history", () => {
       id: 12, title: "Invoice 4-8", correspondent: null, document_type: null,
       storage_path: null, tags: [], created: "1958-05-02", added: "2026-07-16",
       archive_serial_number: null, content: "some text",
+      custom_fields: [],
     });
   });
 

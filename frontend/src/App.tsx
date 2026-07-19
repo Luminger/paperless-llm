@@ -30,7 +30,7 @@ import Documents from "./pages/Documents";
 import Dashboard from "./pages/Dashboard";
 import SessionDetail from "./pages/SessionDetail";
 import ProposalRedirect from "./pages/ProposalRedirect";
-import Taxonomy, { TYPES as TAXONOMY_TYPES } from "./pages/Taxonomy";
+import Taxonomy, { REGISTRY_TYPES, TYPES as TAXONOMY_TYPES } from "./pages/Taxonomy";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
@@ -63,7 +63,7 @@ function TaxonomyMenu() {
         Taxonomy <ChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44">
-        {TAXONOMY_TYPES.map((t) => (
+        {[...TAXONOMY_TYPES, ...REGISTRY_TYPES].map((t) => (
           <DropdownMenuItem key={t.key} asChild>
             <NavLink to={`/taxonomy/${t.key}`}>{t.label}</NavLink>
           </DropdownMenuItem>

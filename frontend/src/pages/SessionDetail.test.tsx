@@ -126,6 +126,7 @@ describe("SessionDetail step feed", () => {
       id: 7, title: "scan_0001", correspondent: null, document_type: null,
       storage_path: null, tags: [], created: "2024-04-17", added: null,
       archive_serial_number: null,
+      custom_fields: [],
     });
     mocked.listTags.mockResolvedValue([]);
     mocked.listCorrespondents.mockResolvedValue([]);
@@ -390,6 +391,7 @@ describe("SessionDetail — archive & breadcrumb", () => {
       id: 7, title: "scan_0001", correspondent: null, document_type: null,
       storage_path: null, tags: [], created: null, added: null,
       archive_serial_number: null,
+      custom_fields: [],
     });
   });
 
@@ -558,6 +560,7 @@ describe("Chronological turn rendering", () => {
       id: 7, title: "scan_0001", correspondent: null, document_type: null,
       storage_path: null, tags: [], created: "2024-04-17", added: null,
       archive_serial_number: null,
+      custom_fields: [],
     });
     mocked.revertCheck.mockResolvedValue({ revert_noop: false });
   });
@@ -638,6 +641,7 @@ describe("Reference tokens", () => {
       id: 13, title: "Campus Media Statement", correspondent: null,
       document_type: null, storage_path: null, tags: [], created: "1971-03-01",
       added: null, archive_serial_number: null,
+      custom_fields: [],
     });
   });
 

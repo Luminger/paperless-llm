@@ -41,8 +41,19 @@ alive rather than replacing it:
   pattern algorithms (any/all/exact/regex/fuzzy) require a pattern,
   auto and none must not have one.
 
-Entity pages and the taxonomy lists show each entity's rule ("any word
-· “kraxi”", "auto (ML)").
+Entity pages and the taxonomy lists speak the same vocabulary as the
+proposal editor: **Auto-assignment** (Automatic / Any word / All words /
+Exact match / Regular expression / Fuzzy word / None), **Match
+pattern**, and **Case** — a rule reads identically wherever it appears.
+
+## Custom fields
+
+*Taxonomy → Custom fields* lists the custom-field definitions paperless
+knows: name, value type, and the options of choice fields. Fields
+themselves are created in paperless; their *values* are set through
+document proposals — the agent can read them (with names resolved) and
+propose typed values, which the review card renders with proper widgets
+per type.
 
 ## Per-entity instructions
 

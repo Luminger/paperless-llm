@@ -141,3 +141,39 @@ describe("entity proposal derivation & diff", () => {
     expect(entityRuleProblem({ ...ok, matching_algorithm: 4, match: "\\d+" })).toBeNull();
   });
 });
+
+describe("custom fields in document proposals", () => {
+  const cfDoc = {
+    ...doc,
+    custom_fields: [
+      { field: 1, value: "R-4711" },
+      { field: 2, value: "2024-04-17" },
+    ],
+  } as PaperlessDocument;
+
+  it("derive: doc values overlaid with the payload's (string keys)", () => {
+    const d = deriveDesired(cfDoc, {
+      document_id: 7,
+      custom_fields: { "2": "2024-05-01", "3": true },
+    });
+    expect(d.custom_fields).toEqual({
+      "1": "R-4711",
+      "2": "2024-05-01",
+      "3": true,
+    });
+  });
+
+  it("build: only the delta travels; clearing sends null", () => {
+    const d = deriveDesired(cfDoc, { document_id: 7 });
+    // change field 2, clear field 1, leave everything else
+    const payload = buildPayload(
+      { ...d, custom_fields: { ...d.custom_fields, "1": null, "2": "2024-06-01" } },
+      cfDoc,
+      { document_id: 7 },
+    );
+    expect(payload.custom_fields).toEqual({ "1": null, "2": "2024-06-01" });
+    // untouched -> no custom_fields key at all
+    const noop = buildPayload(d, cfDoc, { document_id: 7 });
+    expect(noop.custom_fields).toBeUndefined();
+  });
+});
