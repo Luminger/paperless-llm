@@ -8,10 +8,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Step } from "../../api";
 import { keys } from "../../lib/keys";
+import { useUrlParam } from "../../hooks/useUrlState";
 import { DiffView } from "../../components/DiffView";
 
 export function OcrGateBody({ step }: { step: Step }) {
   const qc = useQueryClient();
+  // The one review where NOT seeing the document is reviewing blind —
+  // offer the pinned panel right where the judgment happens.
+  const [docTab, setDocTab] = useUrlParam("doc");
   const { data: ocr } = useQuery({
     queryKey: keys.sessionOcr(step.session_id, step.id),
     queryFn: () => api.getOcrReview(step.session_id),
@@ -44,7 +48,15 @@ export function OcrGateBody({ step }: { step: Step }) {
       <p className="text-sm text-muted-foreground">
         Review the re-OCRed content. You can fix mistakes directly in the new text
         before accepting. The analysis continues only after this step — based on
-        whatever content you decide on.
+        whatever content you decide on.{" "}
+        {docTab !== "pages" && (
+          <button
+            className="text-primary hover:underline"
+            onClick={() => setDocTab("pages")}
+          >
+            Compare against the pages →
+          </button>
+        )}
       </p>
       <DiffView oldText={ocr.previous_content} newText={newText} onNewTextChange={setNewText} />
       <div className="flex gap-2">

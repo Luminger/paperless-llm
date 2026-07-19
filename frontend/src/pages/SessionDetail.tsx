@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Tip } from "@/components/app/Tip";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, ArrowRight, Check, Pencil, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, Check, PanelRight, Pencil, X } from "lucide-react";
 import { ConnectionToast } from "@/components/app/ConnectionToast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ import { useSessionEvents } from "../hooks/useSessionEvents";
 import { entityHref } from "./EntityPage";
 import { StepCard } from "../features/session/StepCard";
 import { NextTurnBox } from "../features/session/ContinueBox";
+import { DocumentPanel } from "../features/session/DocumentPanel";
+import { useUrlParam } from "../hooks/useUrlState";
 
 function ArchivedBanner() {
   return (
@@ -204,6 +206,8 @@ export default function SessionDetail() {
   const qc = useQueryClient();
   const [search] = useSearchParams();
   const inFlow = search.get("flow") != null;
+  // ?doc=pages|text — the pinned document panel (deep-linkable).
+  const [docTab, setDocTab] = useUrlParam("doc");
   const { live, connected, nextRetryAt, pruneLive } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: keys.session(sessionId),
@@ -254,8 +258,14 @@ export default function SessionDetail() {
     turnByStep.set(st.id, ++turnNo);
   }
 
+  const isDocSession = s.entity_type === "document" && s.entity_id != null;
+  const panelOpen = isDocSession && (docTab === "pages" || docTab === "text");
+
   return (
-    <div>
+    // With the panel open the container breaks out of App's max-w-6xl
+    // (negative-margin breakout) — the split needs the room; closed,
+    // the timeline keeps its comfortable measure.
+    <div className={panelOpen ? "xl:mx-[calc((72rem-100vw)/2+2rem)]" : ""}>
       {s.entity_type != null && s.entity_id != null && (
         <nav className="mb-2 text-sm">
           <Link
@@ -272,6 +282,25 @@ export default function SessionDetail() {
           <span className="text-sm text-muted-foreground">· {s.entity_name}</span>
         )}
         <span className="flex-1" />
+        {isDocSession && (
+          <Tip
+            content={
+              panelOpen
+                ? "Hide the document panel"
+                : "Pin the document beside the timeline — judge proposals against the real pages"
+            }
+          >
+            <Button
+              variant={panelOpen ? "secondary" : "outline"}
+              size="sm"
+              aria-pressed={panelOpen}
+              onClick={() => setDocTab(panelOpen ? "" : "pages")}
+            >
+              <PanelRight className="size-3.5" />
+              Document
+            </Button>
+          </Tip>
+        )}
         <ArchiveToggle sessionId={s.id} archived={archived} onChanged={onChanged} />
       </div>
       {inFlow && s.job_id != null && (
@@ -279,20 +308,40 @@ export default function SessionDetail() {
       )}
       {archived && <ArchivedBanner />}
 
-      <div className="space-y-3">
-        {s.steps.map((step) => (
-          <StepCard
-            key={step.id}
-            step={step}
-            proposals={s.proposals}
-            live={live[step.id]}
-            onChanged={onChanged}
-            archived={archived}
-            turn={turnByStep.get(step.id)}
-          />
-        ))}
-        {/* keyed by turn (AUDIT FS-7): a finished turn always yields a fresh box */}
-        {canContinue && <NextTurnBox key={turnNo + 1} sessionId={s.id} turn={turnNo + 1} />}
+      <div
+        className={
+          panelOpen
+            ? "lg:grid lg:grid-cols-[minmax(0,1fr)_clamp(24rem,42vw,44rem)] lg:items-start lg:gap-5"
+            : undefined
+        }
+      >
+        {/* On narrow screens the panel stacks ABOVE the timeline — the
+            user just asked for it; on lg it pins to the right. */}
+        {panelOpen && (
+          <div className="mb-4 lg:order-2 lg:mb-0">
+            <DocumentPanel
+              documentId={s.entity_id!}
+              tab={docTab === "text" ? "text" : "pages"}
+              onTab={(t) => setDocTab(t)}
+              onClose={() => setDocTab("")}
+            />
+          </div>
+        )}
+        <div className="min-w-0 space-y-3 lg:order-1">
+          {s.steps.map((step) => (
+            <StepCard
+              key={step.id}
+              step={step}
+              proposals={s.proposals}
+              live={live[step.id]}
+              onChanged={onChanged}
+              archived={archived}
+              turn={turnByStep.get(step.id)}
+            />
+          ))}
+          {/* keyed by turn (AUDIT FS-7): a finished turn always yields a fresh box */}
+          {canContinue && <NextTurnBox key={turnNo + 1} sessionId={s.id} turn={turnNo + 1} />}
+        </div>
       </div>
 
       {/* Connection state lives OUT of the content flow (the central

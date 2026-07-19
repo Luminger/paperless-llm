@@ -90,3 +90,15 @@ them from the journal if needed).
 Archiving a session takes it off the active lists and refuses new work
 and applies — but its journal stays: applied changes remain revertible.
 Going back in time is always allowed.
+
+## The document panel
+
+Judging a proposal (or an OCR result) against nothing but field values
+is reviewing blind. The **Document** button in a session's header pins
+the document beside the timeline: **Pages** shows the rendered pages,
+**Text** the stored OCR content. The panel is sticky — the timeline
+scrolls, the document stays — and takes no space while closed. Its
+state lives in the URL (`?doc=pages`), so a review link can arrive with
+the evidence already open. The OCR gate offers the same panel inline
+("Compare against the pages") — the one review where seeing the
+document is non-negotiable.

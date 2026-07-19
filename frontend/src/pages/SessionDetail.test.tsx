@@ -30,6 +30,7 @@ vi.mock("../api", () => ({
     listStoragePaths: vi.fn(),
     getJob: vi.fn(),
     getJobAttention: vi.fn(),
+    getDocumentPreviewInfo: vi.fn(),
   },
 }));
 const mocked = vi.mocked(api);
@@ -727,5 +728,49 @@ describe("SessionDetail job flow", () => {
     renderDetail();
     await screen.findByText("All done; proposed a better title.");
     expect(screen.queryByText(/waiting on you/)).toBeNull();
+  });
+});
+
+describe("SessionDetail — pinned document panel", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.revertCheck.mockResolvedValue({ revert_noop: false });
+    mocked.getDocumentPreviewInfo.mockResolvedValue({ pages: 2 });
+    mocked.getDocument.mockResolvedValue({
+      id: 7, title: "scan_0001", content: "OCR TEXT HERE", tags: [],
+      correspondent: null, document_type: null, storage_path: null,
+      created: null, added: null, archive_serial_number: null, custom_fields: [],
+    });
+  });
+
+  it("closed by default; the header button opens it with the Pages tab", async () => {
+    mocked.getSession.mockResolvedValue(makeDetail());
+    renderDetail();
+    expect(await screen.findByRole("button", { name: /Document/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText("document panel")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Document/ }));
+    expect(await screen.findByLabelText("document panel")).toBeInTheDocument();
+    // both page images requested
+    expect(await screen.findByAltText("page 1")).toBeInTheDocument();
+    expect(screen.getByAltText("page 2")).toBeInTheDocument();
+  });
+
+  it("?doc=text deep-link opens the OCR text tab directly", async () => {
+    mocked.getSession.mockResolvedValue(makeDetail());
+    renderWithProviders(<SessionDetail />, {
+      route: "/sessions/9?doc=text",
+      path: "/sessions/:id",
+    });
+    expect(await screen.findByText("OCR TEXT HERE")).toBeInTheDocument();
+  });
+
+  it("non-document sessions have no panel toggle", async () => {
+    mocked.getSession.mockResolvedValue(
+      makeDetail({ entity_type: "tag", entity_id: 3, agent_kind: "tag" }),
+    );
+    renderDetail();
+    await screen.findByRole("heading", { name: /analysis/i });
+    expect(screen.queryByRole("button", { name: /Document/ })).not.toBeInTheDocument();
   });
 });
