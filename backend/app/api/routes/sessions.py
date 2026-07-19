@@ -346,6 +346,29 @@ async def unarchive_session(
     return SessionOut.model_validate(s)
 
 
+@router.post("/{session_id}/cancel")
+async def cancel_session(
+    session_id: int, db: AsyncSession = Depends(get_session)
+) -> SessionOut:
+    """Stop this session's work NOW: pending steps are cancelled and the
+    running step's LLM call is aborted. Fully recoverable — a cancelled
+    step's Retry runs it again."""
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    from app.services.audit import record
+    from app.services.steps import cancel_session_steps, publish_step_changed
+
+    cancelled = await cancel_session_steps(db, session_id)
+    await record(db, "session", "cancel_requested", session_id=s.id, title=s.title)
+    await db.commit()
+    # Announce only committed state; the running step's own worker
+    # publishes its cancellation when it lands (AUDIT SV-M2).
+    publish_step_changed(cancelled)
+    await db.refresh(s)
+    return SessionOut.model_validate(s)
+
+
 @router.post("/{session_id}/steps/{step_id}/resolve")
 async def resolve_step(
     session_id: int,

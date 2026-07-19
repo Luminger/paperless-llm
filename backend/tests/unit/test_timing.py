@@ -3,10 +3,14 @@ in the transcript."""
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+
+import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from app.llm.timing import TimedModel
+from app.llm.timing import LlmTimeoutError, TimedModel, TimeLimitedModel
 from app.services.transcript import derive_transcript
 
 
@@ -71,3 +75,68 @@ def test_pydantic_ai_private_field_still_exists():
     import pydantic_ai.models as m
 
     assert "_first_chunk_monotonic" in inspect.getsource(m)
+
+
+# ----- TimeLimitedModel: wall-clock max execution time ----------------
+
+
+class _SlowModel(TestModel):
+    """TestModel whose request never finishes within any sane budget."""
+
+    async def request(self, *args, **kwargs):
+        await asyncio.sleep(30)
+        return await super().request(*args, **kwargs)
+
+
+async def test_wall_clock_timeout_fires_on_stuck_request():
+    model = TimeLimitedModel(TimedModel(_SlowModel()), wall_timeout=0.05)
+    agent = Agent(model)
+    with pytest.raises(LlmTimeoutError) as exc:
+        await agent.run("hi")
+    # The message must be UI-legible (it lands in session.error).
+    assert "max execution time" in str(exc.value)
+    assert "0.05s" in str(exc.value)
+
+
+async def test_wall_clock_timeout_caps_stream_consumption():
+    """A stream that keeps dribbling chunks forever must be cut off —
+    the exact failure HTTP read timeouts cannot catch."""
+
+    class _DribbleModel(TestModel):
+        @asynccontextmanager
+        async def request_stream(self, *args, **kwargs):
+            async with super().request_stream(*args, **kwargs) as stream:
+                yield stream
+                await asyncio.sleep(30)  # server "keeps going" after chunks
+
+    model = TimeLimitedModel(TimedModel(_DribbleModel()), wall_timeout=0.05)
+    agent = Agent(model)
+
+    async def handler(ctx, events):
+        async for _ in events:
+            pass
+
+    with pytest.raises(LlmTimeoutError):
+        await agent.run("hi", event_stream_handler=handler)
+
+
+async def test_no_timeout_means_no_cap():
+    model = TimeLimitedModel(TimedModel(TestModel(custom_output_text="ok")), wall_timeout=None)
+    result = await Agent(model).run("hi")
+    assert result.output
+
+
+def test_ocr_timeout_falls_back_to_agent_profile(monkeypatch):
+    """OCR without its own timeout inherits the agent's wall clock —
+    same fallback family as endpoint/model/api_key."""
+    from app.config import get_settings, reset_settings_cache
+    from app.llm.factory import ocr_model
+
+    monkeypatch.setenv("PLLM_LLM__AGENT__TIMEOUT_SECONDS", "123")
+    reset_settings_cache()
+    try:
+        model, settings, _, _ = ocr_model()
+        assert model.wall_timeout == 123.0
+        assert settings["timeout"] == 123.0
+    finally:
+        reset_settings_cache()

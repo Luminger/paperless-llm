@@ -512,7 +512,8 @@ export interface paths {
         put?: never;
         /**
          * Cancel Job
-         * @description Cancel all still-pending work of a job. Running steps finish.
+         * @description Cancel all still-pending work of a job and abort its running
+         *     steps (their in-flight LLM calls are stopped).
          */
         post: operations["cancel_job_api_jobs__job_id__cancel_post"];
         delete?: never;
@@ -756,6 +757,28 @@ export interface paths {
          *     (you can always go BACK to a state, just not forward-apply).
          */
         post: operations["archive_session_api_sessions__session_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{session_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Session
+         * @description Stop this session's work NOW: pending steps are cancelled and the
+         *     running step's LLM call is aborted. Fully recoverable — a cancelled
+         *     step's Retry runs it again.
+         */
+        post: operations["cancel_session_api_sessions__session_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3430,6 +3453,37 @@ export interface operations {
         };
     };
     archive_session_api_sessions__session_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_session_api_sessions__session_id__cancel_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -1,4 +1,4 @@
-"""Per-call LLM metrics.
+"""Per-call LLM middleware: metrics + wall-clock time limit.
 
 ``TimedModel`` wraps any pydantic-ai model and stamps a ``pllm_timing``
 dict into each response's ``provider_details``, which is serialized into
@@ -12,10 +12,19 @@ record and surfaces in the transcript:
 - input_tokens / output_tokens
 - tps: output tokens per second of generation time (duration minus
   TTFT where known)
+
+``TimeLimitedModel`` enforces a max WALL-CLOCK execution time on every
+call. HTTP-level timeouts are not enough: a read timeout is per-chunk,
+so a streaming endpoint that keeps dribbling tokens (or a model stuck
+in a generation loop) can run forever without ever tripping it. The
+cap spans the ENTIRE call — connect, first token, and the full stream
+consumption — and turns overruns into a legible ``LlmTimeoutError``
+that the step machinery records and auto-retries like any failure.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -28,6 +37,19 @@ from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 
 TIMING_KEY = "pllm_timing"
+
+
+class LlmTimeoutError(Exception):
+    """An LLM call exceeded its configured wall-clock budget."""
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__(
+            f"LLM call exceeded the configured max execution time "
+            f"({seconds:g}s). The model endpoint may be overloaded or "
+            f"stuck; if long calls are legitimate here, raise the "
+            f"profile's timeout_seconds under Settings → Models."
+        )
+        self.seconds = seconds
 
 
 def _timing(
@@ -50,6 +72,56 @@ def _timing(
 def _attach(response: ModelResponse, timing: dict[str, Any]) -> ModelResponse:
     response.provider_details = {**(response.provider_details or {}), TIMING_KEY: timing}
     return response
+
+
+class TimeLimitedModel(WrapperModel):
+    """Hard wall-clock cap around every model call (see module doc)."""
+
+    def __init__(self, wrapped, wall_timeout: float | None) -> None:
+        super().__init__(wrapped)
+        self.wall_timeout = wall_timeout
+
+    async def request(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
+        if self.wall_timeout is None:
+            return await super().request(messages, model_settings, model_request_parameters)
+        try:
+            async with asyncio.timeout(self.wall_timeout):
+                return await super().request(
+                    messages, model_settings, model_request_parameters
+                )
+        except TimeoutError as e:
+            raise LlmTimeoutError(self.wall_timeout) from e
+
+    @asynccontextmanager
+    async def request_stream(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+        run_context: Any | None = None,
+    ) -> AsyncGenerator[StreamedResponse]:
+        if self.wall_timeout is None:
+            async with self.wrapped.request_stream(
+                messages, model_settings, model_request_parameters, run_context
+            ) as stream:
+                yield stream
+            return
+        # The timeout context spans the caller's ENTIRE consumption of
+        # the stream (the yield happens inside it), so a stream that
+        # never finishes is cancelled when the budget runs out.
+        try:
+            async with asyncio.timeout(self.wall_timeout):
+                async with self.wrapped.request_stream(
+                    messages, model_settings, model_request_parameters, run_context
+                ) as stream:
+                    yield stream
+        except TimeoutError as e:
+            raise LlmTimeoutError(self.wall_timeout) from e
 
 
 class TimedModel(WrapperModel):

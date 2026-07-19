@@ -482,3 +482,111 @@ async def test_claim_skips_sessions_with_a_running_step(file_db):
 
     async with session_scope() as db:
         assert (await db.get(Step, blocked_id)).state == StepState.pending
+
+
+async def test_cancel_aborts_running_llm_execution(file_db, monkeypatch):
+    """A user cancel kills the in-flight execution (the stuck-LLM-call
+    escape hatch), finalizes the step as cancelled — and the worker
+    survives to run the next step."""
+    started = asyncio.Event()
+
+    async def stuck(db, paperless, session, step):
+        started.set()
+        await asyncio.sleep(60)  # "never" returns
+
+    async def ok(db, paperless, session, step):
+        return None
+
+    monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, stuck)
+    sid = await _make_session()
+    async with session_scope() as db:
+        session = await db.get(Session, sid)
+        step = await create_step(db, session, StepKind.analysis)
+        step_id = step.id
+
+    # The service targets the process-global workers.
+    engine.workers._cancel_requested.clear()
+    await engine.workers.start()
+    try:
+        await asyncio.wait_for(started.wait(), 15)
+        async with session_scope() as db:
+            from app.services.steps import cancel_session_steps
+
+            flipped = await cancel_session_steps(db, sid)
+            await db.commit()
+            assert flipped == []  # running step is aborted, not DB-flipped
+        await _wait_for(_step_in(step_id, StepState.cancelled))
+
+        # Worker survived: a fresh step still gets executed.
+        monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, ok)
+        async with session_scope() as db:
+            session = await db.get(Session, sid)
+            step2 = await create_step(db, session, StepKind.analysis)
+            step2_id = step2.id
+        await _wait_for(_step_in(step2_id, StepState.succeeded))
+    finally:
+        await engine.workers.stop()
+
+    async with session_scope() as db:
+        step = await db.get(Step, step_id)
+        assert step.state == StepState.cancelled
+        assert step.error == "stopped by user"
+        assert step.finished_at is not None
+        assert step.attempts[-1]["error"] == "stopped by user"
+
+
+async def test_cancel_flips_pending_steps_and_syncs_session(file_db):
+    """No worker involved: pending steps flip directly (guarded), the
+    session re-derives."""
+    from app.services.steps import cancel_session_steps
+
+    sid = await _make_session()
+    async with session_scope() as db:
+        session = await db.get(Session, sid)
+        step = await create_step(db, session, StepKind.analysis)
+        step_id = step.id
+
+    async with session_scope() as db:
+        flipped = await cancel_session_steps(db, sid)
+        await db.commit()
+        assert [s.id for s in flipped] == [step_id]
+
+    async with session_scope() as db:
+        step = await db.get(Step, step_id)
+        assert step.state == StepState.cancelled
+        assert step.error == "stopped by user"
+        session = await db.get(Session, sid)
+        assert session.status == SessionStatus.idle  # not failed
+
+
+async def test_cancelled_step_revives_via_retry(file_db, monkeypatch):
+    """Cancel is fully recoverable: Retry gives the step a fresh run."""
+
+    async def ok(db, paperless, session, step):
+        return None
+
+    monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, ok)
+    from app.services.steps import cancel_session_steps
+
+    sid = await _make_session()
+    async with session_scope() as db:
+        session = await db.get(Session, sid)
+        step = await create_step(db, session, StepKind.analysis)
+        step_id = step.id
+    async with session_scope() as db:
+        await cancel_session_steps(db, sid)
+        await db.commit()
+
+    async with session_scope() as db:
+        step = await db.get(Step, step_id)
+        await retry_step(db, step)
+        assert step.state == StepState.pending
+
+    workers = StepWorkers()
+    await workers.start()
+    try:
+        await _wait_for(_step_in(step_id, *FINAL))
+    finally:
+        await workers.stop()
+    async with session_scope() as db:
+        assert (await db.get(Step, step_id)).state == StepState.succeeded

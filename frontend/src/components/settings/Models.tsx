@@ -38,6 +38,7 @@ const LABELS: Record<string, string> = {
   model: "Model",
   api_key: "API key",
   max_concurrent: "Max concurrent requests",
+  timeout_seconds: "Max call time (seconds)",
   supports_streaming: "Token streaming",
   thinking: "Thinking mode",
   max_input_tokens: "Input token clamp",

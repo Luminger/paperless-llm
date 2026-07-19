@@ -201,6 +201,9 @@ async def retry_step(db: DbSession, step: Step) -> Step:
         step.attempt_count = 0  # fresh auto budget after a manual retry
         step.scheduled_at = None
         step.attempts = [*step.attempts, {"manual_retry_at": utcnow().isoformat()}]
+        # A cancel that landed after this step already finished would
+        # otherwise abort the retry on arrival.
+        workers.clear_cancel_request(step.id)
     else:
         raise StepActionError(f"step is {step.state.value}; nothing to retry")
     await audit_record(
@@ -367,11 +370,36 @@ class StepWorkers:
         self._claim_locks: dict[QueueLane, asyncio.Lock] = {
             lane: asyncio.Lock() for lane in QueueLane
         }
+        # User-initiated cancellation of RUNNING steps. Executions run
+        # as child tasks registered here so a cancel can abort the
+        # in-flight LLM call without killing the worker loop itself.
+        # Same single-process assumption as recover().
+        self._running: dict[int, asyncio.Task] = {}
+        # Covers the claim→register gap: a cancel that arrives while the
+        # step is between the DB claim and task registration is consumed
+        # at registration time.
+        self._cancel_requested: set[int] = set()
 
     def wake(self, lane: QueueLane) -> None:
         ev = self._wakeups.get(lane)
         if ev is not None:
             ev.set()
+
+    def request_cancel(self, step_id: int) -> None:
+        """Abort a running step's execution. If its task isn't registered
+        yet (claim→register gap), leave a request the registration
+        consumes."""
+        task = self._running.get(step_id)
+        if task is not None:
+            task.cancel()
+        else:
+            self._cancel_requested.add(step_id)
+
+    def clear_cancel_request(self, step_id: int) -> None:
+        """Drop a stale cancel request (the step finished before its
+        cancel landed) — without this, a later manual retry of the same
+        step id would be aborted on arrival."""
+        self._cancel_requested.discard(step_id)
 
     async def start(self) -> None:
         cfg = get_settings().queue
@@ -467,6 +495,17 @@ class StepWorkers:
                 _publish(step)
                 return step.id
 
+    async def _execute(self, step_id: int, kind: StepKind) -> str | None:
+        """One executor attempt; returns the verdict. Runs as a child
+        task so a user cancel can abort it independently."""
+        async with session_scope() as db:
+            step = await db.get(Step, step_id)
+            session = await db.get(Session, step.session_id)
+            async with _paperless_client() as paperless:
+                verdict = await EXECUTORS[kind](db, paperless, session, step)
+                await db.commit()
+                return verdict
+
     async def _run(self, step_id: int) -> None:
         _ensure_registered()
         attempt_started = utcnow()
@@ -478,16 +517,31 @@ class StepWorkers:
 
         error: str | None = None
         verdict: str | None = None
+        cancelled = False
+        exec_task = asyncio.create_task(self._execute(step_id, kind))
+        self._running[step_id] = exec_task
+        if step_id in self._cancel_requested:
+            # Cancel arrived during the claim→register gap — consume it.
+            self._cancel_requested.discard(step_id)
+            exec_task.cancel()
         try:
-            async with session_scope() as db:
-                step = await db.get(Step, step_id)
-                session = await db.get(Session, step.session_id)
-                async with _paperless_client() as paperless:
-                    verdict = await EXECUTORS[kind](db, paperless, session, step)
-                    await db.commit()
+            verdict = await exec_task
+        except asyncio.CancelledError:
+            if exec_task.cancelled():
+                # The CHILD was cancelled — a user stop, not a shutdown.
+                cancelled = True
+            else:
+                # The WORKER is being cancelled (shutdown) — take the
+                # execution down with us and propagate.
+                exec_task.cancel()
+                await asyncio.gather(exec_task, return_exceptions=True)
+                raise
         except Exception as e:  # noqa: BLE001 — failure boundary
             log.exception("step %s (%s) failed", step_id, kind)
             error = f"{type(e).__name__}: {e}"
+        finally:
+            self._running.pop(step_id, None)
+            self._cancel_requested.discard(step_id)
 
         # The finalize transaction is pure bookkeeping and idempotent
         # per attempt — if it fails transiently (e.g. SQLite contention)
@@ -496,7 +550,7 @@ class StepWorkers:
         for backoff in (0.5, 2.0, None):
             try:
                 await self._finalize(step_id, attempt_no, attempt_started,
-                                     error, verdict)
+                                     error, verdict, cancelled)
                 return
             except Exception:  # noqa: BLE001
                 if backoff is None:
@@ -518,6 +572,7 @@ class StepWorkers:
         attempt_started,
         error: str | None,
         verdict: str | None,
+        cancelled: bool = False,
     ) -> None:
         async with session_scope() as db:
             step = await db.get(Step, step_id)
@@ -529,10 +584,22 @@ class StepWorkers:
                     "attempt": attempt_no,
                     "started_at": attempt_started.isoformat(),
                     "finished_at": utcnow().isoformat(),
-                    "error": error,
+                    "error": "stopped by user" if cancelled else error,
                 },
             ]
-            if error is not None:
+            if cancelled:
+                # User stop: terminal but fully recoverable — no auto
+                # retry (the user just said stop), Retry revives it.
+                step.state = StepState.cancelled
+                step.error = "stopped by user"
+                step.scheduled_at = None
+                step.finished_at = utcnow()
+                await audit_record(
+                    db, "task", "cancelled",
+                    step_id=step.id, step_kind=str(step.kind.value),
+                    session_id=step.session_id, attempt=attempt_no,
+                )
+            elif error is not None:
                 step.error = error
                 if attempt_no < step.max_attempts:
                     delay = get_settings().queue.retry_delay_seconds
@@ -571,43 +638,40 @@ class StepWorkers:
 
 
 
-async def cancel_job_steps(db: DbSession, job_id: int) -> list[Step]:
-    """Cancel every still-pending step of a job's sessions. Running
-    steps finish on their own; the sessions re-derive their status from
-    the cancelled tail (single writer stays single).
-
-    AUDIT SV-M2: the flip is guarded (`WHERE state='pending'`) so a
-    worker that claims a step mid-cancel keeps it — we never overwrite
-    'running'. Returns the cancelled steps; the CALLER commits and then
-    publishes them (events never announce uncommitted state)."""
-    ids = list(
-        (
-            await db.scalars(
-                select(Step.id)
-                .join(Session, Session.id == Step.session_id)
-                .where(Session.job_id == job_id, Step.state == StepState.pending)
+async def _cancel_steps(
+    db: DbSession, pending_ids: list[int], running_ids: list[int], reason: str
+) -> list[Step]:
+    """Shared cancel core. Pending steps flip to cancelled in the DB
+    (guarded — AUDIT SV-M2: `WHERE state='pending'`, so a worker that
+    claims a step mid-cancel keeps it; we never overwrite 'running').
+    RUNNING steps get their in-process execution aborted — the worker
+    finalizes them as cancelled and publishes on its own. Returns the
+    directly-flipped steps; the CALLER commits and then publishes them
+    (events never announce uncommitted state)."""
+    if pending_ids:
+        await db.execute(
+            sa_update(Step)
+            .where(Step.id.in_(pending_ids), Step.state == StepState.pending)
+            .values(
+                state=StepState.cancelled,
+                error=reason,
+                finished_at=utcnow(),
             )
-        ).all()
-    )
-    if not ids:
-        return []
-    await db.execute(
-        sa_update(Step)
-        .where(Step.id.in_(ids), Step.state == StepState.pending)
-        .values(
-            state=StepState.cancelled,
-            error="cancelled with its job",
-            finished_at=utcnow(),
         )
-    )
-    cancelled = list(
-        (
-            await db.scalars(
-                select(Step).where(
-                    Step.id.in_(ids), Step.state == StepState.cancelled
+    for rid in running_ids:
+        workers.request_cancel(rid)
+    cancelled = (
+        list(
+            (
+                await db.scalars(
+                    select(Step).where(
+                        Step.id.in_(pending_ids), Step.state == StepState.cancelled
+                    )
                 )
-            )
-        ).all()
+            ).all()
+        )
+        if pending_ids
+        else []
     )
     for sid in {s.session_id for s in cancelled}:
         session = await db.get(
@@ -616,6 +680,43 @@ async def cancel_job_steps(db: DbSession, job_id: int) -> list[Step]:
         if session is not None:
             await sync_session(db, session)
     return cancelled
+
+
+async def cancel_session_steps(db: DbSession, session_id: int) -> list[Step]:
+    """Stop a session's work: pending steps are cancelled, the running
+    step's LLM call is aborted (finalized as cancelled by its worker).
+    Fully recoverable — Retry revives a cancelled step."""
+    rows = (
+        await db.execute(
+            select(Step.id, Step.state).where(
+                Step.session_id == session_id,
+                Step.state.in_([StepState.pending, StepState.running]),
+            )
+        )
+    ).all()
+    pending = [r[0] for r in rows if r[1] == StepState.pending]
+    running = [r[0] for r in rows if r[1] == StepState.running]
+    return await _cancel_steps(db, pending, running, "stopped by user")
+
+
+async def cancel_job_steps(db: DbSession, job_id: int) -> list[Step]:
+    """Cancel every pending step of a job's sessions and abort the ones
+    currently running (their workers finalize them as cancelled). The
+    sessions re-derive their status from the cancelled tail (single
+    writer stays single)."""
+    rows = (
+        await db.execute(
+            select(Step.id, Step.state)
+            .join(Session, Session.id == Step.session_id)
+            .where(
+                Session.job_id == job_id,
+                Step.state.in_([StepState.pending, StepState.running]),
+            )
+        )
+    ).all()
+    pending = [r[0] for r in rows if r[1] == StepState.pending]
+    running = [r[0] for r in rows if r[1] == StepState.running]
+    return await _cancel_steps(db, pending, running, "cancelled with its job")
 
 
 async def recover() -> dict[str, int]:

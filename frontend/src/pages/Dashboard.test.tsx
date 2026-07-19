@@ -15,6 +15,7 @@ vi.mock("../api", () => ({
     listCorrespondents: vi.fn(),
     archiveSession: vi.fn(),
     unarchiveSession: vi.fn(),
+    cancelSession: vi.fn(),
   },
 }));
 const mocked = vi.mocked(api);
@@ -75,6 +76,31 @@ describe("Dashboard", () => {
     );
     renderWithProviders(<Dashboard />);
     expect(await screen.findByText("OCR review needed")).toBeInTheDocument();
+  });
+
+  it("running sessions get a Stop button that cancels the run", async () => {
+    const user = userEvent.setup();
+    mocked.cancelSession.mockResolvedValue(makeSession({ status: "idle" }));
+    mocked.listSessions.mockResolvedValue(
+      page([
+        makeSession({ id: 4, status: "running", phase: "analyzing" }),
+        makeSession({ id: 5, status: "idle", phase: "done" }),
+      ]),
+    );
+    renderWithProviders(<Dashboard />);
+    // Exactly one Stop — only the running row gets it.
+    const stops = await screen.findAllByRole("button", { name: /Stop/ });
+    expect(stops).toHaveLength(1);
+    await user.click(stops[0]);
+    expect(mocked.cancelSession).toHaveBeenCalledWith(4);
+  });
+
+  it("queued sessions (pending work, not yet claimed) are stoppable too", async () => {
+    mocked.listSessions.mockResolvedValue(
+      page([makeSession({ id: 6, status: "idle", phase: "queued" })]),
+    );
+    renderWithProviders(<Dashboard />);
+    expect(await screen.findByRole("button", { name: /Stop/ })).toBeInTheDocument();
   });
 
   it("failed sessions show an Error badge, never the error text", async () => {

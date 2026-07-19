@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CircleStop } from "lucide-react";
 import { Tip } from "@/components/app/Tip";
 import { OcrReviewBadge, SessionStatusBadge } from "./StatusBadge";
 import { Link } from "react-router-dom";
@@ -28,6 +29,11 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
       s.archived_at ? api.unarchiveSession(s.id) : api.archiveSession(s.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions() }),
   });
+  const stop = useMutation({
+    mutationFn: () => api.cancelSession(s.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions() }),
+  });
+  const busy = !s.archived_at && (s.status === "running" || s.phase === "queued");
   return (
     <>
       <TableRow className={s.archived_at ? "opacity-60" : ""}>
@@ -86,6 +92,27 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
           <SessionStatusBadge status={s.status} phase={s.phase} error={s.error} />
         </TableCell>
         <TableCell className="text-right">
+          {busy && (
+            <Tip
+              content={
+                stop.isError
+                  ? errorMessage(stop.error)
+                  : "Stop this run — aborts the model call, cancels queued work. Retry revives it."
+              }
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground"
+                disabled={stop.isPending}
+                onClick={() => stop.mutate()}
+                aria-invalid={stop.isError || undefined}
+              >
+                <CircleStop className="size-3.5" />
+                {stop.isError ? "Failed — retry" : "Stop"}
+              </Button>
+            </Tip>
+          )}
           <Tip
             content={
               archive.isError

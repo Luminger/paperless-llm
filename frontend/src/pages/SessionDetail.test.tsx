@@ -32,6 +32,7 @@ vi.mock("../api", () => ({
     getJobAttention: vi.fn(),
     getDocumentPreviewInfo: vi.fn(),
     putPrefs: vi.fn(),
+    cancelSession: vi.fn(),
   },
 }));
 const mocked = vi.mocked(api);
@@ -379,6 +380,34 @@ describe("SessionDetail step feed", () => {
         instructions: "focus on the dates",
       }),
     );
+  });
+});
+
+describe("SessionDetail — stop a running session", () => {
+  it("running sessions show Stop in the header; it cancels the run", async () => {
+    mocked.cancelSession.mockResolvedValue(
+      makeDetail({ status: "idle" }) as unknown as ReturnType<
+        typeof makeDetail
+      >,
+    );
+    mocked.getSession.mockResolvedValue(
+      makeDetail({
+        status: "running",
+        phase: "analyzing",
+        steps: [mkStep({ kind: "analysis", state: "running" })],
+      }),
+    );
+    renderDetail();
+    const stop = await screen.findByRole("button", { name: /Stop/ });
+    await userEvent.click(stop);
+    expect(mocked.cancelSession).toHaveBeenCalledWith(9);
+  });
+
+  it("idle/done sessions have no Stop button", async () => {
+    mocked.getSession.mockResolvedValue(makeDetail());
+    renderDetail();
+    await screen.findByRole("button", { name: /Archive/ });
+    expect(screen.queryByRole("button", { name: /Stop/ })).not.toBeInTheDocument();
   });
 });
 

@@ -208,7 +208,8 @@ async def get_job(
 
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> JobOut:
-    """Cancel all still-pending work of a job. Running steps finish."""
+    """Cancel all still-pending work of a job and abort its running
+    steps (their in-flight LLM calls are stopped)."""
     job = await db.get(Job, job_id)
     if job is None:
         raise HTTPException(404, "job not found")

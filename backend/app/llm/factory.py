@@ -15,7 +15,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from app.config import AgentProfile, OcrProfile, SamplingOverrides, get_settings
-from app.llm.timing import TimedModel
+from app.llm.timing import TimedModel, TimeLimitedModel
 
 # One semaphore per endpoint URL, shared by every consumer in this
 # process (agent runs, OCR, interactive chat). Sized via config
@@ -60,17 +60,26 @@ def _settings_from(
     return ModelSettings(**settings)  # type: ignore[typeddict-item]
 
 
-def _build_model(base_url: str, model: str, api_key: str) -> Model:
+def _build_model(base_url: str, model: str, api_key: str, timeout: float | None) -> Model:
     # TimedModel stamps per-call metrics (duration, tokens, tps, ttft
     # when streaming) into each response's provider_details.
-    return TimedModel(
-        OpenAIChatModel(model, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
+    # TimeLimitedModel is OUTERMOST: the wall-clock cap spans the whole
+    # call including stream consumption — the guard against endpoints
+    # that never finish (HTTP read timeouts are per-chunk and can't
+    # catch a stream that keeps dribbling tokens).
+    return TimeLimitedModel(
+        TimedModel(
+            OpenAIChatModel(
+                model, provider=OpenAIProvider(base_url=base_url, api_key=api_key)
+            )
+        ),
+        wall_timeout=timeout,
     )
 
 
 def agent_model(profile: AgentProfile | None = None) -> Model:
     p = profile or get_settings().llm.agent
-    return _build_model(p.base_url, p.model, p.api_key)
+    return _build_model(p.base_url, p.model, p.api_key, p.timeout_seconds)
 
 
 def agent_model_settings(profile: AgentProfile | None = None) -> ModelSettings:
@@ -95,6 +104,9 @@ def resolved_ocr_profile() -> tuple[str, str, str, OcrProfile]:
 
 def ocr_model() -> tuple[Model, ModelSettings, OcrProfile, asyncio.Semaphore]:
     base_url, model, api_key, ocr = resolved_ocr_profile()
+    # Wall-clock budget falls back to the agent profile's, like the
+    # endpoint itself.
+    timeout = ocr.timeout_seconds or get_settings().llm.agent.timeout_seconds
     # AUDIT BC-F10: the OCR endpoint's admission is tunable on its own
     # profile; only fall back to the agent's when unset.
     # Reinspection: honor ocr.max_concurrent ONLY when OCR has its own
@@ -108,8 +120,8 @@ def ocr_model() -> tuple[Model, ModelSettings, OcrProfile, asyncio.Semaphore]:
     sem = llm_semaphore(base_url, cap)
     # OCR is a plain completion; thinking adds latency for no benefit.
     return (
-        _build_model(base_url, model, api_key),
-        _settings_from(ocr.sampling, "off", ocr.timeout_seconds),
+        _build_model(base_url, model, api_key, timeout),
+        _settings_from(ocr.sampling, "off", timeout),
         ocr,
         sem,
     )

@@ -895,6 +895,30 @@ async def test_session_list_pagination_and_entity_filter(client, db):
     assert (await client.get("/api/sessions?entity_type=banana")).status_code == 422
 
 
+async def test_cancel_session_route(client, db):
+    """POST /sessions/{id}/cancel: 404 for unknown; flips pending steps
+    to cancelled and returns the re-derived session."""
+    from app.db.models import Step, StepKind, StepState
+
+    assert (await client.post("/api/sessions/99999/cancel")).status_code == 404
+
+    (s,) = await _mk_sessions(db, 1)
+    sid = s.id
+    step = Step(session_id=sid, kind=StepKind.analysis, state=StepState.pending)
+    db.add(step)
+    await db.commit()
+    step_id = step.id
+
+    r = await client.post(f"/api/sessions/{sid}/cancel")
+    assert r.status_code == 200
+    assert r.json()["status"] == "idle"  # cancelled tail, not failed
+
+    db.expire_all()
+    fresh = await db.get(Step, step_id)
+    assert fresh.state == StepState.cancelled
+    assert fresh.error == "stopped by user"
+
+
 async def test_archive_lifecycle_blocks_forward_but_not_revert(client, db):
     """Archived sessions: hidden from the active list, refuse apply and
     new steps — but applied changes remain revertible."""

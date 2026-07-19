@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Tip } from "@/components/app/Tip";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, ArrowRight, Check, PanelRight, Pencil, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, Check, CircleStop, PanelRight, Pencil, X } from "lucide-react";
 import { ConnectionToast } from "@/components/app/ConnectionToast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,6 +121,41 @@ function ArchiveToggle({
         </>
       )}
     </Button>
+    </Tip>
+  );
+}
+
+/** Visible while the session has queued or in-flight work: stops the
+ * running LLM call and cancels pending steps. Fully recoverable — a
+ * cancelled step's Retry runs it again. */
+function StopButton({ sessionId, onChanged }: { sessionId: number; onChanged: () => void }) {
+  const qc = useQueryClient();
+  const stop = useMutation({
+    mutationFn: () => api.cancelSession(sessionId),
+    onSuccess: () => {
+      onChanged();
+      qc.invalidateQueries({ queryKey: keys.sessions() });
+    },
+  });
+  return (
+    <Tip
+      mayDisable
+      content={
+        stop.isError
+          ? errorMessage(stop.error)
+          : "Stop this run — aborts the model call, cancels queued work. Retry revives it."
+      }
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={stop.isPending}
+        onClick={() => stop.mutate()}
+        aria-invalid={stop.isError || undefined}
+      >
+        <CircleStop className="size-3.5" />
+        {stop.isError ? "Failed — retry" : "Stop"}
+      </Button>
     </Tip>
   );
 }
@@ -301,6 +336,9 @@ export default function SessionDetail() {
           <span className="text-sm text-muted-foreground">· {s.entity_name}</span>
         )}
         <span className="flex-1" />
+        {!archived && (s.status === "running" || s.phase === "queued") && (
+          <StopButton sessionId={s.id} onChanged={onChanged} />
+        )}
         {isDocSession && (
           <Tip
             content={

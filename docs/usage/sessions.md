@@ -79,7 +79,13 @@ Advancing is deliberately manual: deciding a proposal often makes the
 
 Every step carries its attempt history. Failed steps auto-retry with
 backoff (configurable); **Retry now** skips the wait and revives steps
-whose budget ran out. **Redo** re-runs any step with optionally amended
+whose budget ran out. While a session has queued or running work, a
+**Stop** button (session header and session lists) aborts the
+in-flight model call and cancels pending steps — fully recoverable,
+Retry runs a stopped step again. Every LLM call is also capped by a
+wall-clock **max execution time** (Settings → Models, per profile), so
+a stuck endpoint fails the step — into the normal retry machinery —
+instead of hanging it forever. **Redo** re-runs any step with optionally amended
 input — everything after it is superseded, because it was built on
 state the redo invalidates. Open proposals of superseded steps are
 superseded too; applied ones are history and stay untouched (revert

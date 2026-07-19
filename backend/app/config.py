@@ -27,7 +27,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -65,10 +65,13 @@ class AgentProfile(BaseModel):
     max_input_tokens: int = 32768
     # Cap on agent tool-loop iterations (requests per run).
     max_tool_iterations: int = 12
-    # Per-request timeout (seconds); None = client default. A wedged
-    # server that accepts connections but never answers must not stall
-    # a worker forever (AUDIT BC-F12).
-    timeout_seconds: float | None = None
+    # Max WALL-CLOCK execution time per LLM call (seconds), enforced
+    # app-side around the whole request — including streaming, where an
+    # endpoint that keeps dribbling tokens never trips HTTP read
+    # timeouts. A wedged server that accepts connections but never
+    # finishes must not stall a worker forever (AUDIT BC-F12; also the
+    # "stuck OCR job" incident). UI-tweakable at runtime.
+    timeout_seconds: float = Field(default=600.0, gt=0)
     sampling: SamplingOverrides = SamplingOverrides()
 
 
@@ -83,8 +86,9 @@ class OcrProfile(BaseModel):
     # Endpoint admission for OCR (a vision endpoint's safe concurrency
     # rarely equals the chat endpoint's); None = the agent profile's.
     max_concurrent: int | None = None
-    # Per-request timeout (seconds); None = client default.
-    timeout_seconds: float | None = None
+    # Max wall-clock execution time per OCR call (seconds); None = the
+    # agent profile's. See AgentProfile.timeout_seconds.
+    timeout_seconds: float | None = Field(default=None, gt=0)
     # Server-side multimodal limit, e.g. vLLM --limit-mm-per-prompt.
     max_images_per_request: int = 2
     # 0 = no limit.

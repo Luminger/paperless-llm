@@ -149,6 +149,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ title }),
     }),
+  cancelSession: (id: number) =>
+    request<Session>(`/api/sessions/${id}/cancel`, { method: "POST" }),
   archiveSession: (id: number) =>
     request<Session>(`/api/sessions/${id}/archive`, { method: "POST" }),
   unarchiveSession: (id: number) =>
