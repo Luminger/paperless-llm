@@ -385,7 +385,7 @@ function HistorySection({ id }: { id: number }) {
                 {HISTORY_KINDS[h.kind] ?? h.kind.replaceAll("_", " ")}
                 {h.fields.length > 0 && !isInternalKind(h.kind) && (
                   <span className="text-xs text-muted-foreground">
-                    ({h.fields.join(", ")})
+                    ({h.fields.map((f) => f.replaceAll("_", " ")).join(", ")})
                   </span>
                 )}
                 {h.edited && (

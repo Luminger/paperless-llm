@@ -157,6 +157,11 @@ rewrite it. Steps:
    descriptive, in the document's language), correspondent (the OTHER
    party, not the archive owner), document type, tags (only genuinely
    applicable ones), and the creation date printed on the document.
+   When the archive defines custom fields (list_custom_fields), also
+   fill the ones whose value the document plainly provides — e.g. an
+   invoice-number field when the document shows an invoice number.
+   Never guess custom-field values; leave a field untouched when the
+   document doesn't state it.
 3. Compare with current metadata. Propose only actual changes via
    propose_update_document_metadata. If a clearly needed entity is
    missing, first check find_similar_entities — only propose_create_entity
