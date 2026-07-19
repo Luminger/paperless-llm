@@ -1112,25 +1112,16 @@ export interface components {
          *     revocation handle, not an enumeration surface.
          */
         AuthSessionOut: {
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /**
              * Current
              * @default false
              */
             current: boolean;
-            /**
-             * Expires At
-             * Format: date-time
-             */
+            /** Expires At */
             expires_at: string;
-            /**
-             * Last Seen At
-             * Format: date-time
-             */
+            /** Last Seen At */
             last_seen_at: string;
             /**
              * Role
@@ -1666,6 +1657,12 @@ export interface components {
              */
             date_format: "system" | "iso" | "eu" | "us";
             /**
+             * Doc Panel Side
+             * @default right
+             * @enum {string}
+             */
+            doc_panel_side: "left" | "right";
+            /**
              * Ocr Prompt Addition
              * @default
              */
@@ -1695,6 +1692,8 @@ export interface components {
             agent_prompt_base?: string | null;
             /** Date Format */
             date_format?: ("system" | "iso" | "eu" | "us") | null;
+            /** Doc Panel Side */
+            doc_panel_side?: ("left" | "right") | null;
             /** Ocr Prompt Addition */
             ocr_prompt_addition?: string | null;
             /** Ocr Prompt Base */

@@ -102,6 +102,9 @@ content. The panel is a right-hand sidebar
 (off-canvas collapsible) — the page scrolls, the document stays, and
 its content scrolls independently. Collapse it and a slim rail on the
 viewport edge (or Ctrl/⌘+B) brings it back; closed it costs no width.
+A button in the panel's header moves it to the other side of the
+screen — the choice is saved to your server-side preferences, so every
+browser agrees.
 On phones it opens as a sheet instead. Its state lives in the
 URL (`?doc=pages`), so a review link can arrive with the evidence
 already open. The OCR gate offers the same panel inline

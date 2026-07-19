@@ -31,6 +31,7 @@ vi.mock("../api", () => ({
     getJob: vi.fn(),
     getJobAttention: vi.fn(),
     getDocumentPreviewInfo: vi.fn(),
+    putPrefs: vi.fn(),
   },
 }));
 const mocked = vi.mocked(api);
@@ -811,6 +812,32 @@ describe("SessionDetail — pinned document panel", () => {
     expect(screen.getByText("2 / 2")).toBeInTheDocument();
     expect(screen.getByText("125%")).toBeInTheDocument();
     expect(screen.getByAltText("page 2").style.width).toBe("125%");
+  });
+
+  it("the flip button moves the dock to the other side and persists the pref", async () => {
+    mocked.putPrefs.mockResolvedValue({
+      date_format: "system", time_format: "24h-seconds", time_zone: "system",
+      doc_panel_side: "left", agent_prompt_base: "", agent_prompt_addition: "",
+      ocr_prompt_base: "", ocr_prompt_addition: "",
+    });
+    mocked.getSession.mockResolvedValue(makeDetail());
+    renderWithProviders(<SessionDetail />, {
+      route: "/sessions/9?doc=pages",
+      path: "/sessions/:id",
+    });
+    const sideOf = () =>
+      screen
+        .getByLabelText("document panel")
+        .closest("[data-side]")
+        ?.getAttribute("data-side");
+    await screen.findByLabelText("document panel");
+    expect(sideOf()).toBe("right");
+    await userEvent.click(screen.getByLabelText("move panel to the left side"));
+    expect(sideOf()).toBe("left");
+    expect(mocked.putPrefs).toHaveBeenCalledWith({ doc_panel_side: "left" });
+    // flip back (also restores the module store for other tests)
+    await userEvent.click(screen.getByLabelText("move panel to the right side"));
+    expect(sideOf()).toBe("right");
   });
 
   it("collapsing leaves the framework rail; the rail reopens the dock", async () => {

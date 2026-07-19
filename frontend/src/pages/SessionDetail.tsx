@@ -16,6 +16,7 @@ import { StepCard } from "../features/session/StepCard";
 import { NextTurnBox } from "../features/session/ContinueBox";
 import { DocumentPanel } from "../features/session/DocumentPanel";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { useDocPanelSide } from "../lib/prefs";
 import { useUrlParam } from "../hooks/useUrlState";
 
 function ArchivedBanner() {
@@ -209,6 +210,8 @@ export default function SessionDetail() {
   const inFlow = search.get("flow") != null;
   // ?doc=pages|text — the pinned document panel (deep-linkable).
   const [docTab, setDocTab] = useUrlParam("doc");
+  // Which side the dock lives on — a server-persisted preference.
+  const panelSide = useDocPanelSide();
   const { live, connected, nextRetryAt, pruneLive } = useSessionEvents(sessionId);
   const { data: s, error } = useQuery({
     queryKey: keys.session(sessionId),
@@ -274,6 +277,13 @@ export default function SessionDetail() {
       style={{ "--sidebar-width": "min(42rem, 45vw)" } as React.CSSProperties}
       className={`min-h-0 ${panelOpen ? "xl:mx-[calc((72rem-100vw)/2+2rem)] xl:w-auto" : ""}`}
     >
+    {isDocSession && panelSide === "left" && (
+      <DocumentPanel
+        documentId={s.entity_id!}
+        tab={docTab === "text" ? "text" : "pages"}
+        onTab={(t) => setDocTab(t)}
+      />
+    )}
     <div className="min-w-0 flex-1">
       {s.entity_type != null && s.entity_id != null && (
         <nav className="mb-2 text-sm">
@@ -341,7 +351,7 @@ export default function SessionDetail() {
         nextRetryAt={nextRetryAt}
       />
     </div>
-    {isDocSession && (
+    {isDocSession && panelSide === "right" && (
       <DocumentPanel
         documentId={s.entity_id!}
         tab={docTab === "text" ? "text" : "pages"}

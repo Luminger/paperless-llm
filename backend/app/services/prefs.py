@@ -13,6 +13,8 @@ DEFAULTS = {
     "date_format": "system",
     "time_format": "24h-seconds",
     "time_zone": "system",
+    # Which side the session document panel docks on.
+    "doc_panel_side": "right",
     # Prompt tuning: base overrides replace the system-supplied base
     # prompt (empty = use the built-in); additions are appended. Both
     # exist because small local models often need per-setup tuning.

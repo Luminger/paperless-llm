@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api", tags=["prefs"])
 
 DateFormat = Literal["system", "iso", "eu", "us"]
 TimeFormat = Literal["24h", "24h-seconds", "12h", "12h-seconds"]
+PanelSide = Literal["left", "right"]
 
 
 class PrefsOut(BaseModel):
@@ -26,6 +27,8 @@ class PrefsOut(BaseModel):
     time_format: TimeFormat = "24h-seconds"
     # "system" or an IANA zone name.
     time_zone: str = "system"
+    # Which side the session document panel docks on.
+    doc_panel_side: PanelSide = "right"
     # Prompt tuning (empty base = the system-supplied prompt).
     agent_prompt_base: str = ""
     agent_prompt_addition: str = ""
@@ -37,6 +40,7 @@ class PrefsUpdate(BaseModel):
     date_format: DateFormat | None = None
     time_format: TimeFormat | None = None
     time_zone: str | None = None
+    doc_panel_side: PanelSide | None = None
 
     @field_validator("time_zone")
     @classmethod
@@ -89,7 +93,9 @@ async def put_prefs(
         else:
             row.value = str(value)
         changed[key] = (
-            str(value) if key.startswith(("date_", "time_")) else f"({len(str(value))} chars)"
+            str(value)
+            if key.startswith(("date_", "time_", "doc_"))
+            else f"({len(str(value))} chars)"
         )
     if changed:
         await record(db, "prefs", "updated", **changed)

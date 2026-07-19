@@ -22,6 +22,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tip } from "@/components/app/Tip";
 import { LoadingState } from "@/components/app/states";
 import { PagedDocumentViewer } from "@/components/app/DocumentPreview";
+import { Button } from "@/components/ui/button";
+import { PanelLeft, PanelRight } from "lucide-react";
+import {
+  setDocPanelSide,
+  useDocPanelSide,
+  type DocPanelSide,
+} from "../../lib/prefs";
 import { api } from "../../api";
 import { keys } from "../../lib/keys";
 
@@ -49,9 +56,11 @@ export function DocumentPanel({
   tab: DocPanelTab;
   onTab: (t: DocPanelTab) => void;
 }) {
+  const side = useDocPanelSide();
+  const other: DocPanelSide = side === "right" ? "left" : "right";
   return (
     <Sidebar
-      side="right"
+      side={side}
       variant="floating"
       collapsible="offcanvas"
       aria-label="document panel"
@@ -70,6 +79,21 @@ export function DocumentPanel({
           </TabsList>
         </Tabs>
         <span className="flex-1" />
+        <Tip content={`Move the panel to the ${other} side (saved to your preferences)`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={`move panel to the ${other} side`}
+            onClick={() => setDocPanelSide(other)}
+          >
+            {other === "left" ? (
+              <PanelLeft className="size-4" />
+            ) : (
+              <PanelRight className="size-4" />
+            )}
+          </Button>
+        </Tip>
         <Tip content="Collapse the panel — the edge rail (or ⌘/Ctrl+B) brings it back">
           <SidebarTrigger
             aria-label="collapse document panel"

@@ -1273,13 +1273,21 @@ async def test_prefs_roundtrip_and_partial_update(client):
     assert body["time_zone"] == "system"
     assert body["agent_prompt_addition"] == ""
 
+    assert body["doc_panel_side"] == "right"
+
     r = await client.put(
-        "/api/prefs", json={"date_format": "eu", "time_zone": "Europe/Berlin"}
+        "/api/prefs",
+        json={"date_format": "eu", "time_zone": "Europe/Berlin", "doc_panel_side": "left"},
     )
     assert r.status_code == 200
     assert r.json()["date_format"] == "eu"
     assert r.json()["time_zone"] == "Europe/Berlin"
     assert r.json()["time_format"] == "24h-seconds"  # untouched
+    assert r.json()["doc_panel_side"] == "left"
+    # typed like everything else
+    assert (
+        await client.put("/api/prefs", json={"doc_panel_side": "top"})
+    ).status_code == 422
 
     # Partial update keeps earlier values.
     await client.put("/api/prefs", json={"time_format": "12h"})
