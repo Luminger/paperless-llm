@@ -98,10 +98,11 @@ is reviewing blind. The **Document** button in a session's header pins
 the document beside the timeline: **Pages** shows one page at a time
 with pagination and zoom (up to 400%, switching to a sharper render
 past 150% — pan by scrolling while zoomed), **Text** the stored OCR
-content. The panel is a fixed dock on the
-right edge — the page scrolls, the document stays, and its content
-scrolls independently. Collapsing it leaves a slim tab on the edge
-that brings it back; closed it costs no width. Its state lives in the
+content. The panel is a right-hand sidebar
+(off-canvas collapsible) — the page scrolls, the document stays, and
+its content scrolls independently. Collapse it and a slim rail on the
+viewport edge (or Ctrl/⌘+B) brings it back; closed it costs no width.
+On phones it opens as a sheet instead. Its state lives in the
 URL (`?doc=pages`), so a review link can arrive with the evidence
 already open. The OCR gate offers the same panel inline
 ("Compare against the pages") — the one review where seeing the

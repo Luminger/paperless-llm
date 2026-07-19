@@ -743,14 +743,21 @@ describe("SessionDetail — pinned document panel", () => {
     });
   });
 
-  it("closed by default; the header button opens it with the Pages tab", async () => {
+  const sidebarState = () =>
+    screen
+      .getByLabelText("document panel")
+      .closest("[data-state]")
+      ?.getAttribute("data-state");
+
+  it("collapsed by default; the header button expands it with the Pages tab", async () => {
     mocked.getSession.mockResolvedValue(makeDetail());
     renderDetail();
     expect(await screen.findByRole("button", { name: /Document/ })).toBeInTheDocument();
-    expect(screen.queryByLabelText("document panel")).not.toBeInTheDocument();
+    // The framework keeps the collapsed sidebar mounted, off-canvas.
+    expect(sidebarState()).toBe("collapsed");
 
     await userEvent.click(screen.getByRole("button", { name: /Document/ }));
-    expect(await screen.findByLabelText("document panel")).toBeInTheDocument();
+    expect(sidebarState()).toBe("expanded");
     // paginated: page 1 shown, page 2 only after flipping
     expect(await screen.findByAltText("page 1")).toBeInTheDocument();
     expect(screen.queryByAltText("page 2")).not.toBeInTheDocument();
@@ -806,18 +813,19 @@ describe("SessionDetail — pinned document panel", () => {
     expect(screen.getByAltText("page 2").style.width).toBe("125%");
   });
 
-  it("collapsing leaves the edge tab; the tab reopens the dock", async () => {
+  it("collapsing leaves the framework rail; the rail reopens the dock", async () => {
     mocked.getSession.mockResolvedValue(makeDetail());
     renderWithProviders(<SessionDetail />, {
       route: "/sessions/9?doc=pages",
       path: "/sessions/:id",
     });
     await screen.findByLabelText("document panel");
+    expect(sidebarState()).toBe("expanded");
     await userEvent.click(screen.getByLabelText("collapse document panel"));
-    expect(screen.queryByLabelText("document panel")).not.toBeInTheDocument();
-    // the slim edge tab remains — one click brings the evidence back
-    await userEvent.click(screen.getByLabelText("open document panel"));
-    expect(await screen.findByLabelText("document panel")).toBeInTheDocument();
+    expect(sidebarState()).toBe("collapsed");
+    // the framework's edge rail brings it back
+    await userEvent.click(screen.getByLabelText("Toggle Sidebar"));
+    expect(sidebarState()).toBe("expanded");
   });
 
   it("non-document sessions have no panel toggle", async () => {

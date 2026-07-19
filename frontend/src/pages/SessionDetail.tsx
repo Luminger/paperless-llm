@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Tip } from "@/components/app/Tip";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, ArrowRight, Check, FileText, PanelRight, Pencil, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, Check, PanelRight, Pencil, X } from "lucide-react";
 import { ConnectionToast } from "@/components/app/ConnectionToast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import { entityHref } from "./EntityPage";
 import { StepCard } from "../features/session/StepCard";
 import { NextTurnBox } from "../features/session/ContinueBox";
 import { DocumentPanel } from "../features/session/DocumentPanel";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { useUrlParam } from "../hooks/useUrlState";
 
 function ArchivedBanner() {
@@ -262,16 +263,18 @@ export default function SessionDetail() {
   const panelOpen = isDocSession && (docTab === "pages" || docTab === "text");
 
   return (
-    // With the dock open the container breaks out of App's max-w-6xl
-    // (negative-margin breakout) and reserves the dock's width on the
-    // right; closed, the timeline keeps its comfortable measure.
-    <div
-      className={
-        panelOpen
-          ? "xl:mx-[calc((72rem-100vw)/2+2rem)] lg:pr-[calc(min(42rem,45vw)+1.25rem)]"
-          : ""
-      }
+    // The framework's SidebarProvider owns the dock: its in-flow gap
+    // reserves the width (no manual padding), the rail collapses and
+    // restores it, ⌘/Ctrl+B toggles. With the dock open the container
+    // breaks out of App's max-w-6xl; closed, the timeline keeps its
+    // comfortable measure.
+    <SidebarProvider
+      open={panelOpen}
+      onOpenChange={(o) => setDocTab(o ? "pages" : "")}
+      style={{ "--sidebar-width": "min(42rem, 45vw)" } as React.CSSProperties}
+      className={`min-h-0 ${panelOpen ? "xl:mx-[calc((72rem-100vw)/2+2rem)] xl:w-auto" : ""}`}
     >
+    <div className="min-w-0 flex-1">
       {s.entity_type != null && s.entity_id != null && (
         <nav className="mb-2 text-sm">
           <Link
@@ -314,33 +317,6 @@ export default function SessionDetail() {
       )}
       {archived && <ArchivedBanner />}
 
-      {/* The document dock: FIXED to the viewport's right edge below
-          the sticky header — the page scroll never moves it, its
-          content scrolls on its own. On narrow screens it stacks above
-          the timeline instead (a fixed dock would bury the content). */}
-      {panelOpen && (
-        <div className="mb-4 lg:fixed lg:top-[4.25rem] lg:right-3 lg:bottom-3 lg:z-30 lg:mb-0 lg:w-[min(42rem,45vw)]">
-          <DocumentPanel
-            documentId={s.entity_id!}
-            tab={docTab === "text" ? "text" : "pages"}
-            onTab={(t) => setDocTab(t)}
-            onClose={() => setDocTab("")}
-          />
-        </div>
-      )}
-      {/* Collapsed: a slim tab on the viewport edge brings it back —
-          the evidence stays one click away without costing width. */}
-      {isDocSession && !panelOpen && (
-        <Tip content="Open the document panel" side="left">
-          <button
-            aria-label="open document panel"
-            onClick={() => setDocTab("pages")}
-            className="fixed top-1/2 right-0 z-30 hidden -translate-y-1/2 rounded-l-lg border border-r-0 bg-card py-3 pr-1 pl-1.5 text-muted-foreground shadow-sm transition-colors hover:text-foreground lg:block"
-          >
-            <FileText className="size-4" />
-          </button>
-        </Tip>
-      )}
       <div className="min-w-0 space-y-3">
         {s.steps.map((step) => (
           <StepCard
@@ -365,5 +341,13 @@ export default function SessionDetail() {
         nextRetryAt={nextRetryAt}
       />
     </div>
+    {isDocSession && (
+      <DocumentPanel
+        documentId={s.entity_id!}
+        tab={docTab === "text" ? "text" : "pages"}
+        onTab={(t) => setDocTab(t)}
+      />
+    )}
+    </SidebarProvider>
   );
 }

@@ -1,14 +1,23 @@
-/* The pinned document panel: judge a proposal (or the OCR gate)
- * AGAINST the document without leaving the timeline. Non-modal by
- * design — the existing viewer dialog covers exactly the thing being
- * judged. Sticky at viewport height on wide screens (the timeline
- * scrolls, the document stays), a plain block above the timeline on
- * narrow ones. Zero footprint while closed; state lives in the URL
- * (?doc=pages|text) so review deep-links arrive with it open. */
+/* The document dock: judge a proposal (or the OCR gate) AGAINST the
+ * document without leaving the timeline. Built on the framework's
+ * Sidebar primitive (side="right", floating, offcanvas): the provider
+ * reserves the width in-flow, the rail on the viewport edge collapses
+ * and restores it, mobile automatically becomes a sheet, and ⌘/Ctrl+B
+ * toggles it. State lives in the URL (?doc=pages|text) so review
+ * deep-links arrive with the evidence open.
+ *
+ * Both tabs STAY MOUNTED with the inactive one css-hidden: switching
+ * (or collapsing!) discards nothing — zoom, page and pan positions
+ * survive. */
 
 import { useQuery } from "@tanstack/react-query";
-import { PanelRightClose } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarRail,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tip } from "@/components/app/Tip";
 import { LoadingState } from "@/components/app/states";
@@ -35,19 +44,21 @@ export function DocumentPanel({
   documentId,
   tab,
   onTab,
-  onClose,
 }: {
   documentId: number;
   tab: DocPanelTab;
   onTab: (t: DocPanelTab) => void;
-  onClose: () => void;
 }) {
   return (
-    <aside
+    <Sidebar
+      side="right"
+      variant="floating"
+      collapsible="offcanvas"
       aria-label="document panel"
-      className="flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm lg:h-full"
+      // Anchor below the sticky app header instead of inset-y-0/h-svh.
+      className="top-14 h-[calc(100svh-3.5rem)]"
     >
-      <div className="flex items-center gap-2 border-b bg-muted/40 px-2 py-1.5">
+      <SidebarHeader className="flex-row items-center gap-2 border-b border-sidebar-border p-1.5">
         <Tabs value={tab} onValueChange={(v) => onTab(v as DocPanelTab)}>
           <TabsList className="h-8">
             <TabsTrigger value="pages" className="px-3 text-xs">
@@ -59,31 +70,24 @@ export function DocumentPanel({
           </TabsList>
         </Tabs>
         <span className="flex-1" />
-        <Tip content="Collapse the panel (the edge tab brings it back)">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
+        <Tip content="Collapse the panel — the edge rail (or ⌘/Ctrl+B) brings it back">
+          <SidebarTrigger
             aria-label="collapse document panel"
-            onClick={onClose}
-          >
-            <PanelRightClose className="size-4" />
-          </Button>
+            className="size-7"
+          />
         </Tip>
-      </div>
-      {/* max-height on mobile keeps an opened panel from burying the
-          timeline; each tab owns its scrolling (Pages pans both axes
-          while zoomed, Text scrolls vertically). Both tabs STAY
-          MOUNTED and the inactive one is css-hidden: switching back
-          restores zoom, page AND pan/scroll positions exactly. */}
-      <div className="max-h-[50vh] min-h-0 flex-1 lg:max-h-none">
-        <div className={tab === "pages" ? "h-full" : "hidden"}>
+      </SidebarHeader>
+      <SidebarContent className="overflow-hidden">
+        <div className={tab === "pages" ? "h-full min-h-0" : "hidden"}>
           <PagedDocumentViewer documentId={documentId} />
         </div>
-        <div className={tab === "text" ? "h-full overflow-y-auto" : "hidden"}>
+        <div
+          className={tab === "text" ? "h-full min-h-0 overflow-y-auto" : "hidden"}
+        >
           <OcrText documentId={documentId} />
         </div>
-      </div>
-    </aside>
+      </SidebarContent>
+      <SidebarRail />
+    </Sidebar>
   );
 }
