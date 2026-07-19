@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Tip } from "@/components/app/Tip";
 import { hasDocumentEditor } from "../lib/proposal-kinds";
 import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -111,13 +112,15 @@ function TagsEditor({
         >
           {name(options, id)}
           {!disabled && (
-            <button
-              aria-label={`remove tag ${name(options, id)}`}
-              className="opacity-60 hover:opacity-100"
-              onClick={() => onChange(value.filter((v) => v !== id))}
-            >
-              ×
-            </button>
+            <Tip content="Remove">
+              <button
+                aria-label={`remove tag ${name(options, id)}`}
+                className="opacity-60 hover:opacity-100"
+                onClick={() => onChange(value.filter((v) => v !== id))}
+              >
+                ×
+              </button>
+            </Tip>
           )}
         </Badge>
       ))}
@@ -629,19 +632,23 @@ export function ProposalCard({
           </span>
         )}
         {p.applied && !p.reverted && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => action.mutate("revert")}
-            disabled={revertNoop}
-            title={
+          <Tip
+            mayDisable
+            content={
               revertNoop
                 ? "Paperless already matches the state this would restore — there is nothing to undo."
                 : "Restore the pre-apply state from the journal"
             }
           >
-            Revert
-          </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => action.mutate("revert")}
+              disabled={revertNoop}
+            >
+              Revert
+            </Button>
+          </Tip>
         )}
       </div>
       {action.error && (

@@ -222,7 +222,12 @@ describe("ProposalCard — revert noop", () => {
 
     const btn = await screen.findByRole("button", { name: "Revert" });
     await waitFor(() => expect(btn).toBeDisabled());
-    expect(btn.getAttribute("title")).toMatch(/nothing to undo/);
+    // The explanation moved from native title to the Tip wrapper (UI-U4):
+    // hover the interposed span and read the Radix tooltip.
+    await userEvent.hover(btn.parentElement!);
+    expect(
+      (await screen.findAllByText(/nothing to undo/)).length,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps Revert active when the revert is real", async () => {
@@ -231,7 +236,10 @@ describe("ProposalCard — revert noop", () => {
     const btn = await screen.findByRole("button", { name: "Revert" });
     await waitFor(() => expect(mocked.revertCheck).toHaveBeenCalled());
     expect(btn).toBeEnabled();
-    expect(btn.getAttribute("title")).toMatch(/Restore the pre-apply state/);
+    await userEvent.hover(btn.parentElement!);
+    expect(
+      (await screen.findAllByText(/Restore the pre-apply state/)).length,
+    ).toBeGreaterThan(0);
   });
 });
 

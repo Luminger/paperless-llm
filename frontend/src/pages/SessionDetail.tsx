@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Tip } from "@/components/app/Tip";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArchiveRestore, ArrowRight, Check, Pencil, X } from "lucide-react";
@@ -92,15 +93,18 @@ function ArchiveToggle({
     },
   });
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={toggle.isPending}
-      title={
+    <Tip
+      mayDisable
+      content={
         archived
           ? "Unarchive: allow applying proposals again"
           : "Archive: keeps history & revert, blocks new work and applies"
       }
+    >
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={toggle.isPending}
       onClick={() => toggle.mutate()}
     >
       {archived ? (
@@ -113,6 +117,7 @@ function ArchiveToggle({
         </>
       )}
     </Button>
+    </Tip>
   );
 }
 
@@ -133,28 +138,30 @@ function EditableTitle({ id, title }: { id: number; title: string }) {
     return (
       <span className="group flex items-center gap-2">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="rename session"
-          className="size-7 text-muted-foreground opacity-0 transition group-hover:opacity-100"
-          onClick={() => {
-            setDraft(title);
-            setEditing(true);
-          }}
-        >
-          <Pencil className="size-3.5" />
-        </Button>
+        <Tip content="Rename this session">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="rename session"
+            className="size-7 text-muted-foreground opacity-0 transition group-hover:opacity-100"
+            onClick={() => {
+              setDraft(title);
+              setEditing(true);
+            }}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        </Tip>
       </span>
     );
   }
   return (
     <span className="flex items-center gap-2">
+      <Tip content={rename.isError ? errorMessage(rename.error) : null}>
       <Input
         autoFocus
         aria-label="session name"
         aria-invalid={rename.isError || undefined}
-        title={rename.isError ? errorMessage(rename.error) : undefined}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -163,25 +170,30 @@ function EditableTitle({ id, title }: { id: number; title: string }) {
         }}
         className="h-8 w-72 text-lg font-semibold"
       />
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-7"
-        aria-label="save name"
-        disabled={!draft.trim() || rename.isPending}
-        onClick={() => rename.mutate()}
-      >
-        <Check className="size-4" />
-      </Button>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-7"
-        aria-label="cancel rename"
-        onClick={() => setEditing(false)}
-      >
-        <X className="size-4" />
-      </Button>
+      </Tip>
+      <Tip content="Save" mayDisable>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7"
+          aria-label="save name"
+          disabled={!draft.trim() || rename.isPending}
+          onClick={() => rename.mutate()}
+        >
+          <Check className="size-4" />
+        </Button>
+      </Tip>
+      <Tip content="Cancel">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7"
+          aria-label="cancel rename"
+          onClick={() => setEditing(false)}
+        >
+          <X className="size-4" />
+        </Button>
+      </Tip>
     </span>
   );
 }

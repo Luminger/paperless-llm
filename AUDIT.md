@@ -1109,10 +1109,14 @@ Collapsible vs native details, Oct-2025 component batch), Tailwind v4
 - **Todo:** #68
 
 ### UI-U4 — MEDIUM — tooltip affordance split
-- **Status:** OPEN (accepted for now) — 44 native title= attrs remain; adopt ui/tooltip opportunistically when touching those surfaces — `ui/tooltip` used once (RefChip) vs 44 native
-  `title=` attrs — no keyboard/touch access, inconsistent look. Adopt
-  the wrapper for interactive elements; `title=` only for redundant
-  hints. Todo #69.
+- **Status:** FIXED — ONE affordance now: `components/app/Tip.tsx` wraps ui/tooltip
+  (app-level TooltipProvider in main.tsx, 300ms delay; `mayDisable` interposes a
+  focusable span so disabled controls still explain themselves). ZERO native
+  `title=` attrs remain on DOM elements (grep-proven). Bonus adoption: failed
+  session badges reveal their error text on hover; superseded/no_change/rejected
+  status badges explain themselves; OCR-review badge explains the gate; icon-only
+  buttons (user menu, preview pager, rename/save/cancel) gained tooltips. Radix
+  tooltips open on keyboard focus too — live-verified (Tab reaches them).
 
 ### UI-U5 — LOW — components.json declares the wrong icon library
 - **Status:** FIXED — "lucide"  — `"iconLibrary": "hugeicons"` vs project law

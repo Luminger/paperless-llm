@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "../../api";
@@ -89,22 +88,21 @@ function Chip({
   label: React.ReactNode;
   tooltip: React.ReactNode;
 }) {
+  // The app-level TooltipProvider (main.tsx) covers chips too.
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link to={to} className="mx-0.5 inline-flex align-baseline no-underline">
-            <Badge
-              variant="secondary"
-              className="cursor-pointer px-1.5 py-0 font-normal text-primary transition-colors hover:bg-primary/15"
-            >
-              {label}
-            </Badge>
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link to={to} className="mx-0.5 inline-flex align-baseline no-underline">
+          <Badge
+            variant="secondary"
+            className="cursor-pointer px-1.5 py-0 font-normal text-primary transition-colors hover:bg-primary/15"
+          >
+            {label}
+          </Badge>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 

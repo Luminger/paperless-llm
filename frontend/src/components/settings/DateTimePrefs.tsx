@@ -3,6 +3,7 @@
 // the server (shared workspace), cached locally for instant rendering.
 
 import { useEffect, useMemo, useState } from "react";
+import { Tip } from "@/components/app/Tip";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MonitorSmartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -103,20 +104,24 @@ export function DateTimePrefs() {
           />
         </div>
         <div className="flex items-center justify-between gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={matchesBrowser}
-            title={
+          <Tip
+            mayDisable
+            content={
               matchesBrowser
                 ? "Already matching this browser's settings"
                 : `Sets ${browser.timeZone}, ${browser.date === "iso" ? "Year-Month-Day" : browser.date === "eu" ? "Day.Month.Year" : "Month/Day/Year"}, ${browser.time === "12h" ? "12-hour" : "24-hour"}`
             }
+          >
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={matchesBrowser}
             onClick={() => update(browser.date, browser.time, browser.timeZone)}
           >
             <MonitorSmartphone className="size-3.5" />
             Use this browser's settings
           </Button>
+          </Tip>
         </div>
         <div className="rounded-lg border bg-muted/40 p-3 text-sm">
           <span className="text-muted-foreground">Right now: </span>

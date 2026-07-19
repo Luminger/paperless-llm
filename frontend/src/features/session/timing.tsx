@@ -1,4 +1,5 @@
 import type { CallTiming, TranscriptItem } from "../../api";
+import { Tip } from "@/components/app/Tip";
 
 export function timingLabel(t: CallTiming): string {
   if (t.duration_s == null) return "";
@@ -11,12 +12,13 @@ export function timingLabel(t: CallTiming): string {
 export function TimingChip({ t }: { t: CallTiming | null | undefined }) {
   if (!t) return null;
   return (
-    <span
-      className="text-[10px] text-muted-foreground/60"
-      title={`${t.started_at} → ${t.finished_at}, ${t.input_tokens ?? "?"} in / ${t.output_tokens ?? "?"} out tokens`}
+    <Tip
+      content={`${t.started_at} → ${t.finished_at}, ${t.input_tokens ?? "?"} in / ${t.output_tokens ?? "?"} out tokens`}
     >
-      {timingLabel(t)}
-    </span>
+      <span className="text-[10px] text-muted-foreground/60" tabIndex={0}>
+        {timingLabel(t)}
+      </span>
+    </Tip>
   );
 }
 

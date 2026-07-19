@@ -1,4 +1,5 @@
 import { useDateTimePrefsSubscription } from "./lib/prefs";
+import { Tip } from "@/components/app/Tip";
 import {
   Navigate,
   NavLink,
@@ -83,11 +84,15 @@ function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="user menu">
-          <CircleUser className="size-5" />
-        </Button>
-      </DropdownMenuTrigger>
+      {/* Tooltip + dropdown compose on one trigger: Radix closes the
+          tip when the menu opens. */}
+      <Tip content="Account & settings">
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="user menu">
+            <CircleUser className="size-5" />
+          </Button>
+        </DropdownMenuTrigger>
+      </Tip>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuLabel className="flex items-center gap-2 text-muted-foreground">
           <ThemeIcon className="size-4" /> Theme

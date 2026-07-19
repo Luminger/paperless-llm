@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Tip } from "@/components/app/Tip";
 import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -25,17 +26,18 @@ import { useClampPage } from "../hooks/useListPage";
 function ActorBadge({ actor }: { actor: string }) {
   const isUser = parseActor(actor).user;
   return (
-    <Badge
+    <Tip content={isUser ? "Triggered by a user action" : "Triggered by the application"}>
+      <Badge
       variant="secondary"
       className={
         isUser
           ? `shrink-0 ${TONE_BADGE.warning}`
           : "shrink-0 text-muted-foreground"
       }
-      title={isUser ? "Triggered by a user action" : "Triggered by the application"}
     >
       {actor}
     </Badge>
+    </Tip>
   );
 }
 

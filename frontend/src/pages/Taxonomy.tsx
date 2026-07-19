@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Tip } from "@/components/app/Tip";
 import { useUrlNumber, useUrlParam, useUrlPatch } from "../hooks/useUrlState";
 import { InboxBadge } from "../components/StatusBadge";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
@@ -210,13 +211,17 @@ export default function Taxonomy() {
                 data-state={selection.selected.has(e.id) ? "selected" : undefined}
               >
                 <TableCell>
-                  <Checkbox
-                    aria-label={`select ${e.name}`}
-                    checked={selection.selected.has(e.id)}
-                    disabled={e.is_inbox_tag}
-                    title={e.is_inbox_tag ? "The inbox tag cannot be analyzed" : undefined}
-                    onCheckedChange={() => selection.toggle(e.id)}
-                  />
+                  <Tip
+                    mayDisable
+                    content={e.is_inbox_tag ? "The inbox tag cannot be analyzed" : null}
+                  >
+                    <Checkbox
+                      aria-label={`select ${e.name}`}
+                      checked={selection.selected.has(e.id)}
+                      disabled={e.is_inbox_tag}
+                      onCheckedChange={() => selection.toggle(e.id)}
+                    />
+                  </Tip>
                 </TableCell>
                 <TableCell>
                   <Link

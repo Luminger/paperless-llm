@@ -4,6 +4,7 @@
 // editable by admins and stored server-side immediately on save.
 
 import { useState } from "react";
+import { Tip } from "@/components/app/Tip";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -180,15 +181,16 @@ export function ModelsConfig() {
                   />
                   <span className="flex w-28 justify-end gap-1">
                     {row.source === "ui" && isAdmin && draft[row.key] === undefined ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs text-muted-foreground"
-                        title="Remove this override (falls back to config file / default)"
-                        onClick={() => setDraft((d) => ({ ...d, [row.key]: null }))}
-                      >
-                        reset
-                      </Button>
+                      <Tip content="Remove this override (falls back to config file / default)">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-muted-foreground"
+                          onClick={() => setDraft((d) => ({ ...d, [row.key]: null }))}
+                        >
+                          reset
+                        </Button>
+                      </Tip>
                     ) : (
                       <SourceBadge source={row.source} />
                     )}

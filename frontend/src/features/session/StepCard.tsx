@@ -3,6 +3,7 @@
 // Kind-specific code only renders body content.
 
 import { useState } from "react";
+import { Tip } from "@/components/app/Tip";
 import { ChevronRight } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -137,15 +138,16 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
         </Button>
       )}
       {(step.state === "succeeded" || step.state === "failed") && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 px-2.5 text-xs"
-          onClick={() => setRedoOpen(true)}
-          title="Do this step over with adjusted parameters"
-        >
-          Redo…
-        </Button>
+        <Tip content="Do this step over with adjusted parameters">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setRedoOpen(true)}
+          >
+            Redo…
+          </Button>
+        </Tip>
       )}
       {retry.error && (
         <span className="text-xs text-destructive">{String(retry.error).slice(0, 140)}</span>

@@ -8,6 +8,7 @@ import { AuthProvider } from "./lib/auth";
 import { ConnectivityProvider } from "./components/app/ConnectionToast";
 import { PrefsProvider } from "./lib/prefs";
 import { ThemeProvider } from "./lib/theme";
+import { TooltipProvider } from "./components/ui/tooltip";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -18,6 +19,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
     <ThemeProvider>
+      {/* ONE tooltip provider (AUDIT UI-U4): 300ms initial delay, quick
+          successive hovers via Radix's skip-delay window. */}
+      <TooltipProvider delayDuration={300}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <ConnectivityProvider>
@@ -31,6 +35,7 @@ createRoot(document.getElementById("root")!).render(
           </ConnectivityProvider>
         </BrowserRouter>
       </QueryClientProvider>
+      </TooltipProvider>
     </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,

@@ -5,6 +5,7 @@
 // inverted rendition, so pages don't glare.
 
 import { api } from "../../api";
+import { Tip } from "./Tip";
 import { keys } from "../../lib/keys";
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -34,27 +35,31 @@ function Pager({
 }) {
   return (
     <div className="flex items-center justify-center gap-3">
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={page <= 1}
-        onClick={() => onPage(page - 1)}
-        aria-label="previous page"
-      >
-        <ChevronLeft className="size-4" />
-      </Button>
+      <Tip content="Previous page" mayDisable>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+          aria-label="previous page"
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+      </Tip>
       <span className="text-sm whitespace-nowrap text-muted-foreground">
         Page {page} of {pages}
       </span>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={page >= pages}
-        onClick={() => onPage(page + 1)}
-        aria-label="next page"
-      >
-        <ChevronRight className="size-4" />
-      </Button>
+      <Tip content="Next page" mayDisable>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={page >= pages}
+          onClick={() => onPage(page + 1)}
+          aria-label="next page"
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </Tip>
     </div>
   );
 }
@@ -132,24 +137,26 @@ export function DocumentPreview({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label={`open preview of ${title}`}
-        className={cn(
-          "group relative shrink-0 cursor-zoom-in overflow-hidden rounded-md border",
-          className,
-        )}
-      >
-        <img
-          src={`/api/entities/documents/${documentId}/thumb`}
-          alt={`preview of ${title}`}
-          className={cn("h-full w-full object-cover object-top", THEMED)}
-        />
-        <span className="absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition group-hover:bg-background/40 group-hover:opacity-100">
-          <Maximize2 className="size-5" />
-        </span>
-      </button>
+      <Tip content="Open the full preview">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={`open preview of ${title}`}
+          className={cn(
+            "group relative shrink-0 cursor-zoom-in overflow-hidden rounded-md border",
+            className,
+          )}
+        >
+          <img
+            src={`/api/entities/documents/${documentId}/thumb`}
+            alt={`preview of ${title}`}
+            className={cn("h-full w-full object-cover object-top", THEMED)}
+          />
+          <span className="absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition group-hover:bg-background/40 group-hover:opacity-100">
+            <Maximize2 className="size-5" />
+          </span>
+        </button>
+      </Tip>
       <DocumentViewerDialog
         documentId={documentId}
         title={title}

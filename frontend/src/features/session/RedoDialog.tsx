@@ -2,6 +2,7 @@
 // supersedes the step and everything after it.
 
 import { useState } from "react";
+import { Tip } from "@/components/app/Tip";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -96,9 +97,9 @@ export function RedoDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
+          <Tip mayDisable content={invalidNumeric ? "DPI must be a number" : null}>
           <Button
             disabled={busy || invalidNumeric}
-            title={invalidNumeric ? "DPI must be a number" : undefined}
             onClick={() => {
               const input: Record<string, unknown> = {};
               for (const f of fields) {
@@ -112,6 +113,7 @@ export function RedoDialog({
           >
             Redo step
           </Button>
+          </Tip>
         </DialogFooter>
       </DialogContent>
     </Dialog>

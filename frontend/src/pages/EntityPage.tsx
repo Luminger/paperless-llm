@@ -1,4 +1,5 @@
 import { isInternalKind } from "../lib/proposal-kinds";
+import { Tip } from "@/components/app/Tip";
 import { useState } from "react";
 import { entityName, useTaxonomyLists } from "../hooks/useTaxonomy";
 import { InboxBadge } from "../components/StatusBadge";
@@ -232,25 +233,33 @@ function DocumentActions({ id }: { id: number }) {
   });
   return (
     <span className="flex items-center gap-2">
-      <Button
-        size="sm"
-        variant="outline"
-        title="Re-transcribe the document with the vision model; you review the result before anything is written. No metadata analysis."
-        disabled={start.isPending}
-        onClick={() => start.mutate({ ocr_only: true, redo_ocr: true })}
+      <Tip
+        mayDisable
+        content="Re-transcribe the document with the vision model; you review the result before anything is written. No metadata analysis."
       >
-        <ScanText className="size-3.5" />
-        Re-do OCR
-      </Button>
-      <Button
-        size="sm"
-        title="Start an analysis session: the agent reads the document and proposes metadata changes, one at a time."
-        disabled={start.isPending}
-        onClick={() => start.mutate({})}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={start.isPending}
+          onClick={() => start.mutate({ ocr_only: true, redo_ocr: true })}
+        >
+          <ScanText className="size-3.5" />
+          Re-do OCR
+        </Button>
+      </Tip>
+      <Tip
+        mayDisable
+        content="Start an analysis session: the agent reads the document and proposes metadata changes, one at a time."
       >
-        <Sparkles className="size-3.5" />
-        Start analysis
-      </Button>
+        <Button
+          size="sm"
+          disabled={start.isPending}
+          onClick={() => start.mutate({})}
+        >
+          <Sparkles className="size-3.5" />
+          Start analysis
+        </Button>
+      </Tip>
       {start.error && (
         <span className="text-xs text-destructive">{errorMessage(start.error)}</span>
       )}
@@ -424,12 +433,11 @@ export default function EntityPage() {
       ) : !(entityType === "tag" && entityQuery.data?.is_inbox_tag) ? (
         <AnalyzeButton entityType={entityType} id={id} />
       ) : (
-        <span
-          className="text-xs text-muted-foreground/70"
-          title="The inbox tag is a workflow marker — there is nothing to analyze about it."
-        >
-          not analyzable (inbox)
-        </span>
+        <Tip content="The inbox tag is a workflow marker — there is nothing to analyze about it.">
+          <span className="text-xs text-muted-foreground/70" tabIndex={0}>
+            not analyzable (inbox)
+          </span>
+        </Tip>
       )}
       {meta && (
         <Button asChild size="sm" variant="outline">

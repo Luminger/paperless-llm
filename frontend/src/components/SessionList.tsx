@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Tip } from "@/components/app/Tip";
 import { OcrReviewBadge, SessionStatusBadge } from "./StatusBadge";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -82,25 +83,28 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
           </span>
         </TableCell>
         <TableCell>
-          <SessionStatusBadge status={s.status} phase={s.phase} />
+          <SessionStatusBadge status={s.status} phase={s.phase} error={s.error} />
         </TableCell>
         <TableCell className="text-right">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs text-muted-foreground"
-            title={
+          <Tip
+            content={
               archive.isError
                 ? errorMessage(archive.error)
                 : s.archived_at
                   ? "Unarchive (allows applying again)"
                   : "Archive (keeps history & revert, blocks applying)"
             }
-            onClick={() => archive.mutate()}
-            aria-invalid={archive.isError || undefined}
           >
-            {archive.isError ? "Failed — retry" : s.archived_at ? "Unarchive" : "Archive"}
-          </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={() => archive.mutate()}
+              aria-invalid={archive.isError || undefined}
+            >
+              {archive.isError ? "Failed — retry" : s.archived_at ? "Unarchive" : "Archive"}
+            </Button>
+          </Tip>
         </TableCell>
       </TableRow>
 
