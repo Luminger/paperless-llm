@@ -20,7 +20,7 @@ import { ResetFilters } from "@/components/app/ResetFilters";
 import { Pager } from "@/components/app/Pager";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type EntityRef, type MergeCandidate } from "../api";
-import { matchingRule } from "../lib/format";
+import { matchingSummary } from "../lib/matching";
 import { keys } from "../lib/keys";
 import { FetchStatus } from "../components/FetchStatus";
 import {
@@ -200,7 +200,7 @@ export default function Taxonomy() {
               </TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Documents</TableHead>
-              <TableHead>Matching</TableHead>
+              <TableHead>Auto-assignment</TableHead>
               <TableHead>Instructions</TableHead>
             </TableRow>
           </TableHeader>
@@ -240,7 +240,7 @@ export default function Taxonomy() {
                   {e.document_count ?? 0}
                 </TableCell>
                 <TableCell className="text-muted-foreground/70">
-                  {matchingRule(e) ?? "—"}
+                  {matchingSummary(e) ?? "—"}
                 </TableCell>
                 <TableCell className="max-w-64 truncate text-xs text-muted-foreground/70">
                   {e.instructions || "—"}

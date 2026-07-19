@@ -4,7 +4,7 @@ import { hasDocumentEditor, hasEntityEditor } from "../lib/proposal-kinds";
 import { entityName, useEntityList, useTaxonomyLists } from "../hooks/useTaxonomy";
 import type { TaxonomyType } from "../hooks/useTaxonomy";
 import { RefChip } from "../features/session/RefChip";
-import { MATCHING_LABELS } from "../lib/format";
+import { matchingName, MATCHING_OPTIONS } from "../lib/matching";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquareText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -284,18 +284,6 @@ function MetadataEditor({
 // typed widgets. Raw ids, nulls and algorithm numbers stay backstage.
 // ---------------------------------------------------------------------
 
-const ALGORITHM_OPTIONS = Object.entries(MATCHING_LABELS).map(([v, label]) => ({
-  value: v,
-  label:
-    v === "6"
-      ? "Automatic (learns from your decisions)"
-      : v === "0"
-        ? "None (no automatic assignment)"
-        : `${label[0].toUpperCase()}${label.slice(1)} — needs a pattern`,
-}));
-
-const algorithmLabel = (n: number | undefined | null): string =>
-  n == null ? "—" : (MATCHING_LABELS[n] ?? `algorithm ${n}`);
 
 /** Chips of document titles (via the shared RefChip — tooltip + link),
  * removable while editable, extendable via a small title search. */
@@ -443,7 +431,7 @@ function EntityRuleEditor({
       </Row>
       <Row
         label="Auto-assignment"
-        current={cur(algorithmLabel(base?.matching_algorithm))}
+        current={cur(matchingName(base?.matching_algorithm))}
         changed={
           !isCreate &&
           desired.matching_algorithm !== (base?.matching_algorithm ?? 0)
@@ -455,7 +443,7 @@ function EntityRuleEditor({
           disabled={!editable}
           value={String(desired.matching_algorithm)}
           onValueChange={(v) => update({ matching_algorithm: Number(v) })}
-          options={ALGORITHM_OPTIONS}
+          options={MATCHING_OPTIONS}
         />
       </Row>
       {(usesPattern || (base != null && Boolean(base.match))) && (

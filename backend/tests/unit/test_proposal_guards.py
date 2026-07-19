@@ -55,6 +55,11 @@ def _mock_paperless() -> None:
     respx.get(f"{PAPERLESS_URL}/api/storage_paths/").mock(
         return_value=Response(200, json=_page([]))
     )
+    respx.get(f"{PAPERLESS_URL}/api/custom_fields/").mock(
+        return_value=Response(200, json=_page([
+            {"id": 3, "name": "Invoice number", "data_type": "string"},
+        ]))
+    )
 
 
 def _scripted_agent(script: list[ModelResponse]) -> Agent:
@@ -356,3 +361,37 @@ async def test_entity_payloads_carry_only_provided_fields(db, paperless_client):
     assert p.agent_payload["name"] == "Telarko GmbH"
     for absent in ("match", "matching_algorithm", "is_insensitive"):
         assert absent not in p.agent_payload
+
+@respx.mock
+async def test_custom_fields_validated_and_noops_dropped(db, paperless_client):
+    """custom_fields values ride the same guard rails: unknown field ids
+    are ModelRetries naming the registry; values equal to the document's
+    current state are dropped as no-ops."""
+    _mock_paperless()
+    session = await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_update_document_metadata",
+            args={"document_id": 7, "custom_fields": {"99": "x"}},
+        ),
+    )
+    assert await _proposals(db) == []
+    assert "Unknown custom field id 99" in _retry_texts(session)
+
+
+@respx.mock
+async def test_custom_fields_land_in_payload_and_snapshot(db, paperless_client):
+    _mock_paperless()
+    await _run(
+        db,
+        paperless_client,
+        ToolCallPart(
+            tool_name="propose_update_document_metadata",
+            args={"document_id": 7, "custom_fields": {"3": "R-4711"}},
+        ),
+    )
+    (p,) = await _proposals(db)
+    assert p.agent_payload["custom_fields"] == {"3": "R-4711"}
+    # snapshot records what the agent saw (field unset -> None)
+    assert p.base_snapshot["custom_fields"] == {"3": None}

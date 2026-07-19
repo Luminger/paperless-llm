@@ -36,6 +36,10 @@ def _mock_doc7() -> None:
     respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
         return_value=Response(200, json=DOC7)
     )
+    # get_document resolves custom-field names via the registry now.
+    respx.get(f"{PAPERLESS_URL}/api/custom_fields/").mock(
+        return_value=Response(200, json={"count": 0, "next": None, "results": []})
+    )
 
 
 def _scripted_agent(script):

@@ -230,32 +230,6 @@ export function formatAgo(iso: string | null | undefined): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-export const MATCHING_LABELS: Record<number, string> = {
-  0: "none",
-  1: "any word",
-  2: "all words",
-  3: "exact match",
-  4: "regex",
-  5: "fuzzy",
-  6: "auto (ML)",
-};
-
-/** Human form of a paperless matching rule. Returns null when matching
- * is effectively off (none, or a pattern algorithm without a pattern —
- * paperless's inert API default). */
-export function matchingRule(e: {
-  match?: string;
-  matching_algorithm?: number;
-  is_insensitive?: boolean;
-}): string | null {
-  const algo = e.matching_algorithm ?? 0;
-  if (algo === 6) return MATCHING_LABELS[6];
-  if (algo === 0 || !e.match) return null;
-  const label = MATCHING_LABELS[algo] ?? `algorithm ${algo}`;
-  const cased = e.is_insensitive === false ? " (case-sensitive)" : "";
-  return `${label} · “${e.match}”${cased}`;
-}
-
 /** What "use this browser's settings" would set: its IANA zone, the
  * locale's day/month/year order, and its 12/24-hour convention. */
 export function browserDateTimeDefaults(): {

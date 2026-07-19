@@ -22,7 +22,8 @@ import { FramedCard } from "@/components/app/Framed";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type DocumentHistory, type EntityRef, type PaperlessDocument } from "../api";
 import { keys, invalidateEntities } from "../lib/keys";
-import { formatDate, formatDateTime, matchingRule } from "../lib/format";
+import { formatDate, formatDateTime } from "../lib/format";
+import { matchingDescription, PATTERN_ALGORITHMS } from "../lib/matching";
 import { SessionList } from "../components/SessionList";
 import { errorMessage } from "../lib/errors";
 
@@ -142,11 +143,20 @@ function TaxonomyFacts({ entity }: { entity: EntityRef }) {
     <div>
       <FactRow label="Name">{entity.name}</FactRow>
       <FactRow label="Documents">{entity.document_count ?? 0}</FactRow>
-      <FactRow label="Matching rule">
-        {matchingRule(entity) ?? (
-          <span className="text-muted-foreground/60">none</span>
-        )}
+      {/* Same field names & values as the proposal editor. */}
+      <FactRow label="Auto-assignment">
+        {matchingDescription(entity.matching_algorithm ?? 0)}
       </FactRow>
+      {PATTERN_ALGORITHMS.has(entity.matching_algorithm ?? 0) && (
+        <>
+          <FactRow label="Match pattern">
+            {entity.match || <span className="text-muted-foreground/60">—</span>}
+          </FactRow>
+          <FactRow label="Case">
+            {entity.is_insensitive === false ? "Match case exactly" : "Ignore case"}
+          </FactRow>
+        </>
+      )}
       {entity.is_inbox_tag && (
         <FactRow label="Inbox tag">
           <InboxBadge>yes</InboxBadge>

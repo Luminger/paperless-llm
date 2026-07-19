@@ -9,7 +9,9 @@ reviewed by a human (or auto-applied per job policy).
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import date
 from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
@@ -223,10 +225,23 @@ async def get_document(ctx: RunContext[AgentDeps], document_id: int) -> dict[str
     """Fetch one document: full metadata and the beginning of its OCR
     content. Use get_document_content for more of the content."""
     d = await ctx.deps.paperless.get_document(document_id)
+    # Custom-field values resolve their field NAMES/types — a raw
+    # {field: 3, value: ...} is meaningless without the registry.
+    registry = {f.id: f for f in await ctx.deps.custom_fields()}
     return _doc_summary(d) | {
         "original_file_name": d.original_file_name,
         "added": d.added,
-        "custom_fields": [cf.model_dump() for cf in d.custom_fields],
+        "custom_fields": [
+            {
+                "field": cf.field,
+                "name": registry[cf.field].name if cf.field in registry else None,
+                "data_type": (
+                    registry[cf.field].data_type if cf.field in registry else None
+                ),
+                "value": cf.value,
+            }
+            for cf in d.custom_fields
+        ],
         "content_preview": clamp_text(d.content, 2000),
         "content_length": len(d.content),
     }
@@ -267,6 +282,26 @@ async def list_tags(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
     return await _summaries_with_instructions(
         ctx, "tag", await ctx.deps.paperless.list_tags()
     )
+
+
+async def list_custom_fields(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
+    """List the custom-field definitions: id, name, value data_type
+    (string/url/date/boolean/integer/float/monetary/select/documentlink)
+    and, for select fields, the valid options. Custom-field VALUES on a
+    document are set via propose_update_document_metadata's
+    custom_fields argument, keyed by these ids."""
+    out = []
+    for f in await ctx.deps.custom_fields():
+        row: dict[str, Any] = {"id": f.id, "name": f.name, "data_type": f.data_type}
+        options = (f.extra_data or {}).get("select_options") or []
+        if options:
+            row["select_options"] = [
+                {"id": o.get("id"), "label": o.get("label")}
+                for o in options
+                if isinstance(o, dict)
+            ]
+        out.append(row)
+    return out
 
 
 async def list_correspondents(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
@@ -399,6 +434,7 @@ async def propose_update_document_metadata(
     created: str | None = None,
     add_tags: IntList = None,
     remove_tags: IntList = None,
+    custom_fields: dict[str, Any] | str | None = None,
 ) -> str:
     """Propose metadata changes for one document. Provide ONLY the fields
     you want to change — values identical to the document's current state
@@ -406,8 +442,11 @@ async def propose_update_document_metadata(
     the list/search tools first; propose_create_entity for genuinely new
     ones). `created` is the document's creation date (ISO), usually the
     date printed on the document. Tag id lists may be given as JSON
-    arrays or comma-separated strings ("1,2"). Explain your changes in
-    your final summary, not in the proposal."""
+    arrays or comma-separated strings ("1,2"). `custom_fields` sets
+    custom-field VALUES: an object keyed by field id (see
+    list_custom_fields), e.g. {"3": "2024-05-01"}; null clears a value;
+    select fields take an option id or its exact label. Explain your
+    changes in your final summary, not in the proposal."""
     doc = await _require_document(ctx, document_id)
 
     # Referential checks.
@@ -448,6 +487,11 @@ async def propose_update_document_metadata(
         fields["add_tags"] = add
     if remove:
         fields["remove_tags"] = remove
+    cf_changes, cf_snapshot = await _coerce_custom_fields(ctx, doc, custom_fields)
+    if custom_fields is not None and not cf_changes:
+        dropped.append("custom_fields")
+    if cf_changes:
+        fields["custom_fields"] = cf_changes
 
     if set(fields) == {"document_id"}:
         raise ModelRetry(
@@ -465,7 +509,100 @@ async def propose_update_document_metadata(
     }
     if add or remove:
         snapshot["tags"] = list(doc.tags)
+    if cf_changes:
+        snapshot["custom_fields"] = cf_snapshot
     return await _persist(ctx, p, EntityType.document, document_id, snapshot) + note
+
+
+async def _coerce_custom_fields(
+    ctx: RunContext[AgentDeps], doc, raw: dict[str, Any] | str | None
+) -> tuple[dict[int, Any], dict[str, Any]]:
+    """Validate and type-coerce proposed custom-field values against the
+    field registry. Returns ({field_id: value} minus no-ops, the current
+    values of touched fields for the snapshot). ModelRetry on unknown
+    fields, bad types, or invalid select options."""
+    if raw is None:
+        return {}, {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError as e:
+            raise ModelRetry(f"custom_fields is not valid JSON: {e}") from e
+    if not isinstance(raw, dict):
+        raise ModelRetry(
+            "custom_fields must be an object keyed by field id, "
+            'e.g. {"3": "value"}.'
+        )
+    registry = {f.id: f for f in await ctx.deps.custom_fields()}
+    current = {cf.field: cf.value for cf in doc.custom_fields}
+    out: dict[int, Any] = {}
+    snapshot: dict[str, Any] = {}
+    for key, value in raw.items():
+        try:
+            fid = int(key)
+        except (TypeError, ValueError) as e:
+            raise ModelRetry(
+                f"custom_fields key {key!r} is not a field id. Use the ids "
+                "from list_custom_fields."
+            ) from e
+        field = registry.get(fid)
+        if field is None:
+            known = ", ".join(f"{f.id}={f.name!r}" for f in registry.values())
+            raise ModelRetry(
+                f"Unknown custom field id {fid}. Existing fields: "
+                f"{known or '(none defined)'}."
+            )
+        if value is not None:
+            value = _coerce_custom_value(field, value)
+        if current.get(fid) == value or (fid not in current and value is None):
+            continue  # no-op
+        out[fid] = value
+        snapshot[str(fid)] = current.get(fid)
+    return out, snapshot
+
+
+def _coerce_custom_value(field, value: Any) -> Any:
+    """Per-data_type coercion mirroring what paperless will accept."""
+    dt = field.data_type
+    try:
+        if dt == "boolean":
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str) and value.lower() in ("true", "false"):
+                return value.lower() == "true"
+            raise ValueError(f"{value!r} is not a boolean")
+        if dt == "integer":
+            return int(value)
+        if dt == "float":
+            return float(value)
+        if dt == "date":
+            date.fromisoformat(str(value)[:10])
+            return str(value)[:10]
+        if dt == "documentlink":
+            return _int_list(value)
+        if dt == "select":
+            options = (field.extra_data or {}).get("select_options") or []
+            for o in options:
+                if not isinstance(o, dict):
+                    continue
+                if value == o.get("id") or value == o.get("label"):
+                    return o.get("id")
+            labels = ", ".join(
+                f"{o.get('id')!r} ({o.get('label')!r})"
+                for o in options
+                if isinstance(o, dict)
+            )
+            raise ValueError(
+                f"{value!r} is not an option of {field.name!r}. "
+                f"Options: {labels or '(none)'}"
+            )
+        # string / url / monetary: strings pass through
+        return value
+    except (TypeError, ValueError) as e:
+        raise ModelRetry(
+            f"Invalid value for custom field {field.name!r} "
+            f"({dt}): {e}"
+        ) from e
 
 
 async def propose_create_entity(
@@ -615,6 +752,7 @@ READ_TOOLS = [
     list_tags,
     list_correspondents,
     list_document_types,
+    list_custom_fields,
     find_similar_entities,
     # NOTE ocr_document is deliberately NOT here (AUDIT BC-F11): the
     # runner holds an endpoint-semaphore permit for the whole agent.run;

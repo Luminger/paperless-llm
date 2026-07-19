@@ -39,6 +39,16 @@ class AgentDeps:
             )
         return self.taxonomy_cache[entity_type]
 
+    async def custom_fields(self) -> list:
+        """Per-run cache of the custom-field registry (same contract as
+        taxonomy(): names/types resolve once, validation lookups are
+        free afterwards)."""
+        if "__custom_fields__" not in self.taxonomy_cache:
+            self.taxonomy_cache["__custom_fields__"] = (
+                await self.paperless.list_custom_fields()
+            )
+        return self.taxonomy_cache["__custom_fields__"]
+
     @property
     def max_chars(self) -> int:
         """Character clamp for a SINGLE tool result: token budget × ≈4

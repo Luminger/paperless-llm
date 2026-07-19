@@ -147,9 +147,8 @@ interface EntityBase {
   is_insensitive?: boolean;
 }
 
-/** Algorithms that need a `match` pattern (1=any word … 5=fuzzy);
- * 0=none and 6=auto don't use one. */
-export const PATTERN_ALGORITHMS = new Set([1, 2, 3, 4, 5]);
+import { PATTERN_ALGORITHMS } from "./matching";
+export { PATTERN_ALGORITHMS };
 
 export function deriveEntityDesired(
   payload: Record<string, unknown>,

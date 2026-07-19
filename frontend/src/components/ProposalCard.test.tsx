@@ -366,7 +366,7 @@ describe("ProposalCard — entity editors (named fields, no raw data)", () => {
     // the algorithm shows as a NAME in the select, not the number 1
     expect(screen.getByLabelText("matching mode")).toHaveTextContent(/any word/i);
     // current column: algorithm 0 shows its name
-    expect(screen.getByText("none")).toBeInTheDocument();
+    expect(screen.getByText("None")).toBeInTheDocument();
     // nothing renders the raw payload key or numeric id
     expect(screen.queryByText("matching_algorithm")).not.toBeInTheDocument();
     expect(screen.queryByText("entity_id")).not.toBeInTheDocument();

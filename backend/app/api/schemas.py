@@ -250,6 +250,17 @@ class InstructionsOut(BaseModel):
     instructions: str
 
 
+class CustomFieldOut(BaseModel):
+    """A paperless custom-field definition, as the UI needs it: the name
+    behind the id, the value type for the editor widget, and select
+    options when the type is `select`."""
+
+    id: int
+    name: str
+    data_type: str
+    select_options: list[dict[str, Any]] = []
+
+
 class EntityOut(BaseModel):
     """Taxonomy entity as the UI sees it: paperless fields + the
     app-local agent instructions."""

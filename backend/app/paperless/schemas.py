@@ -58,6 +58,9 @@ class CustomField(_Permissive):
     id: int
     name: str
     data_type: str
+    # select fields carry their options here: {"select_options":
+    # [{"id": "...", "label": "..."}]}
+    extra_data: dict[str, Any] = {}
 
 
 class CustomFieldInstance(_Permissive):

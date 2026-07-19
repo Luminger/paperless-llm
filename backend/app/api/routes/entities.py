@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_paperless
 from app.api.schemas import (
+    CustomFieldOut,
     DocumentHistoryOut,
     DocumentOut,
     DocumentSearchPage,
@@ -308,6 +309,28 @@ async def list_storage_paths(
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> list[EntityOut]:
     return [_entity_out(s) for s in await paperless.list_storage_paths()]
+
+
+@router.get("/custom_fields")
+async def list_custom_fields(
+    paperless: PaperlessClient = Depends(get_paperless),
+) -> list[CustomFieldOut]:
+    """The custom-field registry: names, data types, select options.
+    Read-only — fields are defined in paperless; here they inform the
+    proposal editor's typed widgets and the document facts."""
+    return [
+        CustomFieldOut(
+            id=f.id,
+            name=f.name,
+            data_type=f.data_type,
+            select_options=[
+                o
+                for o in (f.extra_data.get("select_options") or [])
+                if isinstance(o, dict) and o.get("id") is not None
+            ],
+        )
+        for f in await paperless.list_custom_fields()
+    ]
 
 
 @router.get("/{entity_type}/merge-candidates")

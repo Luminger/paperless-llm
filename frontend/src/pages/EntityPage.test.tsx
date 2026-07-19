@@ -94,7 +94,11 @@ describe("EntityPage (generic entity overview)", () => {
 
     expect(await screen.findByRole("heading", { name: "Kraxi" })).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
-    expect(screen.getByText(/any word · “kraxi”/)).toBeInTheDocument();
+    // Facts speak the proposal editor's vocabulary now.
+    expect(screen.getByText("Auto-assignment")).toBeInTheDocument();
+    expect(screen.getByText(/Any word — needs a pattern/)).toBeInTheDocument();
+    expect(screen.getByText("kraxi")).toBeInTheDocument();
+    expect(screen.getByText("Ignore case")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /Open in paperless/ }).getAttribute("href"),
     ).toBe("http://paperless.example/correspondents");
