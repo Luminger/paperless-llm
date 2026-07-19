@@ -8,20 +8,35 @@ from fastapi import Depends, HTTPException, Request
 
 from app.config import get_settings
 from app.paperless import PaperlessClient, make_client
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_session
 from app.services.actor import actor_var
 from app.services.auth import CurrentUser
 
 
-async def require_user(request: Request) -> CurrentUser:
+async def require_user(
+    request: Request, db: AsyncSession = Depends(get_session)
+) -> CurrentUser:
     """Attached to every protected router. Resolves the caller from the
-    signed session cookie, 401s otherwise, and attributes all work of
-    this request to the named user (actor contextvar)."""
+    signed session cookie, 401s otherwise, checks the server-side
+    session row is alive, and attributes all work of this request to
+    the named user (actor contextvar)."""
     from app.api.routes.auth import resolve_user
 
     user = await resolve_user(request)
     if user is None:
         raise HTTPException(
             401, {"code": "unauthorized", "message": "authentication required"}
+        )
+    # AUDIT API-F8 (second half): a valid signature is necessary, not
+    # sufficient — the server-side session row must still be alive.
+    # Legacy cookies without a sid fail here once and force a re-login.
+    from app.services.auth import session_alive
+
+    if not await session_alive(db, user.sid):
+        raise HTTPException(
+            401, {"code": "session_revoked", "message": "session ended — sign in again"}
         )
     request.state.user = user
     actor_var.set(f"user:{user.name}")

@@ -3,7 +3,7 @@
 // section per concern.
 
 import { useQuery } from "@tanstack/react-query";
-import { Clock, Cpu, Info, Link2, MessageSquareCode } from "lucide-react";
+import { Clock, Cpu, Info, Link2, MessageSquareCode, MonitorSmartphone } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import { DateTimePrefs } from "./DateTimePrefs";
 import { ModelsConfig } from "./Models";
 import { PaperlessInfo } from "./PaperlessInfo";
 import { PromptTuning } from "./PromptTuning";
+import { Sessions } from "./Sessions";
 import { SystemInfo } from "./SystemInfo";
 
 const SECTIONS = [
@@ -26,10 +27,14 @@ const SECTIONS = [
   { value: "models", label: "Models", icon: Cpu },
   { value: "prompts", label: "Prompts", icon: MessageSquareCode },
   { value: "paperless", label: "Paperless", icon: Link2 },
+  { value: "sessions", label: "Sessions", icon: MonitorSmartphone },
   { value: "system", label: "System", icon: Info },
 ] as const;
 
 export type SettingsSection = (typeof SECTIONS)[number]["value"];
+/** THE list of section keys — App's hash routing imports this instead
+ * of keeping a drift-prone copy. */
+export const SECTION_VALUES = SECTIONS.map((s) => s.value) as SettingsSection[];
 
 export function SettingsDialog({
   open,
@@ -88,6 +93,9 @@ export function SettingsDialog({
               </TabsContent>
               <TabsContent value="prompts" className="mt-0">
                 {overview && <PromptTuning defaults={overview.prompt_defaults} />}
+              </TabsContent>
+              <TabsContent value="sessions" className="mt-0">
+                <Sessions />
               </TabsContent>
               <TabsContent value="system" className="mt-0">
                 <SystemInfo />

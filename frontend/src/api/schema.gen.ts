@@ -72,6 +72,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Auth Sessions
+         * @description Live login sessions: the caller's own — admins see everyone's.
+         *     Revoked and expired sessions don't appear.
+         */
+        get: operations["list_auth_sessions_api_auth_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/sessions/{sid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Session
+         * @description End a login session server-side. The CURRENT session is refused
+         *     (sign out instead) — a one-click self-lockout helps nobody.
+         */
+        delete: operations["revoke_session_api_auth_sessions__sid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corpus": {
         parameters: {
             query?: never;
@@ -1063,6 +1105,47 @@ export interface components {
             role: "admin" | "user";
             /** User */
             user?: string | null;
+        };
+        /**
+         * AuthSessionOut
+         * @description A live login session (Settings → Sessions). `sid` is an opaque
+         *     revocation handle, not an enumeration surface.
+         */
+        AuthSessionOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Current
+             * @default false
+             */
+            current: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Last Seen At
+             * Format: date-time
+             */
+            last_seen_at: string;
+            /**
+             * Role
+             * @default user
+             */
+            role: string;
+            /** Sid */
+            sid: string;
+            /**
+             * User Agent
+             * @default
+             */
+            user_agent: string;
+            /** Username */
+            username: string;
         };
         /**
          * CallTiming
@@ -2227,6 +2310,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthMeOut"];
+                };
+            };
+        };
+    };
+    list_auth_sessions_api_auth_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSessionOut"][];
+                };
+            };
+        };
+    };
+    revoke_session_api_auth_sessions__sid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthMeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

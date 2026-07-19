@@ -652,7 +652,13 @@ Scope: `app/api/**`, `app/proposals/**`, `app/paperless/**`,
 - **Todo:** #80
 
 ### API-F8 — MEDIUM — sessions irrevocable for up to 7 days; cookie lacks `Secure`
-- **Status:** PARTIAL — `auth.cookie_secure` config added (Secure flag for TLS deployments). Server-side session invalidation (generation counter) still open — cookies remain valid until exp after logout/user-disable
+- **Status:** FIXED — both halves. `auth.cookie_secure` (Secure flag), AND
+  server-side revocation: login mints an `auth_sessions` row (opaque sid in the
+  cookie); `require_user` requires the row alive (60s validity cache, evicted on
+  revoke → instant effect in-process); Settings → Sessions lists live sessions
+  (own; admins all) with revoke-except-current; logout revokes its own row;
+  legacy sid-less cookies force one re-login. Live-verified: revoked cookie
+  401s (`session_revoked`) on the very next request.
 - **Where:** `app/services/auth.py`, `app/api/routes/auth.py:233-240`
 - **Detail:** Stateless cookie: logout only deletes the browser copy; a
   captured value (contains the user's paperless token) stays valid until

@@ -350,6 +350,20 @@ class AuthMeOut(BaseModel):
     role: Literal["admin", "user"] = "user"
 
 
+class AuthSessionOut(BaseModel):
+    """A live login session (Settings → Sessions). `sid` is an opaque
+    revocation handle, not an enumeration surface."""
+
+    sid: str
+    username: str
+    role: str = "user"
+    user_agent: str = ""
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+    current: bool = False
+
+
 class HealthOut(BaseModel):
     status: str
 

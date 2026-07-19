@@ -36,6 +36,7 @@ import JobDetail from "./pages/JobDetail";
 import EntityPage from "./pages/EntityPage";
 import AuditLog from "./pages/AuditLog";
 import {
+  SECTION_VALUES,
   SettingsDialog,
   type SettingsSection,
 } from "@/components/settings/SettingsDialog";
@@ -121,7 +122,7 @@ function UserMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   );
 }
 
-const SECTION_VALUES = ["preferences", "models", "prompts", "paperless", "system"] as const;
+
 
 export default function App() {
   // Fresh date/time prefs re-render everything (AUDIT FP-M1).
@@ -192,6 +193,9 @@ export default function App() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         <Routes location={(settingsOpen && background) || location}>
           <Route path="/" element={<Dashboard />} />
+          {/* No bare sessions index — analysis sessions live on their
+              documents/jobs; LOGIN sessions live in Settings. */}
+          <Route path="/sessions" element={<Navigate to="/" replace />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           {/* Proposals live on their session's timeline; old links redirect. */}
           <Route path="/proposals/:id" element={<ProposalRedirect />} />

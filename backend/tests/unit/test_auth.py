@@ -96,3 +96,105 @@ async def test_role_falls_back_to_user_on_lookup_failure(
     assert r.status_code == 200
     assert r.json() == {"user": "simon", "role": "user"}
     assert "cannot determine admin status" in caplog.text
+
+def _mock_login(respx_mock, users=("simon", "erika")):
+    respx_mock.post("http://paperless.test/api/token/").mock(
+        return_value=httpx.Response(200, json={"token": "user-token"})
+    )
+    respx_mock.get("http://paperless.test/api/users/").mock(
+        side_effect=lambda request: httpx.Response(200, json={
+            "count": 1, "next": None, "results": [{
+                "id": 2,
+                "username": (request.url.params.get("username__iexact") or ""),
+                # simon is the admin in these tests
+                "is_superuser": (request.url.params.get("username__iexact") == "simon"),
+            }],
+        })
+    )
+    get_settings().paperless.base_url = "http://paperless.test"
+    get_settings().paperless.token = "app-token"
+
+
+async def _login(client, username):
+    r = await client.post(
+        "/api/auth/login", json={"username": username, "password": "pw"}
+    )
+    assert r.status_code == 200
+    return r
+
+
+async def test_session_revocation_kills_access(client, respx_mock, monkeypatch):
+    """AUDIT API-F8 (second half): a revoked session dies server-side,
+    valid cookie signature notwithstanding — and instantly (no TTL
+    grace: the cache entry is evicted on revoke)."""
+    from app.services import auth as auth_service
+
+    monkeypatch.setattr(auth_service, "_secret_cache", "test-secret")
+    monkeypatch.setattr(auth_service, "_session_cache", {})
+    _mock_login(respx_mock)
+
+    await _login(client, "simon")
+    victim_cookie = dict(client.cookies)
+    # second login = second session (fresh cookie jar entry replaces ours,
+    # so capture the sid list via the API)
+    await _login(client, "simon")
+    sessions = (await client.get("/api/auth/sessions")).json()
+    assert len(sessions) == 2
+    current = next(s for s in sessions if s["current"])
+    other = next(s for s in sessions if not s["current"])
+
+    # Current session refuses revocation — sign out instead.
+    r = await client.delete(f"/api/auth/sessions/{current['sid']}")
+    assert r.status_code == 409
+    # The OTHER session revokes fine…
+    assert (await client.delete(f"/api/auth/sessions/{other['sid']}")).status_code == 200
+    # …and its cookie is dead immediately.
+    r = await client.get("/api/stats", cookies=victim_cookie)
+    assert r.status_code == 401
+    assert r.json()["detail"]["code"] == "session_revoked"
+    # The current session still works.
+    assert (await client.get("/api/stats")).status_code == 200
+
+
+async def test_session_listing_scoped_to_user_unless_admin(
+    client, respx_mock, monkeypatch
+):
+    from app.services import auth as auth_service
+
+    monkeypatch.setattr(auth_service, "_secret_cache", "test-secret")
+    monkeypatch.setattr(auth_service, "_session_cache", {})
+    _mock_login(respx_mock)
+
+    await _login(client, "simon")   # admin
+    admin_cookie = dict(client.cookies)
+    await _login(client, "erika")   # plain user
+
+    # erika sees only her own session…
+    mine = (await client.get("/api/auth/sessions")).json()
+    assert {s["username"] for s in mine} == {"erika"}
+    # …and cannot revoke simon's (404, not 403 — no enumeration).
+    admin_sessions = (
+        await client.get("/api/auth/sessions", cookies=admin_cookie)
+    ).json()
+    simons = next(s for s in admin_sessions if s["username"] == "simon")
+    assert (await client.delete(f"/api/auth/sessions/{simons['sid']}")).status_code == 404
+    # The admin sees both users' sessions.
+    assert {s["username"] for s in admin_sessions} == {"simon", "erika"}
+
+
+async def test_legacy_cookie_without_sid_forces_relogin(
+    client, respx_mock, monkeypatch
+):
+    """Cookies minted before the session registry carry no sid — they
+    fail the liveness check once and force a clean re-login."""
+    from app.services import auth as auth_service
+    from app.services.auth import COOKIE_NAME, CurrentUser, make_cookie
+
+    monkeypatch.setattr(auth_service, "_secret_cache", "test-secret")
+    monkeypatch.setattr(auth_service, "_session_cache", {})
+    legacy = make_cookie(
+        CurrentUser(name="simon", role="admin", sid=None), "test-secret"
+    )
+    r = await client.get("/api/stats", cookies={COOKIE_NAME: legacy})
+    assert r.status_code == 401
+    assert r.json()["detail"]["code"] == "session_revoked"

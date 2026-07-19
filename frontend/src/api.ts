@@ -35,6 +35,7 @@ export type WebhookStatus = S["WebhookStatusOut"];
 export type DocumentHistory = S["DocumentHistoryOut"];
 export type EntityRef = S["EntityOut"];
 export type CustomFieldDef = S["CustomFieldOut"];
+export type AuthSession = S["AuthSessionOut"];
 export type PaperlessDocument = S["DocumentOut"];
 export type DocumentSearchPage = S["DocumentSearchPage"];
 export type MergeCandidate = S["MergeCandidateOut"];
@@ -119,6 +120,9 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<AuthMe>("/api/auth/logout", { method: "POST" }),
+  listAuthSessions: () => request<AuthSession[]>("/api/auth/sessions"),
+  revokeAuthSession: (sid: string) =>
+    request<AuthMe>(`/api/auth/sessions/${sid}`, { method: "DELETE" }),
   getSettingsOverview: () => request<SettingsOverview>("/api/settings"),
   getPrefs: () => request<Prefs>("/api/prefs"),
   putPrefs: (body: PrefsUpdate) =>

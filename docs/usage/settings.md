@@ -63,3 +63,11 @@ shown.
 
 Light, dark, or follow-the-system — in the user menu, stored per
 browser.
+
+## Sessions
+
+Everywhere you are signed in — browser and platform, sign-in time, last
+activity. Revoking a session signs that browser out immediately,
+server-side (the cookie becomes worthless, not just deleted).
+Administrators see and can end every user's sessions; the current
+session is never revocable here — sign out instead.

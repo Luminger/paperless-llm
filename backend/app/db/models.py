@@ -405,6 +405,31 @@ class OcrResult(Base):
     )
 
 
+class AuthSession(Base):
+    """A login session (AUDIT API-F8, second half): the cookie carries
+    an opaque ``sid`` that must map to a live row here — revoking the
+    row kills the session server-side, cookie or not. Listed in
+    Settings (own sessions; admins see all)."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(150), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="user")
+    user_agent: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class UserPref(Base):
     """User preferences (date/time format, timezone, ...) — persisted
     server-side so the experience is consistent across browsers. Single

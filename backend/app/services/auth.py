@@ -17,6 +17,7 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass
+from datetime import timedelta
 
 import httpx
 from sqlalchemy import select
@@ -43,6 +44,10 @@ class CurrentUser:
     # holds superuser rights THERE administers this app. Carried in the
     # signed cookie for the session's lifetime.
     role: str = "user"
+    # Opaque id of the login-session row backing this cookie — the
+    # server-side half of the session (AUDIT API-F8): no live row, no
+    # access, however valid the signature.
+    sid: str | None = None
 
     @property
     def is_admin(self) -> bool:
@@ -75,7 +80,13 @@ def make_cookie(user: CurrentUser, secret: str) -> str:
     exp = int(time.time()) + get_settings().auth.session_hours * 3600
     payload = base64.urlsafe_b64encode(
         json.dumps(
-            {"u": user.name, "t": user.paperless_token, "r": user.role, "exp": exp}
+            {
+                "u": user.name,
+                "t": user.paperless_token,
+                "r": user.role,
+                "s": user.sid,
+                "exp": exp,
+            }
         ).encode()
     ).decode()
     return f"{payload}.{_sign(payload.encode(), secret)}"
@@ -99,11 +110,98 @@ def parse_cookie(value: str, secret: str) -> CurrentUser | None:
         return None
     token = data.get("t")
     role = data.get("r")
+    sid = data.get("s")
     return CurrentUser(
         name=name,
         paperless_token=token if isinstance(token, str) else None,
         role="admin" if role == "admin" else "user",
+        sid=sid if isinstance(sid, str) and sid else None,
     )
+
+
+# ----- server-side login sessions (AUDIT API-F8, second half) ---------
+#
+# The cookie's signature proves WHO minted it; the sid row proves it is
+# still WELCOME. Validity is cached in-process with a short TTL so the
+# hot path stays off the DB; revocation happens in this same process
+# (single-process design, see recover()/claim), so evicting the cache
+# entry makes it take effect instantly.
+
+_SESSION_CACHE_TTL = 60.0
+_session_cache: dict[str, float] = {}  # sid -> cache-entry expiry (valid sids only)
+
+
+async def create_auth_session(
+    db, *, username: str, role: str, user_agent: str
+) -> str:
+    from app.db.models import AuthSession, utcnow
+
+    sid = secrets.token_urlsafe(24)
+    hours = get_settings().auth.session_hours
+    now = utcnow()
+    db.add(
+        AuthSession(
+            sid=sid,
+            username=username,
+            role=role,
+            user_agent=user_agent[:300],
+            expires_at=now + timedelta(hours=hours),
+        )
+    )
+    # Opportunistic hygiene: drop rows that have been dead for a month.
+    from sqlalchemy import delete, or_
+
+    await db.execute(
+        delete(AuthSession).where(
+            or_(
+                AuthSession.expires_at < now - timedelta(days=30),
+                AuthSession.revoked_at < now - timedelta(days=30),
+            )
+        )
+    )
+    return sid
+
+
+async def session_alive(db, sid: str | None) -> bool:
+    """Is this login session still welcome? Cached for TTL seconds;
+    refresh also slides ``last_seen_at``. Runs on the caller's request
+    session (guards execute before handlers — nothing to clobber)."""
+    if not sid:
+        return False
+    now = time.monotonic()
+    if _session_cache.get(sid, 0) > now:
+        return True
+    from app.db.models import AuthSession, utcnow
+
+    # SQL-side expiry comparison — SQLite hands back naive datetimes.
+    row = await db.scalar(
+        select(AuthSession).where(
+            AuthSession.sid == sid,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > utcnow(),
+        )
+    )
+    if row is None:
+        return False
+    row.last_seen_at = utcnow()
+    await db.commit()
+    _session_cache[sid] = now + _SESSION_CACHE_TTL
+    return True
+
+
+async def revoke_auth_session(db, sid: str) -> bool:
+    """Guarded revoke; True when THIS call flipped the row."""
+    from sqlalchemy import update
+
+    from app.db.models import AuthSession, utcnow
+
+    res = await db.execute(
+        update(AuthSession)
+        .where(AuthSession.sid == sid, AuthSession.revoked_at.is_(None))
+        .values(revoked_at=utcnow())
+    )
+    _session_cache.pop(sid, None)  # instant effect, no TTL grace
+    return bool(res.rowcount)
 
 
 async def validate_paperless_credentials(
