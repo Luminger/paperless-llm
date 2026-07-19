@@ -358,9 +358,12 @@ class AuthSessionOut(BaseModel):
     username: str
     role: str = "user"
     user_agent: str = ""
-    created_at: datetime
-    last_seen_at: datetime
-    expires_at: datetime
+    # UtcDateTime, like every timestamp on the wire — SQLite hands back
+    # NAIVE datetimes, and bare `datetime` serialized them without the
+    # Z, which the browser then misread as local time.
+    created_at: UtcDateTime
+    last_seen_at: UtcDateTime
+    expires_at: UtcDateTime
     current: bool = False
 
 

@@ -198,3 +198,19 @@ async def test_legacy_cookie_without_sid_forces_relogin(
     r = await client.get("/api/stats", cookies={COOKIE_NAME: legacy})
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "session_revoked"
+
+
+async def test_session_timestamps_carry_utc_offset(client, respx_mock, monkeypatch):
+    """Wire contract: every timestamp is explicit UTC. SQLite returns
+    naive datetimes — bare `datetime` fields serialized them without
+    the offset and browsers misread them as LOCAL time (the '2 h ago
+    right after signing in' bug)."""
+    from app.services import auth as auth_service
+
+    monkeypatch.setattr(auth_service, "_secret_cache", "test-secret")
+    monkeypatch.setattr(auth_service, "_session_cache", {})
+    _mock_login(respx_mock)
+    await _login(client, "simon")
+    (s,) = (await client.get("/api/auth/sessions")).json()
+    for key in ("created_at", "last_seen_at", "expires_at"):
+        assert s[key].endswith("+00:00") or s[key].endswith("Z"), (key, s[key])
