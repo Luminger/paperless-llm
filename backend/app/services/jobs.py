@@ -431,10 +431,12 @@ async def create_entity_job(
 
 async def live_job_counts(
     db: AsyncSession, job_ids: list[int]
-) -> dict[int, tuple[int, int, int]]:
-    """(done, failed, unfinished) per job, computed FROM THE SESSIONS at
-    read time — stored counters can go stale (e.g. a gate resolved
-    without a worker touching the job afterwards), the sessions can't."""
+) -> dict[int, tuple[int, int, int, int]]:
+    """(done, failed, stopped, unfinished) per job, computed FROM THE
+    SESSIONS at read time — stored counters can go stale (e.g. a gate
+    resolved without a worker touching the job afterwards), the
+    sessions can't. ``stopped`` = user-cancelled runs: neither done nor
+    failed, and NOT unfinished (they won't run again on their own)."""
     if not job_ids:
         return {}
     rows = (
@@ -455,25 +457,30 @@ async def live_job_counts(
             )
         ).all()
     )
-    out: dict[int, tuple[int, int, int]] = dict.fromkeys(job_ids, (0, 0, 0))
+    out: dict[int, tuple[int, int, int, int]] = dict.fromkeys(job_ids, (0, 0, 0, 0))
     for sid, job_id, status, phase in rows:
-        done, failed, unfinished = out[job_id]
+        done, failed, stopped, unfinished = out[job_id]
         if status == SessionStatus.failed and sid not in retrying:
             failed += 1
         elif phase == SessionPhase.done:
             done += 1
+        elif phase == SessionPhase.stopped and sid not in retrying:
+            stopped += 1
         else:
             unfinished += 1
-        out[job_id] = (done, failed, unfinished)
+        out[job_id] = (done, failed, stopped, unfinished)
     return out
 
 
-def apply_live(job_out, counts: tuple[int, int, int]):
+def apply_live(job_out, counts: tuple[int, int, int, int]):
     """Stamp derived counts/status onto a JobOut-shaped object.
-    ``cancelled`` is sticky (the one stored status that matters)."""
-    done, failed, unfinished = counts
-    job_out.done, job_out.failed = done, failed
-    if job_out.status != JobStatus.cancelled:
+    ``cancelled`` and ``paused`` are sticky (the stored statuses that
+    matter); everything else derives from the sessions. A job whose
+    remaining sessions were all STOPPED is not "running" — it settles
+    as completed/failed by what actually finished."""
+    done, failed, stopped, unfinished = counts
+    job_out.done, job_out.failed, job_out.stopped = done, failed, stopped
+    if job_out.status not in (JobStatus.cancelled, JobStatus.paused):
         job_out.status = (
             JobStatus.running
             if unfinished

@@ -590,3 +590,103 @@ async def test_cancelled_step_revives_via_retry(file_db, monkeypatch):
         await workers.stop()
     async with session_scope() as db:
         assert (await db.get(Step, step_id)).state == StepState.succeeded
+
+
+async def test_paused_job_steps_are_not_claimed_until_resume(file_db, monkeypatch):
+    """Pause is a job-row flip: pending steps stay pending but workers
+    skip them; resume makes them claimable again."""
+    from app.db.models import Job, JobStatus
+
+    ran = asyncio.Event()
+
+    async def ok(db, paperless, session, step):
+        ran.set()
+        return None
+
+    monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, ok)
+    async with session_scope() as db:
+        job = Job(kind="bulk_analyze", params={}, total=1, status=JobStatus.paused)
+        db.add(job)
+        await db.flush()
+        s = Session(agent_kind=AgentKind.document, entity_type=EntityType.document,
+                    entity_id=7, job_id=job.id)
+        db.add(s)
+        await db.flush()
+        step = Step(session_id=s.id, kind=StepKind.analysis, state=StepState.pending)
+        db.add(step)
+        await db.commit()
+        job_id, step_id = job.id, step.id
+
+    workers = StepWorkers()
+    await workers.start()
+    try:
+        # Grace window: the step must NOT be picked up while paused.
+        await asyncio.sleep(0.4)
+        assert not ran.is_set()
+        async with session_scope() as db:
+            assert (await db.get(Step, step_id)).state == StepState.pending
+
+        # Resume -> claimable.
+        async with session_scope() as db:
+            (await db.get(Job, job_id)).status = JobStatus.queued
+            await db.commit()
+        await _wait_for(_step_in(step_id, *FINAL))
+    finally:
+        await workers.stop()
+    assert ran.is_set()
+
+
+async def test_sessions_without_jobs_claim_normally_alongside_paused(file_db, monkeypatch):
+    """The pause exclusion must not leak onto job-less sessions."""
+    from app.db.models import Job, JobStatus
+
+    async def ok(db, paperless, session, step):
+        return None
+
+    monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, ok)
+    async with session_scope() as db:
+        job = Job(kind="bulk_analyze", params={}, total=1, status=JobStatus.paused)
+        db.add(job)
+        await db.flush()
+        jobbed = Session(agent_kind=AgentKind.document, entity_type=EntityType.document,
+                         entity_id=7, job_id=job.id)
+        free = Session(agent_kind=AgentKind.document, entity_type=EntityType.document,
+                       entity_id=8)
+        db.add_all([jobbed, free])
+        await db.flush()
+        blocked = Step(session_id=jobbed.id, kind=StepKind.analysis,
+                       state=StepState.pending)
+        runnable = Step(session_id=free.id, kind=StepKind.analysis,
+                        state=StepState.pending)
+        db.add_all([blocked, runnable])
+        await db.commit()
+        blocked_id, runnable_id = blocked.id, runnable.id
+
+    workers = StepWorkers()
+    await workers.start()
+    try:
+        await _wait_for(_step_in(runnable_id, *FINAL))
+    finally:
+        await workers.stop()
+    async with session_scope() as db:
+        assert (await db.get(Step, runnable_id)).state == StepState.succeeded
+        assert (await db.get(Step, blocked_id)).state == StepState.pending
+
+
+async def test_cancelled_session_phase_is_stopped(file_db):
+    """A stopped run must not read as 'OCR running'/'Analyzing' in
+    lists — its phase is 'stopped'."""
+    from app.db.models import SessionPhase as SP
+    from app.services.steps import cancel_session_steps
+
+    sid = await _make_session()
+    async with session_scope() as db:
+        session = await db.get(Session, sid)
+        await create_step(db, session, StepKind.ocr)
+    async with session_scope() as db:
+        await cancel_session_steps(db, sid)
+        await db.commit()
+    async with session_scope() as db:
+        session = await db.get(Session, sid)
+        assert session.phase == SP.stopped
+        assert session.status == SessionStatus.idle

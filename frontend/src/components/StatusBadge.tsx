@@ -14,6 +14,7 @@ const labels: Record<string, string> = {
 /* Statuses whose one-word label doesn't explain itself get a hover
  * explanation (UI-U4). The obvious ones (pending, applied…) stay bare. */
 const explanations: Record<string, string> = {
+  paused: "Workers skip this job's work until it is resumed. Running steps finish normally.",
   superseded: "Replaced by a newer revision of this proposal — nothing was applied from this one.",
   no_change: "The agent looked and found paperless already correct — nothing to apply.",
   rejected: "Dismissed by a user — nothing was applied.",
@@ -56,6 +57,17 @@ export function SessionStatusBadge({
    * (the list deliberately shows a calm badge, not error prose). */
   error?: string | null;
 }) {
+  // A user-stopped run: its own look (muted, explained) — the status
+  // is idle, but "finished"/green would lie about what happened.
+  if (phase === "stopped" && status !== "running") {
+    return (
+      <Tip content="Stopped by a user before finishing — Retry on the step runs it again.">
+        <Badge variant="secondary" className={cn("capitalize", toneClass("stopped"))} tabIndex={0}>
+          stopped
+        </Badge>
+      </Tip>
+    );
+  }
   const label =
     status === "failed"
       ? "Error"

@@ -10,8 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
+import shutil
+import subprocess
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from functools import lru_cache
 
 import fitz  # PyMuPDF
 from pydantic_ai import Agent, BinaryContent
@@ -22,6 +27,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import OcrResult
 from app.llm.factory import ocr_model
 from app.paperless import PaperlessClient
+
+log = logging.getLogger(__name__)
+
+# Live-progress callback: receives a snapshot after every batch —
+# {total_pages, done_pages, total_batches, batches: [entry, ...]} where
+# each entry carries the batch's page range, rotations, timing metrics
+# and the returned text.
+ProgressFn = Callable[[dict], Awaitable[None]]
 
 OCR_PROMPT = """\
 You are a precise OCR engine. Transcribe the document page image(s) into
@@ -66,19 +79,63 @@ def page_count(data: bytes, content_type: str) -> int:
         doc.close()
 
 
+@lru_cache(maxsize=1)
+def _tesseract_available() -> bool:
+    ok = shutil.which("tesseract") is not None
+    if not ok:
+        log.info("tesseract not found — OCR auto-rotate disabled")
+    return ok
+
+
+_OSD_ROTATE = re.compile(r"^Rotate: (\d+)", re.MULTILINE)
+
+
+def detect_rotation(png: bytes) -> int:
+    """Degrees the page must be rotated CLOCKWISE to read upright
+    (0/90/180/270) via tesseract orientation detection; 0 when
+    unavailable or undecidable. Blocking — call from a worker thread."""
+    if not _tesseract_available():
+        return 0
+    try:
+        proc = subprocess.run(
+            ["tesseract", "stdin", "stdout", "--psm", "0"],
+            input=png, capture_output=True, timeout=30,
+        )
+        m = _OSD_ROTATE.search(proc.stdout.decode(errors="replace"))
+        return int(m.group(1)) % 360 if m else 0
+    except Exception:  # noqa: BLE001 — orientation is best-effort
+        return 0
+
+
 def render_page_range(
-    data: bytes, content_type: str, dpi: int, start: int, count: int
-) -> list[bytes]:
-    """Render pages [start, start+count) — AUDIT BC-F3: batches render
-    lazily so peak memory is ONE batch, not the whole document."""
+    data: bytes, content_type: str, dpi: int, start: int, count: int,
+    auto_rotate: bool = False,
+) -> list[tuple[bytes, int]]:
+    """Render pages [start, start+count) as (png, applied_rotation)
+    tuples — AUDIT BC-F3: batches render lazily so peak memory is ONE
+    batch, not the whole document.
+
+    ``auto_rotate``: PyMuPDF already honors PDF /Rotate metadata; this
+    additionally detects raster content that is itself upside-down or
+    sideways (raw scans) and re-renders upright."""
     doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
     try:
         zoom = dpi / 72.0
         end = min(doc.page_count, start + count)
-        return [
-            doc[i].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
-            for i in range(start, end)
-        ]
+        out: list[tuple[bytes, int]] = []
+        for i in range(start, end):
+            png = doc[i].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
+            rotation = 0
+            if auto_rotate:
+                rotation = detect_rotation(png)
+                if rotation:
+                    png = (
+                        doc[i]
+                        .get_pixmap(matrix=fitz.Matrix(zoom, zoom).prerotate(rotation))
+                        .tobytes("png")
+                    )
+            out.append((png, rotation))
+        return out
     finally:
         doc.close()
 
@@ -108,6 +165,7 @@ async def run_ocr(
     force: bool = False,
     instructions: str | None = None,
     dpi: int | None = None,
+    progress: ProgressFn | None = None,
 ) -> OcrOutcome:
     """OCR one document, using the cache unless ``force``.
 
@@ -172,24 +230,40 @@ async def run_ocr(
     batch = max(1, profile.max_images_per_request)
     pages: list[str] = []
     timings: list[dict] = []
+    total_batches = -(-n_pages // batch)
     for i in range(0, n_pages, batch):
         chunk = await asyncio.to_thread(
             render_page_range, data, content_type, effective_dpi, i,
-            min(batch, n_pages - i),
+            min(batch, n_pages - i), profile.auto_rotate,
         )
+        rotated = [i + 1 + k for k, (_png, rot) in enumerate(chunk) if rot]
         parts: list[str | BinaryContent] = [
             f"Transcribe page(s) {i + 1}-{i + len(chunk)} of {n_pages}."
         ]
-        parts += [BinaryContent(data=png, media_type="image/png") for png in chunk]
+        parts += [BinaryContent(data=png, media_type="image/png") for png, _rot in chunk]
         async with semaphore:
             result = await agent.run(parts)
+        entry: dict = {"pages": f"{i + 1}-{i + len(chunk)}"}
+        if rotated:
+            entry["rotated"] = rotated
         for message in result.new_messages():
             details = getattr(message, "provider_details", None)
             if isinstance(details, dict) and "pllm_timing" in details:
-                timings.append(
-                    {"pages": f"{i + 1}-{i + len(chunk)}", **details["pllm_timing"]}
-                )
+                entry.update(details["pllm_timing"])
+        timings.append(entry)
         out = result.output.strip()
+        if progress is not None:
+            # Live view: batch text travels with the snapshot (the final
+            # result stores only the concatenated text).
+            await progress({
+                "total_pages": n_pages,
+                "done_pages": min(i + len(chunk), n_pages),
+                "total_batches": total_batches,
+                "batches": [
+                    *timings[:-1],
+                    {**entry, "text": out},
+                ][-8:],  # last 8 batches: bounded row size on huge docs
+            })
         if len(chunk) > 1:
             split = re.split(r"\n-{3,}\n", out)
             # If the model didn't separate pages as instructed, keep the

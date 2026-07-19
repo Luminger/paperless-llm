@@ -77,6 +77,13 @@ Advancing is deliberately manual: deciding a proposal often makes the
 
 ## Steps can fail — and recover
 
+OCR steps show live progress while they run: which pages are batched
+into each model call, the text each batch returned, and the same call
+metrics agent turns show (duration, tokens, tokens/second). Flipped or
+sideways scans are detected (tesseract orientation detection) and
+rotated upright before the vision model reads them — the step notes
+which pages were auto-rotated.
+
 Every step carries its attempt history. Failed steps auto-retry with
 backoff (configurable); **Retry now** skips the wait and revives steps
 whose budget ran out. While a session has queued or running work, a

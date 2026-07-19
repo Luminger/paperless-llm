@@ -77,3 +77,12 @@ The job page's **Review N waiting** button walks them as a queue — see
 Cancelling a job cancels its still-pending steps; running steps finish
 (their results remain useful). Sessions re-derive their state from the
 cancelled tail — nothing is left dangling.
+
+
+## Pausing, resuming, bulk retry
+
+**Pause** stops workers from picking up the job's remaining work
+(running steps finish); **Continue** resumes. **Retry N failed** runs
+every failed or stopped session again — or select rows with the
+checkboxes and retry exactly that selection. The job's session list is
+paginated, filterable by status, and shows each session's document.

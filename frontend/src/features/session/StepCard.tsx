@@ -166,6 +166,121 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
   );
 }
 
+type OcrBatch = {
+  pages?: string;
+  rotated?: number[];
+  duration_s?: number;
+  output_tokens?: number;
+  tps?: number;
+  text?: string;
+};
+
+function batchStats(b: OcrBatch): string {
+  const bits: string[] = [];
+  if (b.duration_s != null) bits.push(`${b.duration_s}s`);
+  if (b.output_tokens != null) bits.push(`${b.output_tokens.toLocaleString()} tok`);
+  if (b.tps != null) bits.push(`${b.tps} tok/s`);
+  if (b.rotated?.length)
+    bits.push(`auto-rotated p. ${b.rotated.join(", ")}`);
+  return bits.join(" · ");
+}
+
+/** Live OCR progress: which pages are batched, what came back, and the
+ * same call metrics agent turns show — updated after every batch. */
+function OcrProgressView({ progress }: { progress: Record<string, unknown> }) {
+  const total = Number(progress.total_pages ?? 0);
+  const done = Number(progress.done_pages ?? 0);
+  const batches = (progress.batches as OcrBatch[] | undefined) ?? [];
+  const latest = batches[batches.length - 1];
+  return (
+    <div className="space-y-2" aria-label="ocr progress">
+      <div className="flex items-center gap-3 text-sm">
+        <span className="font-medium">
+          Transcribing — page {done} of {total}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          batch {batches.length} of {String(progress.total_batches ?? "?")}
+        </span>
+      </div>
+      {total > 0 && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${Math.min(100, (done / total) * 100)}%` }}
+          />
+        </div>
+      )}
+      <ul className="space-y-1 text-xs text-muted-foreground">
+        {batches.map((b, i) => (
+          <li key={`${b.pages}-${i}`} className="flex gap-2">
+            <span className="font-medium text-foreground/80">
+              pages {b.pages}
+            </span>
+            <span>{batchStats(b)}</span>
+          </li>
+        ))}
+      </ul>
+      {latest?.text != null && (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted-foreground/70 select-none">
+            latest returned text (pages {latest.pages})
+          </summary>
+          <pre className="mt-2 max-h-64 overflow-y-auto rounded-md bg-muted/40 p-3 font-mono text-xs leading-5 break-words whitespace-pre-wrap">
+            {latest.text}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** Finished runs keep the per-batch metrics — the fold shows how the
+ * document was chunked and how each call performed. */
+function OcrBatches({ batches }: { batches: OcrBatch[] }) {
+  return (
+    <details>
+      <summary className="cursor-pointer text-xs text-muted-foreground/70 select-none">
+        {batches.length} OCR call{batches.length === 1 ? "" : "s"} — expand for
+        per-batch metrics
+      </summary>
+      <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+        {batches.map((b, i) => (
+          <li key={`${b.pages}-${i}`} className="flex gap-2">
+            <span className="font-medium text-foreground/80">
+              pages {b.pages}
+            </span>
+            <span>{batchStats(b)}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** The OCR footer line — same statistics vocabulary as agent turns:
+ * pages, DPI, wall time, tokens, generation speed, rotations. */
+export function OcrTimingSummary({ result }: { result: Record<string, unknown> }) {
+  const batches = (result.batches as OcrBatch[] | undefined) ?? [];
+  const tokens = batches.reduce((n, b) => n + (b.output_tokens ?? 0), 0);
+  const withTps = batches.filter((b) => b.tps != null);
+  const avgTps = withTps.length
+    ? withTps.reduce((n, b) => n + (b.tps ?? 0), 0) / withTps.length
+    : null;
+  const rotated = batches.reduce((n, b) => n + (b.rotated?.length ?? 0), 0);
+  return (
+    <span className="text-xs text-muted-foreground/70">
+      {String(result.pages ?? "?")} page
+      {result.pages !== 1 ? "s" : ""}
+      {result.dpi != null && ` · ${String(result.dpi)} DPI`}
+      {" · "}
+      {String(result.duration_s)}s
+      {tokens > 0 && ` · ${tokens.toLocaleString()} tok`}
+      {avgTps != null && ` · ${avgTps.toFixed(1)} tok/s`}
+      {rotated > 0 && ` · ${rotated} page${rotated === 1 ? "" : "s"} auto-rotated`}
+    </span>
+  );
+}
+
 function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
   const resolution = step.result.resolution as string | undefined;
   const text = step.result.text as string | undefined;
@@ -189,7 +304,9 @@ function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
           <p className="text-sm leading-6 whitespace-pre-wrap">{instructions}</p>
         </Panel>
       )}
-      {step.state === "awaiting_user" ? (
+      {step.state === "running" && step.result.progress != null ? (
+        <OcrProgressView progress={step.result.progress as Record<string, unknown>} />
+      ) : step.state === "awaiting_user" ? (
         <OcrGateBody key={step.id} step={step} />
       ) : (
         resolution && (
@@ -217,6 +334,11 @@ function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
           </>
         )
       )}
+      {step.state !== "running" &&
+        Array.isArray(step.result.batches) &&
+        step.result.batches.length > 0 && (
+          <OcrBatches batches={step.result.batches as OcrBatch[]} />
+        )}
     </div>
   );
 }
@@ -647,13 +769,7 @@ function StepFooter({
     step.kind !== "ocr" && step.transcript.length > 0 ? (
       <StepTimingSummary items={step.transcript} />
     ) : step.kind === "ocr" && step.result.duration_s != null ? (
-      <span className="text-xs text-muted-foreground/70">
-        {String(step.result.pages ?? "?")} page
-        {step.result.pages !== 1 ? "s" : ""}
-        {step.result.dpi != null && ` · ${String(step.result.dpi)} DPI`}
-        {" · "}
-        {String(step.result.duration_s)}s
-      </span>
+      <OcrTimingSummary result={step.result} />
     ) : null;
   const showControls =
     !archived &&

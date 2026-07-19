@@ -14,6 +14,13 @@ RUN npm run build
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 WORKDIR /app/backend
 
+# tesseract (with osd traineddata): orientation detection so flipped
+# scans are rotated upright before the vision model sees them. The app
+# degrades gracefully without it — but the image ships it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-osd \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
 # Dependency layer (cached until pyproject/lock change).

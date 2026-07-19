@@ -203,15 +203,13 @@ class JobOut(BaseModel):
     total: int
     done: int
     failed: int
+    # Derived at read time (not a column): user-stopped sessions.
+    stopped: int = 0
     error: str | None
     created_at: UtcDateTime
     updated_at: UtcDateTime
 
     model_config = {"from_attributes": True}
-
-
-class JobDetailOut(JobOut):
-    sessions: list[SessionOut] = []
 
 
 class JobAttentionOut(BaseModel):

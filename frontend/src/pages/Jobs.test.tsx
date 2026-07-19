@@ -24,6 +24,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
     total: 3,
     done: 1,
     failed: 0,
+    stopped: 0,
     error: null,
     created_at: "2026-07-17T10:00:00Z",
     updated_at: "2026-07-17T10:01:00Z",

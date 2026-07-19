@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-export function MultiFilter({
+export function MultiFilter<Id extends number | string = number>({
   label,
   plural,
   options,
@@ -24,9 +24,9 @@ export function MultiFilter({
   label: string;
   /** Plural noun for counts; defaults to `${label}s`. */
   plural?: string;
-  options: { id: number; name: string }[] | undefined;
-  values: number[];
-  onChange: (v: number[]) => void;
+  options: { id: Id; name: string }[] | undefined;
+  values: Id[];
+  onChange: (v: Id[]) => void;
   className?: string;
 }) {
   const chosen = new Set(values);

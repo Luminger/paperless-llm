@@ -712,8 +712,11 @@ async def test_job_lifecycle(client, db):
     steps = (await db.scalars(select(Step))).all()
     assert len(steps) == 2 and all(st.lane.value == "batch" for st in steps)
 
+    # Sessions come from THE session list, filtered by job.
     detail = (await client.get(f"/api/jobs/{job['id']}")).json()
-    assert len(detail["sessions"]) == 2
+    assert detail["total"] == 2
+    listed = (await client.get(f"/api/sessions?job_id={job['id']}")).json()
+    assert listed["count"] == 2
 
     r = await client.post(f"/api/jobs/{job['id']}/cancel")
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
@@ -721,6 +724,110 @@ async def test_job_lifecycle(client, db):
     assert all(st.state.value == "cancelled" for st in steps)
     # Cancelling again conflicts.
     assert (await client.post(f"/api/jobs/{job['id']}/cancel")).status_code == 409
+
+
+async def test_job_pause_resume_and_bulk_retry(client, db):
+    """Pause blocks claiming (job-row flip), resume reverts it; bulk
+    retry revives failed/cancelled sessions — all of them or a
+    multiselect subset."""
+    from app.db.models import (
+        AgentKind,
+        EntityType,
+        Job,
+        Session as DbSession,
+        Step,
+        StepKind,
+        StepState,
+    )
+
+    job = Job(kind="bulk_analyze", params={}, total=3)
+    db.add(job)
+    await db.flush()
+    sessions, steps = [], []
+    for i, state in enumerate(
+        (StepState.failed, StepState.cancelled, StepState.succeeded)
+    ):
+        s = DbSession(agent_kind=AgentKind.document, entity_type=EntityType.document,
+                      entity_id=100 + i, job_id=job.id)
+        db.add(s)
+        await db.flush()
+        st = Step(session_id=s.id, kind=StepKind.analysis, state=state)
+        db.add(st)
+        sessions.append(s)
+        steps.append(st)
+    await db.commit()
+    job_id = job.id
+    failed_sid, cancelled_sid, ok_sid = (s.id for s in sessions)
+    failed_step, cancelled_step, ok_step = (st.id for st in steps)
+
+    # pause -> paused (sticky in the live view); pausing twice is a no-op
+    assert (await client.post(f"/api/jobs/{job_id}/pause")).json()["status"] == "paused"
+    assert (await client.post(f"/api/jobs/{job_id}/pause")).json()["status"] == "paused"
+    # resume -> re-derived live status
+    r = await client.post(f"/api/jobs/{job_id}/resume")
+    assert r.status_code == 200 and r.json()["status"] != "paused"
+    # resuming a non-paused job conflicts
+    assert (await client.post(f"/api/jobs/{job_id}/resume")).status_code == 409
+
+    # bulk retry, narrowed to ONE session (the multiselect)
+    r = await client.post(
+        f"/api/jobs/{job_id}/retry", json={"session_ids": [failed_sid]}
+    )
+    assert r.status_code == 200 and r.json()["retried"] == 1
+    db.expire_all()
+    assert (await db.get(Step, failed_step)).state == StepState.pending
+    assert (await db.get(Step, cancelled_step)).state == StepState.cancelled
+
+    # bulk retry without a body: everything retryable (the cancelled one)
+    r = await client.post(f"/api/jobs/{job_id}/retry")
+    assert r.status_code == 200 and r.json()["retried"] == 1
+    db.expire_all()
+    assert (await db.get(Step, cancelled_step)).state == StepState.pending
+    # the succeeded session was never touched
+    assert (await db.get(Step, ok_step)).state == StepState.succeeded
+
+    assert (await client.post("/api/jobs/99999/pause")).status_code == 404
+    assert (await client.post("/api/jobs/99999/retry")).status_code == 404
+
+
+async def test_session_list_filters_by_job_and_status(client, db):
+    """THE session list serves the job page: job_id scope + status
+    multiselect; garbage status is a 422."""
+    from app.db.models import (
+        AgentKind,
+        EntityType,
+        Job,
+        Session as DbSession,
+        SessionStatus,
+    )
+
+    job = Job(kind="bulk_analyze", params={}, total=2)
+    db.add(job)
+    await db.flush()
+    for i, status in enumerate((SessionStatus.failed, SessionStatus.idle)):
+        db.add(DbSession(agent_kind=AgentKind.document,
+                         entity_type=EntityType.document,
+                         entity_id=200 + i, job_id=job.id, status=status))
+    db.add(DbSession(agent_kind=AgentKind.document,
+                     entity_type=EntityType.document, entity_id=300))
+    await db.commit()
+
+    body = (await client.get(f"/api/sessions?job_id={job.id}")).json()
+    assert body["count"] == 2
+
+    body = (
+        await client.get(f"/api/sessions?job_id={job.id}&status=failed")
+    ).json()
+    assert body["count"] == 1
+
+    body = (
+        await client.get(
+            f"/api/sessions?job_id={job.id}&status=failed&status=idle"
+        )
+    ).json()
+    assert body["count"] == 2
+
+    assert (await client.get("/api/sessions?status=bogus")).status_code == 422
 
 
 @respx.mock

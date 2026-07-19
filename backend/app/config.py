@@ -94,6 +94,11 @@ class OcrProfile(BaseModel):
     # 0 = no limit.
     max_pages: int = 0
     render_dpi: int = 150
+    # Detect upside-down / sideways scans (tesseract OSD, when the
+    # binary is present) and rotate the renders upright before the
+    # vision model sees them. Paperless's own rotate-pages pass misses
+    # some documents; a flipped page craters transcription quality.
+    auto_rotate: bool = True
     sampling: SamplingOverrides = SamplingOverrides(temperature=0.1)
     # OCR results are cached keyed on (doc, checksum, model, prompt_version).
     prompt_version: int = 1
@@ -359,6 +364,7 @@ EDITABLE_KEYS: tuple[str, ...] = (
     "llm.ocr.max_images_per_request",
     "llm.ocr.max_pages",
     "llm.ocr.render_dpi",
+    "llm.ocr.auto_rotate",
     "llm.ocr.max_concurrent",
     "llm.ocr.timeout_seconds",
     "llm.embeddings.base_url",

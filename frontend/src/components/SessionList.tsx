@@ -15,6 +15,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SelectAllHeader, useSelection } from "@/components/app/selection";
 import { api, type Session } from "../api";
 import { formatDateTime } from "../lib/format";
 import { errorMessage } from "../lib/errors";
@@ -22,7 +24,15 @@ import { keys } from "../lib/keys";
 import { Pager } from "@/components/app/Pager";
 import { FramedCard } from "@/components/app/Framed";
 
-function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
+function SessionRow({
+  s,
+  showEntity,
+  selection,
+}: {
+  s: Session;
+  showEntity: boolean;
+  selection?: ReturnType<typeof useSelection>;
+}) {
   const qc = useQueryClient();
   const archive = useMutation({
     mutationFn: () =>
@@ -37,6 +47,15 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
   return (
     <>
       <TableRow className={s.archived_at ? "opacity-60" : ""}>
+        {selection && (
+          <TableCell>
+            <Checkbox
+              aria-label={`select session ${s.id}`}
+              checked={selection.selected.has(s.id)}
+              onCheckedChange={() => selection.toggle(s.id)}
+            />
+          </TableCell>
+        )}
         <TableCell className="max-w-0">
           <Link
             className="truncate font-medium hover:text-primary hover:underline"
@@ -143,14 +162,26 @@ function SessionRow({ s, showEntity }: { s: Session; showEntity: boolean }) {
 export function SessionTable({
   sessions,
   showEntity,
+  selection,
 }: {
   sessions: Session[];
   showEntity: boolean;
+  /** Opt-in checkbox column (the job page's bulk actions). */
+  selection?: ReturnType<typeof useSelection>;
 }) {
   return (
     <Table>
       <TableHeader>
         <TableRow>
+          {selection && (
+            <TableHead className="w-10">
+              <SelectAllHeader
+                ids={sessions.map((s) => s.id)}
+                selection={selection}
+                label="select all sessions on this page"
+              />
+            </TableHead>
+          )}
           <TableHead>Session</TableHead>
           <TableHead className="w-40">Started</TableHead>
           <TableHead className="w-44">Attention</TableHead>
@@ -160,7 +191,7 @@ export function SessionTable({
       </TableHeader>
       <TableBody>
         {sessions.map((s) => (
-          <SessionRow key={s.id} s={s} showEntity={showEntity} />
+          <SessionRow key={s.id} s={s} showEntity={showEntity} selection={selection} />
         ))}
       </TableBody>
     </Table>

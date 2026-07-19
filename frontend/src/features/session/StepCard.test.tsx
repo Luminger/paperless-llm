@@ -171,3 +171,87 @@ describe("StepCard streaming", () => {
     expect(screen.getByText(/now the metadata/)).toBeInTheDocument();
   });
 });
+
+describe("OCR progress & statistics", () => {
+  const ocrStep = (over: object) =>
+    ({
+      ...step,
+      kind: "ocr",
+      ...over,
+    }) as unknown as Step;
+
+  it("a running OCR step shows batched pages, per-batch stats and the latest text", () => {
+    renderWithProviders(
+      <StepCard
+        step={ocrStep({
+          state: "running",
+          result: {
+            progress: {
+              total_pages: 6,
+              done_pages: 4,
+              total_batches: 3,
+              batches: [
+                { pages: "1-2", duration_s: 41.2, output_tokens: 900, tps: 22.1 },
+                {
+                  pages: "3-4",
+                  duration_s: 39.8,
+                  output_tokens: 850,
+                  tps: 21.4,
+                  rotated: [3],
+                  text: "## Seite 3\nHallo",
+                },
+              ],
+            },
+          },
+        })}
+        proposals={[]}
+        live={undefined}
+        onChanged={() => {}}
+        archived={false}
+      />,
+    );
+    expect(screen.getByText(/Transcribing — page 4 of 6/)).toBeInTheDocument();
+    expect(screen.getByText(/batch 2 of 3/)).toBeInTheDocument();
+    expect(screen.getByText("pages 1-2")).toBeInTheDocument();
+    expect(screen.getByText(/41.2s · 900 tok · 22.1 tok\/s/)).toBeInTheDocument();
+    // the flipped page is called out
+    expect(screen.getByText(/auto-rotated p\. 3/)).toBeInTheDocument();
+    // the latest batch's returned text is inspectable
+    expect(
+      screen.getByText(/latest returned text \(pages 3-4\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Hallo/)).toBeInTheDocument();
+  });
+
+  it("a finished OCR step keeps per-batch metrics and aggregates the footer", () => {
+    renderWithProviders(
+      <StepCard
+        step={ocrStep({
+          state: "succeeded",
+          finished_at: "2026-07-18T10:03:00Z",
+          result: {
+            pages: 4,
+            dpi: 150,
+            duration_s: 81.0,
+            resolution: "accepted",
+            text: "content",
+            previous_content: "old",
+            batches: [
+              { pages: "1-2", duration_s: 41.2, output_tokens: 900, tps: 22.1 },
+              { pages: "3-4", duration_s: 39.8, output_tokens: 850, tps: 20.1, rotated: [4] },
+            ],
+          },
+        })}
+        proposals={[]}
+        live={undefined}
+        onChanged={() => {}}
+        archived={false}
+      />,
+    );
+    expect(screen.getByText(/2 OCR calls — expand for per-batch metrics/)).toBeInTheDocument();
+    // footer aggregates: pages, DPI, time, tokens, avg tps, rotations
+    expect(
+      screen.getByText(/4 pages · 150 DPI · 81s · 1,750 tok · 21.1 tok\/s · 1 page auto-rotated/),
+    ).toBeInTheDocument();
+  });
+});

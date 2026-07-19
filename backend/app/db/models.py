@@ -65,6 +65,9 @@ class SessionPhase(enum.StrEnum):
     ocr_review = "ocr_review"  # gate: waiting for the user
     analyzing = "analyzing"
     done = "done"
+    # The user stopped the run (last live step cancelled). Not running,
+    # not failed, not done — Retry revives it.
+    stopped = "stopped"
 
 
 class ProposalStatus(enum.StrEnum):
@@ -87,6 +90,9 @@ class JobStatus(enum.StrEnum):
     completed = "completed"
     failed = "failed"
     cancelled = "cancelled"
+    # Stored, sticky (like cancelled): workers skip this job's steps
+    # until resumed. Running steps finish; nothing new is claimed.
+    paused = "paused"
 
 
 class QueueLane(enum.StrEnum):

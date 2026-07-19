@@ -29,7 +29,13 @@ from app.paperless import PaperlessClient
 from app.proposals.apply import apply_proposal
 from app.proposals.kinds import is_internal, visible
 from app.proposals.schemas import ReplaceContent, dump_payload
-from app.services.steps import AWAIT_USER, EXECUTORS, RESOLVERS, create_step
+from app.services.steps import (
+    AWAIT_USER,
+    EXECUTORS,
+    RESOLVERS,
+    create_step,
+    publish_step_changed,
+)
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +47,15 @@ async def _exec_ocr(
     # Resolve the EFFECTIVE dpi here so the record shows what actually
     # ran — the UI displays it even when it's just the default.
     dpi = step.input.get("dpi") or get_settings().llm.ocr.render_dpi
+
+    async def publish_progress(snapshot: dict) -> None:
+        # Live progress: batched pages, what came back, and the call
+        # metrics — persisted on the step and announced AFTER commit
+        # (events never announce uncommitted state).
+        step.result = {**(step.result or {}), "progress": snapshot}
+        await db.commit()
+        publish_step_changed([step])
+
     outcome = await run_ocr(
         paperless,
         db,
@@ -48,12 +63,18 @@ async def _exec_ocr(
         force=True,
         instructions=step.input.get("instructions"),
         dpi=dpi,
+        progress=publish_progress,
     )
     step.result = {
         "pages": len(outcome.pages),
+        "total_pages": outcome.total_pages,
         "duration_s": round(sum(t.get("duration_s", 0) for t in outcome.timings or []), 1),
         "dpi": dpi,
         "from_cache": outcome.from_cache,
+        # Per-batch call metrics (pages, rotations, duration, tokens,
+        # tps) — the same statistics agent turns show. Replaces the
+        # transient "progress" key.
+        "batches": outcome.timings or [],
         # Snapshots so a later superseded rendering can still show what
         # THIS run produced and the diff it presented at the time.
         "text": outcome.text,

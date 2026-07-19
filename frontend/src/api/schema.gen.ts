@@ -468,7 +468,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Job */
+        /**
+         * Get Job
+         * @description The job itself. Its sessions come from GET /api/sessions?job_id=
+         *     — the ONE paginated, filterable session list.
+         */
         get: operations["get_job_api_jobs__job_id__get"];
         put?: never;
         post?: never;
@@ -516,6 +520,71 @@ export interface paths {
          *     steps (their in-flight LLM calls are stopped).
          */
         post: operations["cancel_job_api_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Job
+         * @description Pause: workers stop claiming this job's steps. Running steps
+         *     finish and keep their results; nothing new starts until resume.
+         *     A single job-row flip — no step state is rewritten.
+         */
+        post: operations["pause_job_api_jobs__job_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Job
+         * @description Resume a paused job: its pending steps become claimable again.
+         */
+        post: operations["resume_job_api_jobs__job_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Job Sessions
+         * @description Bulk retry: run the latest failed/cancelled (or backoff-pending)
+         *     step of each targeted session again, now. Targets default to every
+         *     session of the job that has something to retry; explicit
+         *     session_ids narrow it (the list multiselect).
+         */
+        post: operations["retry_job_sessions_api_jobs__job_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -662,11 +731,12 @@ export interface paths {
         };
         /**
          * List Sessions
-         * @description Paginated session list, filterable by bound entity. Active and
-         *     archived sessions are separate lists (archived=true for the
-         *     latter); unfinished=true keeps only sessions that still need
-         *     something (gates, running/queued work, failures — or proposals
-         *     still waiting for review).
+         * @description Paginated session list, filterable by bound entity, job and
+         *     status (multi). Active and archived sessions are separate lists
+         *     (archived=true for the latter) — EXCEPT within a job, which always
+         *     shows all its sessions; unfinished=true keeps only sessions that
+         *     still need something (gates, running/queued work, failures — or
+         *     proposals still waiting for review).
          */
         get: operations["list_sessions_api_sessions_get"];
         put?: never;
@@ -1498,38 +1568,6 @@ export interface components {
              */
             untagged_only: boolean;
         };
-        /** JobDetailOut */
-        JobDetailOut: {
-            /** Created At */
-            created_at: string;
-            /** Done */
-            done: number;
-            /** Error */
-            error: string | null;
-            /** Failed */
-            failed: number;
-            /** Id */
-            id: number;
-            /** Kind */
-            kind: string;
-            /**
-             * Params
-             * @default {}
-             */
-            params: {
-                [key: string]: unknown;
-            };
-            /**
-             * Sessions
-             * @default []
-             */
-            sessions: components["schemas"]["SessionOut"][];
-            status: components["schemas"]["JobStatus"];
-            /** Total */
-            total: number;
-            /** Updated At */
-            updated_at: string;
-        };
         /** JobOut */
         JobOut: {
             /** Created At */
@@ -1552,6 +1590,11 @@ export interface components {
                 [key: string]: unknown;
             };
             status: components["schemas"]["JobStatus"];
+            /**
+             * Stopped
+             * @default 0
+             */
+            stopped: number;
             /** Total */
             total: number;
             /** Updated At */
@@ -1568,11 +1611,21 @@ export interface components {
             /** Results */
             results: components["schemas"]["JobOut"][];
         };
+        /** JobRetryOut */
+        JobRetryOut: {
+            /** Retried */
+            retried: number;
+        };
+        /** JobRetryRequest */
+        JobRetryRequest: {
+            /** Session Ids */
+            session_ids?: number[] | null;
+        };
         /**
          * JobStatus
          * @enum {string}
          */
-        JobStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
+        JobStatus: "queued" | "running" | "completed" | "failed" | "cancelled" | "paused";
         /** LoginRequest */
         LoginRequest: {
             /** Password */
@@ -2020,7 +2073,7 @@ export interface components {
          *     content.
          * @enum {string}
          */
-        SessionPhase: "queued" | "ocr_running" | "ocr_review" | "analyzing" | "done";
+        SessionPhase: "queued" | "ocr_running" | "ocr_review" | "analyzing" | "done" | "stopped";
         /** SessionRename */
         SessionRename: {
             /** Title */
@@ -2935,7 +2988,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobDetailOut"];
+                    "application/json": components["schemas"]["JobOut"];
                 };
             };
             /** @description Validation Error */
@@ -3000,6 +3053,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_job_api_jobs__job_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_job_api_jobs__job_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_job_sessions_api_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["JobRetryRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRetryOut"];
                 };
             };
             /** @description Validation Error */
@@ -3286,6 +3436,8 @@ export interface operations {
                 entity_id?: number | null;
                 archived?: boolean;
                 unfinished?: boolean;
+                job_id?: number | null;
+                status?: string[] | null;
                 page?: number;
                 page_size?: number;
             };

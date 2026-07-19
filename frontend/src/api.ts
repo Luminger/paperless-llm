@@ -22,7 +22,7 @@ export type TranscriptItem = S["TranscriptItem"];
 export type CallTiming = S["CallTiming"];
 export type AttemptRecord = S["AttemptRecord"];
 export type Job = S["JobOut"];
-export type JobDetail = S["JobDetailOut"];
+export type JobDetail = S["JobOut"];
 // Request body: every field has a server-side default.
 export type JobCreate = Partial<S["JobCreate"]>;
 export type JobPage = S["JobPage"];
@@ -55,6 +55,8 @@ export interface SessionFilter {
   entity_id?: number;
   archived?: boolean;
   unfinished?: boolean;
+  job_id?: number;
+  status?: string[];
   page?: number;
   page_size?: number;
 }
@@ -139,7 +141,10 @@ export const api = {
   listSessions: (filter: SessionFilter = {}) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) {
-      if (v !== undefined) params.set(k, String(v));
+      if (v === undefined) continue;
+      // Multi filters repeat the key (?status=a&status=b).
+      if (Array.isArray(v)) for (const item of v) params.append(k, String(item));
+      else params.set(k, String(v));
     }
     const qs = params.toString();
     return request<SessionPage>(`/api/sessions${qs ? `?${qs}` : ""}`);
@@ -191,6 +196,15 @@ export const api = {
   getJob: (id: number) => request<JobDetail>(`/api/jobs/${id}`),
   createJob: (body: JobCreate) =>
     request<Job>("/api/jobs", { method: "POST", body: JSON.stringify(body) }),
+  pauseJob: (id: number) =>
+    request<Job>(`/api/jobs/${id}/pause`, { method: "POST" }),
+  resumeJob: (id: number) =>
+    request<Job>(`/api/jobs/${id}/resume`, { method: "POST" }),
+  retryJob: (id: number, sessionIds?: number[]) =>
+    request<{ retried: number }>(`/api/jobs/${id}/retry`, {
+      method: "POST",
+      body: JSON.stringify({ session_ids: sessionIds ?? null }),
+    }),
   cancelJob: (id: number) =>
     request<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   getStats: () => request<Stats>("/api/stats"),

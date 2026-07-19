@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,19 +58,38 @@ async def list_sessions(
     entity_id: int | None = None,
     archived: bool = False,
     unfinished: bool = False,
+    job_id: int | None = None,
+    status: Annotated[list[str] | None, Query()] = None,
     page: int = 1,
     page_size: int = 20,
     db: AsyncSession = Depends(get_session),
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> SessionPage:
-    """Paginated session list, filterable by bound entity. Active and
-    archived sessions are separate lists (archived=true for the
-    latter); unfinished=true keeps only sessions that still need
-    something (gates, running/queued work, failures — or proposals
-    still waiting for review)."""
-    where = [
-        Session.archived_at.is_not(None) if archived else Session.archived_at.is_(None)
-    ]
+    """Paginated session list, filterable by bound entity, job and
+    status (multi). Active and archived sessions are separate lists
+    (archived=true for the latter) — EXCEPT within a job, which always
+    shows all its sessions; unfinished=true keeps only sessions that
+    still need something (gates, running/queued work, failures — or
+    proposals still waiting for review)."""
+    where = (
+        # A job's page must account for every session of the job —
+        # archiving one must not make the list lie about the total.
+        [Session.job_id == job_id]
+        if job_id is not None
+        else [
+            Session.archived_at.is_not(None)
+            if archived
+            else Session.archived_at.is_(None)
+        ]
+    )
+    if status:
+        try:
+            wanted = [SessionStatus(v) for v in status]
+        except ValueError as e:
+            raise HTTPException(
+                422, {"code": "invalid_status", "message": str(e)}
+            ) from e
+        where.append(Session.status.in_(wanted))
     if unfinished:
         # A finished analysis whose proposals await review still needs
         # the user — it stays on the dashboard until decided.

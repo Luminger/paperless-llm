@@ -33,6 +33,8 @@ from sqlalchemy.orm import aliased, defer
 
 from app.config import get_settings
 from app.db.models import (
+    Job,
+    JobStatus,
     Proposal,
     ProposalStatus,
     QueueLane,
@@ -95,7 +97,8 @@ def _derive(steps: list[Step]) -> tuple[SessionPhase | None, SessionStatus, str 
                 StepState.awaiting_user: SessionPhase.ocr_review,
                 StepState.failed: SessionPhase.ocr_running,
                 StepState.succeeded: SessionPhase.ocr_review,
-                StepState.cancelled: SessionPhase.ocr_running,
+                # A stopped run must not read as "OCR running" in lists.
+                StepState.cancelled: SessionPhase.stopped,
             }[p.state]
             # A succeeded+resolved gate means analysis follows/finished
             # — unless the step is marked OCR-only, where the pipeline
@@ -113,7 +116,7 @@ def _derive(steps: list[Step]) -> tuple[SessionPhase | None, SessionStatus, str 
                 StepState.awaiting_user: SessionPhase.analyzing,
                 StepState.failed: SessionPhase.analyzing,
                 StepState.succeeded: SessionPhase.done,
-                StepState.cancelled: SessionPhase.analyzing,
+                StepState.cancelled: SessionPhase.stopped,
             }[p.state]
     status = (
         SessionStatus.running
@@ -448,6 +451,18 @@ class StepWorkers:
                 # last-writer-wins). Correlated NOT EXISTS on a running
                 # sibling.
                 sibling = aliased(Step)
+                # Paused jobs: their steps stay pending but are never
+                # claimed — pause/resume is a single job-row flip, no
+                # step-state rewriting.
+                paused_job = (
+                    select(Job.id)
+                    .join(Session, Session.job_id == Job.id)
+                    .where(
+                        Session.id == Step.session_id,
+                        Job.status == JobStatus.paused,
+                    )
+                    .exists()
+                )
                 step_id = await db.scalar(
                     select(Step.id)
                     .where(
@@ -460,6 +475,7 @@ class StepWorkers:
                             sibling.state == StepState.running,
                         )
                         .exists(),
+                        ~paused_job,
                     )
                     .order_by(Step.id)
                     .limit(1)

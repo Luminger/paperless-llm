@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import defer
-
 from app.api.deps import get_paperless
-from app.api.enrich import apply_entity_names, proposal_counts
 from app.api.pagination import count_of, paginate
 from app.api.schemas import (
     CorpusOut,
     JobAttentionOut,
     JobCreate,
-    JobDetailOut,
     JobOut,
     JobPage,
-    SessionOut,
     StatsOut,
 )
 from app.db.models import (
@@ -169,7 +165,7 @@ async def list_jobs(
         count=win.count,
         page=win.page,
         page_size=win.page_size,
-        results=[apply_live(j, live.get(j.id, (0, 0, 0))) for j in jobs],
+        results=[apply_live(j, live.get(j.id, (0, 0, 0, 0))) for j in jobs],
     )
 
 
@@ -177,33 +173,120 @@ async def list_jobs(
 async def get_job(
     job_id: int,
     db: AsyncSession = Depends(get_session),
-    paperless: PaperlessClient = Depends(get_paperless),
-) -> JobDetailOut:
+) -> JobOut:
+    """The job itself. Its sessions come from GET /api/sessions?job_id=
+    — the ONE paginated, filterable session list."""
     job = await db.get(Job, job_id)
     if job is None:
         raise HTTPException(404, "job not found")
-    out = JobDetailOut.model_validate(job)
-    apply_live(out, (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0)))
-    sessions = (
-        await db.scalars(
-            select(Session)
-            .options(defer(Session.message_history))
-            .where(Session.job_id == job_id)
-            .order_by(Session.id)
+    out = JobOut.model_validate(job)
+    return apply_live(out, (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0, 0)))
+
+
+@router.post("/jobs/{job_id}/pause")
+async def pause_job(job_id: int, db: AsyncSession = Depends(get_session)) -> JobOut:
+    """Pause: workers stop claiming this job's steps. Running steps
+    finish and keep their results; nothing new starts until resume.
+    A single job-row flip — no step state is rewritten."""
+    job = await db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    live_out = apply_live(
+        JobOut.model_validate(job),
+        (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0, 0)),
+    )
+    if job.status == JobStatus.paused:
+        return live_out
+    if live_out.status in (JobStatus.completed, JobStatus.cancelled):
+        raise HTTPException(409, f"job is already {live_out.status}")
+    from app.services.audit import record
+
+    job.status = JobStatus.paused
+    await record(db, "job", "paused", job_id=job.id)
+    await db.commit()
+    return apply_live(
+        JobOut.model_validate(job),
+        (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0, 0)),
+    )
+
+
+@router.post("/jobs/{job_id}/resume")
+async def resume_job(job_id: int, db: AsyncSession = Depends(get_session)) -> JobOut:
+    """Resume a paused job: its pending steps become claimable again."""
+    job = await db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    if job.status != JobStatus.paused:
+        raise HTTPException(409, "job is not paused")
+    from app.db.models import QueueLane
+    from app.services.audit import record
+    from app.services.steps import workers
+
+    job.status = JobStatus.queued  # derived status recomputes at read
+    await record(db, "job", "resumed", job_id=job.id)
+    await db.commit()
+    for lane in QueueLane:
+        workers.wake(lane)
+    return apply_live(
+        JobOut.model_validate(job),
+        (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0, 0)),
+    )
+
+
+class JobRetryRequest(BaseModel):
+    # None = every failed/cancelled/backoff session of the job.
+    session_ids: list[int] | None = None
+
+
+class JobRetryOut(BaseModel):
+    retried: int
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_job_sessions(
+    job_id: int,
+    body: JobRetryRequest | None = None,
+    db: AsyncSession = Depends(get_session),
+) -> JobRetryOut:
+    """Bulk retry: run the latest failed/cancelled (or backoff-pending)
+    step of each targeted session again, now. Targets default to every
+    session of the job that has something to retry; explicit
+    session_ids narrow it (the list multiselect)."""
+    if await db.get(Job, job_id) is None:
+        raise HTTPException(404, "job not found")
+    from app.services.steps import StepActionError
+    from app.services.steps import retry_step as engine_retry
+
+    wanted = (body.session_ids if body else None) or None
+    q = (
+        select(Step)
+        .join(Session, Session.id == Step.session_id)
+        .where(Session.job_id == job_id, Step.state != StepState.superseded)
+        .order_by(Step.session_id, Step.id)
+    )
+    if wanted:
+        q = q.where(Step.session_id.in_(wanted))
+    last_by_session: dict[int, Step] = {}
+    for step in (await db.scalars(q)).all():
+        last_by_session[step.session_id] = step  # ordered by id: last wins
+    retried = 0
+    for step in last_by_session.values():
+        eligible = step.state in (StepState.failed, StepState.cancelled) or (
+            step.state == StepState.pending and step.scheduled_at is not None
         )
-    ).all()
-    counts = await proposal_counts(db, [s.id for s in sessions])
-    out.sessions = []
-    for s in sessions:
-        item = SessionOut.model_validate(s)
-        (
-            item.proposal_count,
-            item.pending_proposal_count,
-            item.applied_proposal_count,
-        ) = counts.get(s.id, (0, 0, 0))
-        out.sessions.append(item)
-    await apply_entity_names(paperless, out.sessions)
-    return out
+        if not eligible:
+            continue
+        try:
+            await engine_retry(db, step)
+            retried += 1
+        except StepActionError:  # raced into an ineligible state — skip
+            continue
+    from app.services.audit import record
+
+    await record(db, "job", "bulk_retry", job_id=job_id, retried=retried,
+                 requested=len(wanted) if wanted else None)
+    await db.commit()
+    return JobRetryOut(retried=retried)
 
 
 @router.post("/jobs/{job_id}/cancel")
@@ -217,7 +300,7 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
     # guard against cancelling an already-finished job with live state.
     live_out = apply_live(
         JobOut.model_validate(job),
-        (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0)),
+        (await live_job_counts(db, [job.id])).get(job.id, (0, 0, 0, 0)),
     )
     if live_out.status in (JobStatus.completed, JobStatus.cancelled):
         raise HTTPException(409, f"job is already {live_out.status}")

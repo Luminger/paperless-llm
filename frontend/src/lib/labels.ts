@@ -60,6 +60,8 @@ export const STATUS_TONE: Record<string, Tone> = {
   cancelled: "muted",
   failed: "destructive",
   idle: "success",
+  paused: "warning",
+  stopped: "muted",
 };
 
 /** Audit-log kind → tone. */
