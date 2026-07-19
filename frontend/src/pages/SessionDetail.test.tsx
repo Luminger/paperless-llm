@@ -751,9 +751,32 @@ describe("SessionDetail — pinned document panel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Document/ }));
     expect(await screen.findByLabelText("document panel")).toBeInTheDocument();
-    // both page images requested
+    // paginated: page 1 shown, page 2 only after flipping
     expect(await screen.findByAltText("page 1")).toBeInTheDocument();
-    expect(screen.getByAltText("page 2")).toBeInTheDocument();
+    expect(screen.queryByAltText("page 2")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText("next page"));
+    expect(await screen.findByAltText("page 2")).toBeInTheDocument();
+    expect(screen.getByLabelText("next page")).toBeDisabled(); // 2 of 2
+  });
+
+  it("zoom widens the page and switches to the sharp render", async () => {
+    mocked.getSession.mockResolvedValue(makeDetail());
+    renderWithProviders(<SessionDetail />, {
+      route: "/sessions/9?doc=pages",
+      path: "/sessions/:id",
+    });
+    const img = await screen.findByAltText("page 1");
+    expect(img.style.width).toBe("100%");
+    expect(img.getAttribute("src")).toContain("dpi=130");
+    const zoomIn = screen.getByLabelText("zoom in");
+    await userEvent.click(zoomIn); // 125%
+    await userEvent.click(zoomIn); // 150%
+    await userEvent.click(zoomIn); // 200% -> sharp render
+    const zoomed = await screen.findByAltText("page 1");
+    expect(zoomed.style.width).toBe("200%");
+    expect(zoomed.getAttribute("src")).toContain("dpi=220");
+    await userEvent.click(screen.getByLabelText("reset zoom"));
+    expect((await screen.findByAltText("page 1")).style.width).toBe("100%");
   });
 
   it("?doc=text deep-link opens the OCR text tab directly", async () => {

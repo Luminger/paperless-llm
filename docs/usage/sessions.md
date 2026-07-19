@@ -95,8 +95,10 @@ Going back in time is always allowed.
 
 Judging a proposal (or an OCR result) against nothing but field values
 is reviewing blind. The **Document** button in a session's header pins
-the document beside the timeline: **Pages** shows the rendered pages,
-**Text** the stored OCR content. The panel is a fixed dock on the
+the document beside the timeline: **Pages** shows one page at a time
+with pagination and zoom (up to 400%, switching to a sharper render
+past 150% — pan by scrolling while zoomed), **Text** the stored OCR
+content. The panel is a fixed dock on the
 right edge — the page scrolls, the document stays, and its content
 scrolls independently. Collapsing it leaves a slim tab on the edge
 that brings it back; closed it costs no width. Its state lives in the
