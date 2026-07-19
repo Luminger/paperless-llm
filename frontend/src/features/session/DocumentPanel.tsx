@@ -188,15 +188,16 @@ export function DocumentPanel({
       </div>
       {/* max-height on mobile keeps an opened panel from burying the
           timeline; each tab owns its scrolling (Pages pans both axes
-          while zoomed, Text scrolls vertically). */}
+          while zoomed, Text scrolls vertically). Both tabs STAY
+          MOUNTED and the inactive one is css-hidden: switching back
+          restores zoom, page AND pan/scroll positions exactly. */}
       <div className="max-h-[50vh] min-h-0 flex-1 lg:max-h-none">
-        {tab === "text" ? (
-          <div className="h-full overflow-y-auto">
-            <OcrText documentId={documentId} />
-          </div>
-        ) : (
+        <div className={tab === "pages" ? "h-full" : "hidden"}>
           <Pages documentId={documentId} />
-        )}
+        </div>
+        <div className={tab === "text" ? "h-full overflow-y-auto" : "hidden"}>
+          <OcrText documentId={documentId} />
+        </div>
       </div>
     </aside>
   );

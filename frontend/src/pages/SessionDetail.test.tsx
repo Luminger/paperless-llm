@@ -788,6 +788,24 @@ describe("SessionDetail — pinned document panel", () => {
     expect(await screen.findByText("OCR TEXT HERE")).toBeInTheDocument();
   });
 
+  it("zoom and page survive a round-trip through the Text tab", async () => {
+    mocked.getSession.mockResolvedValue(makeDetail());
+    renderWithProviders(<SessionDetail />, {
+      route: "/sessions/9?doc=pages",
+      path: "/sessions/:id",
+    });
+    await screen.findByAltText("page 1");
+    await userEvent.click(screen.getByLabelText("next page")); // 2/2
+    await userEvent.click(screen.getByLabelText("zoom in")); // 125%
+    await userEvent.click(screen.getByRole("tab", { name: "Text" }));
+    expect(await screen.findByText("OCR TEXT HERE")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Pages" }));
+    // still page 2 at 125% — the tab switch discarded nothing
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+    expect(screen.getByText("125%")).toBeInTheDocument();
+    expect(screen.getByAltText("page 2").style.width).toBe("125%");
+  });
+
   it("collapsing leaves the edge tab; the tab reopens the dock", async () => {
     mocked.getSession.mockResolvedValue(makeDetail());
     renderWithProviders(<SessionDetail />, {
