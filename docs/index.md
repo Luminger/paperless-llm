@@ -4,6 +4,11 @@
 archive tidy — without a single byte of your documents leaving your
 network.**
 
+![Reviewing an LLM metadata proposal side by side with the source document](assets/screenshots/document-session.png)
+
+*The agent proposes metadata one change at a time — you judge each
+proposal against the actual document, then apply, edit, or ignore it.*
+
 paperless-llm connects your paperless instance to a language model *you*
 host (vLLM, llama.cpp, LM Studio — anything OpenAI-compatible) and puts
 an agent to work on the boring parts of document management:
@@ -27,6 +32,14 @@ an agent to work on the boring parts of document management:
   dashboard tracks how much of the archive has been analyzed and
   always offers the next slice, while matching rules make each batch
   easier than the last.
+
+## Screenshots
+
+| Dashboard — what still needs you | OCR review gate — accept, fix, or keep |
+| :---: | :---: |
+| [![Dashboard](assets/screenshots/dashboard.png)](assets/screenshots/dashboard.png) | [![OCR review gate](assets/screenshots/ocr-session.png)](assets/screenshots/ocr-session.png) |
+| **Taxonomy — govern tags & matching rules** | **Bulk jobs — pause, resume, retry** |
+| [![Taxonomy tag list](assets/screenshots/taxonomy-tags.png)](assets/screenshots/taxonomy-tags.png) | [![Jobs](assets/screenshots/jobs.png)](assets/screenshots/jobs.png) |
 
 ## The two ideas that shape everything
 
