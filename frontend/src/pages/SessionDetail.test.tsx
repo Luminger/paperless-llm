@@ -765,6 +765,20 @@ describe("SessionDetail — pinned document panel", () => {
     expect(await screen.findByText("OCR TEXT HERE")).toBeInTheDocument();
   });
 
+  it("collapsing leaves the edge tab; the tab reopens the dock", async () => {
+    mocked.getSession.mockResolvedValue(makeDetail());
+    renderWithProviders(<SessionDetail />, {
+      route: "/sessions/9?doc=pages",
+      path: "/sessions/:id",
+    });
+    await screen.findByLabelText("document panel");
+    await userEvent.click(screen.getByLabelText("collapse document panel"));
+    expect(screen.queryByLabelText("document panel")).not.toBeInTheDocument();
+    // the slim edge tab remains — one click brings the evidence back
+    await userEvent.click(screen.getByLabelText("open document panel"));
+    expect(await screen.findByLabelText("document panel")).toBeInTheDocument();
+  });
+
   it("non-document sessions have no panel toggle", async () => {
     mocked.getSession.mockResolvedValue(
       makeDetail({ entity_type: "tag", entity_id: 3, agent_kind: "tag" }),

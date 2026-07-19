@@ -151,8 +151,11 @@ export default function App() {
   };
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-2.5">
+      {/* Sticky: the document dock (SessionDetail) anchors below it,
+          and navigation staying reachable on long timelines is a win
+          of its own. */}
+      <header className="sticky top-0 z-40 border-b bg-card">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4">
           <NavLink to="/" className="text-lg font-semibold tracking-tight">
             paperless<span className="text-primary">-llm</span>
           </NavLink>

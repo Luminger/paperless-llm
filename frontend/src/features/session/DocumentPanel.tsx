@@ -7,7 +7,7 @@
  * (?doc=pages|text) so review deep-links arrive with it open. */
 
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { PanelRightClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tip } from "@/components/app/Tip";
@@ -72,7 +72,7 @@ export function DocumentPanel({
   return (
     <aside
       aria-label="document panel"
-      className="flex flex-col overflow-hidden rounded-lg border bg-card lg:sticky lg:top-4 lg:h-[calc(100vh-6rem)]"
+      className="flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm lg:h-full"
     >
       <div className="flex items-center gap-2 border-b bg-muted/40 px-2 py-1.5">
         <Tabs value={tab} onValueChange={(v) => onTab(v as DocPanelTab)}>
@@ -86,15 +86,15 @@ export function DocumentPanel({
           </TabsList>
         </Tabs>
         <span className="flex-1" />
-        <Tip content="Close the document panel">
+        <Tip content="Collapse the panel (the edge tab brings it back)">
           <Button
             variant="ghost"
             size="icon"
             className="size-7"
-            aria-label="close document panel"
+            aria-label="collapse document panel"
             onClick={onClose}
           >
-            <X className="size-4" />
+            <PanelRightClose className="size-4" />
           </Button>
         </Tip>
       </div>

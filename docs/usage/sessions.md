@@ -96,9 +96,11 @@ Going back in time is always allowed.
 Judging a proposal (or an OCR result) against nothing but field values
 is reviewing blind. The **Document** button in a session's header pins
 the document beside the timeline: **Pages** shows the rendered pages,
-**Text** the stored OCR content. The panel is sticky — the timeline
-scrolls, the document stays — and takes no space while closed. Its
-state lives in the URL (`?doc=pages`), so a review link can arrive with
-the evidence already open. The OCR gate offers the same panel inline
+**Text** the stored OCR content. The panel is a fixed dock on the
+right edge — the page scrolls, the document stays, and its content
+scrolls independently. Collapsing it leaves a slim tab on the edge
+that brings it back; closed it costs no width. Its state lives in the
+URL (`?doc=pages`), so a review link can arrive with the evidence
+already open. The OCR gate offers the same panel inline
 ("Compare against the pages") — the one review where seeing the
 document is non-negotiable.

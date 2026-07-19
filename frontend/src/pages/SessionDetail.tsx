@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Tip } from "@/components/app/Tip";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, ArrowRight, Check, PanelRight, Pencil, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, Check, FileText, PanelRight, Pencil, X } from "lucide-react";
 import { ConnectionToast } from "@/components/app/ConnectionToast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -262,10 +262,16 @@ export default function SessionDetail() {
   const panelOpen = isDocSession && (docTab === "pages" || docTab === "text");
 
   return (
-    // With the panel open the container breaks out of App's max-w-6xl
-    // (negative-margin breakout) — the split needs the room; closed,
-    // the timeline keeps its comfortable measure.
-    <div className={panelOpen ? "xl:mx-[calc((72rem-100vw)/2+2rem)]" : ""}>
+    // With the dock open the container breaks out of App's max-w-6xl
+    // (negative-margin breakout) and reserves the dock's width on the
+    // right; closed, the timeline keeps its comfortable measure.
+    <div
+      className={
+        panelOpen
+          ? "xl:mx-[calc((72rem-100vw)/2+2rem)] lg:pr-[calc(min(42rem,45vw)+1.25rem)]"
+          : ""
+      }
+    >
       {s.entity_type != null && s.entity_id != null && (
         <nav className="mb-2 text-sm">
           <Link
@@ -308,40 +314,47 @@ export default function SessionDetail() {
       )}
       {archived && <ArchivedBanner />}
 
-      <div
-        className={
-          panelOpen
-            ? "lg:grid lg:grid-cols-[minmax(0,1fr)_clamp(24rem,42vw,44rem)] lg:items-start lg:gap-5"
-            : undefined
-        }
-      >
-        {/* On narrow screens the panel stacks ABOVE the timeline — the
-            user just asked for it; on lg it pins to the right. */}
-        {panelOpen && (
-          <div className="mb-4 lg:order-2 lg:mb-0">
-            <DocumentPanel
-              documentId={s.entity_id!}
-              tab={docTab === "text" ? "text" : "pages"}
-              onTab={(t) => setDocTab(t)}
-              onClose={() => setDocTab("")}
-            />
-          </div>
-        )}
-        <div className="min-w-0 space-y-3 lg:order-1">
-          {s.steps.map((step) => (
-            <StepCard
-              key={step.id}
-              step={step}
-              proposals={s.proposals}
-              live={live[step.id]}
-              onChanged={onChanged}
-              archived={archived}
-              turn={turnByStep.get(step.id)}
-            />
-          ))}
-          {/* keyed by turn (AUDIT FS-7): a finished turn always yields a fresh box */}
-          {canContinue && <NextTurnBox key={turnNo + 1} sessionId={s.id} turn={turnNo + 1} />}
+      {/* The document dock: FIXED to the viewport's right edge below
+          the sticky header — the page scroll never moves it, its
+          content scrolls on its own. On narrow screens it stacks above
+          the timeline instead (a fixed dock would bury the content). */}
+      {panelOpen && (
+        <div className="mb-4 lg:fixed lg:top-[4.25rem] lg:right-3 lg:bottom-3 lg:z-30 lg:mb-0 lg:w-[min(42rem,45vw)]">
+          <DocumentPanel
+            documentId={s.entity_id!}
+            tab={docTab === "text" ? "text" : "pages"}
+            onTab={(t) => setDocTab(t)}
+            onClose={() => setDocTab("")}
+          />
         </div>
+      )}
+      {/* Collapsed: a slim tab on the viewport edge brings it back —
+          the evidence stays one click away without costing width. */}
+      {isDocSession && !panelOpen && (
+        <Tip content="Open the document panel" side="left">
+          <button
+            aria-label="open document panel"
+            onClick={() => setDocTab("pages")}
+            className="fixed top-1/2 right-0 z-30 hidden -translate-y-1/2 rounded-l-lg border border-r-0 bg-card py-3 pr-1 pl-1.5 text-muted-foreground shadow-sm transition-colors hover:text-foreground lg:block"
+          >
+            <FileText className="size-4" />
+          </button>
+        </Tip>
+      )}
+      <div className="min-w-0 space-y-3">
+        {s.steps.map((step) => (
+          <StepCard
+            key={step.id}
+            step={step}
+            proposals={s.proposals}
+            live={live[step.id]}
+            onChanged={onChanged}
+            archived={archived}
+            turn={turnByStep.get(step.id)}
+          />
+        ))}
+        {/* keyed by turn (AUDIT FS-7): a finished turn always yields a fresh box */}
+        {canContinue && <NextTurnBox key={turnNo + 1} sessionId={s.id} turn={turnNo + 1} />}
       </div>
 
       {/* Connection state lives OUT of the content flow (the central
