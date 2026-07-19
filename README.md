@@ -29,8 +29,9 @@ Open `http://your-host:8100`.
 
 ## Documentation
 
-Full documentation (setup, configuration, usage, architecture) lives in
-[`docs/`](docs/index.md) and is published via GitHub Pages.
+Full documentation (setup, configuration, usage, architecture) is
+published at **<https://luminger.github.io/paperless-llm/>** and sourced
+from [`docs/`](docs/index.md).
 
 ## Development
 

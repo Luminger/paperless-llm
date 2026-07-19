@@ -4,8 +4,8 @@ site_description: >-
   proposals, and taxonomy governance without a single byte leaving your
   network.
 # Set to your fork's Pages URL, e.g. https://OWNER.github.io/paperless-llm/
-site_url: ""
-repo_url: https://github.com/dhs/paperless-llm
+site_url: https://luminger.github.io/paperless-llm/
+repo_url: https://github.com/Luminger/paperless-llm
 repo_name: paperless-llm
 docs_dir: docs
 edit_uri: edit/main/docs/

@@ -18,7 +18,7 @@
 ## Run it
 
 ```bash
-git clone https://github.com/dhs/paperless-llm
+git clone https://github.com/Luminger/paperless-llm.git
 cd paperless-llm/deploy/production
 cp .env.example .env
 $EDITOR .env       # paperless URL + token, LLM endpoint + model
