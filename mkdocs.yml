@@ -58,5 +58,6 @@ nav:
       - Settings & prompts: usage/settings.md
   - Reference:
       - Architecture: architecture.md
+      - The state machine: state-machine.md
       - Privacy model: privacy.md
       - Development: development.md

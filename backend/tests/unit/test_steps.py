@@ -239,7 +239,9 @@ async def test_recover_retries_interrupted_running_steps(file_db):
         await db.commit()
 
     stats = await recover()
-    assert stats == {"retried": 1, "failed": 1, "drafts_swept": 0}
+    assert stats == {
+        "retried": 1, "failed": 1, "drafts_swept": 0, "applies_released": 0,
+    }
 
     async with session_scope() as db:
         states = sorted(s.state.value for s in (await db.scalars(select(Step))).all())

@@ -57,6 +57,41 @@ AWAIT_USER = "awaiting_user"
 
 TERMINAL = (StepState.succeeded, StepState.failed, StepState.superseded, StepState.cancelled)
 
+# The normative step lifecycle — docs/state-machine.md is the prose
+# version. Every state write in this module asserts its (from, to)
+# pair against this relation; atomic SQL claims encode the from-state
+# in their WHERE clause and assert the pair statically.
+STEP_TRANSITIONS: frozenset[tuple[StepState, StepState]] = frozenset(
+    {
+        (StepState.pending, StepState.running),  # worker claim
+        (StepState.pending, StepState.cancelled),  # stop / job cancel
+        (StepState.pending, StepState.superseded),  # redo of an earlier step
+        (StepState.running, StepState.succeeded),
+        (StepState.running, StepState.awaiting_user),  # gate
+        (StepState.running, StepState.pending),  # auto-retry (budget left)
+        (StepState.running, StepState.failed),  # budget exhausted
+        (StepState.running, StepState.cancelled),  # in-flight user stop
+        (StepState.awaiting_user, StepState.running),  # resolve claim
+        (StepState.awaiting_user, StepState.superseded),  # redo
+        (StepState.failed, StepState.pending),  # manual retry
+        (StepState.failed, StepState.superseded),
+        (StepState.cancelled, StepState.pending),  # manual retry
+        (StepState.cancelled, StepState.superseded),
+        (StepState.succeeded, StepState.superseded),
+    }
+)
+
+
+def assert_transition(frm: StepState, to: StepState) -> None:
+    """Fail LOUDLY on an illegal step transition — a bug in the engine,
+    never a user error (user errors raise StepActionError before any
+    state is touched)."""
+    if (frm, to) not in STEP_TRANSITIONS:
+        raise RuntimeError(
+            f"illegal step transition {frm.value} -> {to.value} "
+            "(see docs/state-machine.md)"
+        )
+
 
 def _paperless_client() -> PaperlessClient:
     from app.paperless import make_client
@@ -198,8 +233,9 @@ async def retry_step(db: DbSession, step: Step) -> Step:
     """Run a failed (or backoff-scheduled) step again, now. Manual —
     resets the auto-retry budget, never limited."""
     if step.state == StepState.pending and step.scheduled_at is not None:
-        step.scheduled_at = None  # skip the backoff
+        step.scheduled_at = None  # skip the backoff (not a transition)
     elif step.state in (StepState.failed, StepState.cancelled):
+        assert_transition(step.state, StepState.pending)
         step.state = StepState.pending
         step.attempt_count = 0  # fresh auto budget after a manual retry
         step.scheduled_at = None
@@ -233,6 +269,8 @@ async def redo_step(
     applied ones are history and stay untouched."""
     if step.state not in (*TERMINAL, StepState.awaiting_user):
         raise StepActionError(f"step is {step.state.value}; wait for it to finish")
+    if step.state != StepState.superseded:
+        assert_transition(step.state, StepState.superseded)
     # AUDIT SV-M6 (redo half): claim the redo atomically — two concurrent
     # redos of the same step must not both create successors.
     claimed = await db.execute(
@@ -263,6 +301,8 @@ async def redo_step(
         if s.state in (StepState.succeeded, StepState.failed, StepState.awaiting_user)
     ]
     for s in to_supersede:
+        if s is not step:
+            assert_transition(s.state, StepState.superseded)
         s.state = StepState.superseded  # step itself already flipped above
     open_proposals = (
         await db.scalars(
@@ -311,6 +351,7 @@ async def resolve_step(
     its analysis is already queued."""
     if step.state != StepState.awaiting_user:
         raise StepActionError(f"step is {step.state.value}, not awaiting user input")
+    assert_transition(StepState.awaiting_user, StepState.running)  # the claim below
     _ensure_registered()
     resolver = RESOLVERS.get(step.kind)
     if resolver is None:
@@ -328,6 +369,7 @@ async def resolve_step(
     assert session is not None
     try:
         created = await resolver(db, paperless, session, step, body)
+        assert_transition(StepState.running, StepState.succeeded)
         step.state = StepState.succeeded
         step.finished_at = utcnow()
         await sync_session(db, session)
@@ -485,6 +527,7 @@ class StepWorkers:
                 # Atomic claim: the UPDATE only wins if the step is STILL
                 # pending — a second worker (or process) gets rowcount 0.
                 # The asyncio lock above is an optimization, not the guard.
+                assert_transition(StepState.pending, StepState.running)
                 claimed = await db.execute(
                     sa_update(Step)
                     .where(Step.id == step_id, Step.state == StepState.pending)
@@ -603,9 +646,11 @@ class StepWorkers:
                     "error": "stopped by user" if cancelled else error,
                 },
             ]
+            open_states = [ProposalStatus.draft, ProposalStatus.pending]
             if cancelled:
                 # User stop: terminal but fully recoverable — no auto
                 # retry (the user just said stop), Retry revives it.
+                assert_transition(StepState.running, StepState.cancelled)
                 step.state = StepState.cancelled
                 step.error = "stopped by user"
                 step.scheduled_at = None
@@ -615,10 +660,27 @@ class StepWorkers:
                     step_id=step.id, step_kind=str(step.kind.value),
                     session_id=step.session_id, attempt=attempt_no,
                 )
+                # Invariant 5 (docs/state-machine.md): a non-success
+                # attempt leaves no open unapplied proposals behind —
+                # the next attempt emits fresh ones; stale drafts/
+                # pendings from THIS attempt must not linger.
+                await db.execute(
+                    sa_update(Proposal)
+                    .where(Proposal.step_id == step.id,
+                           Proposal.status.in_(open_states))
+                    .values(status=ProposalStatus.superseded)
+                )
             elif error is not None:
                 step.error = error
+                await db.execute(
+                    sa_update(Proposal)
+                    .where(Proposal.step_id == step.id,
+                           Proposal.status.in_(open_states))
+                    .values(status=ProposalStatus.superseded)
+                )
                 if attempt_no < step.max_attempts:
                     delay = get_settings().queue.retry_delay_seconds
+                    assert_transition(StepState.running, StepState.pending)
                     step.state = StepState.pending  # delayed auto-retry
                     step.scheduled_at = utcnow() + timedelta(seconds=delay)
                     await audit_record(
@@ -629,14 +691,17 @@ class StepWorkers:
                         error=error[:300],
                     )
                 else:
+                    assert_transition(StepState.running, StepState.failed)
                     step.state = StepState.failed
                     step.finished_at = utcnow()
             else:
                 step.error = None
                 step.scheduled_at = None
                 if verdict == AWAIT_USER:
+                    assert_transition(StepState.running, StepState.awaiting_user)
                     step.state = StepState.awaiting_user
                 else:
+                    assert_transition(StepState.running, StepState.succeeded)
                     step.state = StepState.succeeded
                     step.finished_at = utcnow()
             session = await db.get(
@@ -665,6 +730,7 @@ async def _cancel_steps(
     directly-flipped steps; the CALLER commits and then publishes them
     (events never announce uncommitted state)."""
     if pending_ids:
+        assert_transition(StepState.pending, StepState.cancelled)
         await db.execute(
             sa_update(Step)
             .where(Step.id.in_(pending_ids), Step.state == StepState.pending)
@@ -756,10 +822,12 @@ async def recover() -> dict[str, int]:
                 },
             ]
             if step.attempt_count < step.max_attempts:
+                assert_transition(StepState.running, StepState.pending)
                 step.state = StepState.pending
                 step.scheduled_at = None
                 retried += 1
             else:
+                assert_transition(StepState.running, StepState.failed)
                 step.state = StepState.failed
                 step.error = (step.error or "interrupted by app restart")
                 step.finished_at = utcnow()
@@ -785,11 +853,24 @@ async def recover() -> dict[str, int]:
             )
             .values(status=ProposalStatus.superseded)
         )
+        # Invariant 4 (docs/state-machine.md): `applying` belongs to an
+        # in-flight apply call, and none can exist at startup — a crash
+        # mid-apply would otherwise strand the proposal forever (no
+        # transition out of `applying` except by its owner). Releasing
+        # to `pending` is safe: re-applying is idempotent — if the
+        # write already reached paperless, the retry verdicts
+        # `no_change`.
+        released = await db.execute(
+            sa_update(Proposal)
+            .where(Proposal.status == ProposalStatus.applying)
+            .values(status=ProposalStatus.pending)
+        )
         await db.commit()
         return {
             "retried": retried,
             "failed": failed,
             "drafts_swept": swept.rowcount or 0,
+            "applies_released": released.rowcount or 0,
         }
 
 

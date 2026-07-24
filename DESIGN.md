@@ -354,6 +354,10 @@ transitions, attempt history, retry policy, and the session's derived
 phase/status live in the engine (single writer). Generic actions apply
 to every kind, implemented once: retry, redo (supersede + fresh step
 with amended input — an OCR re-run is a redo), resolve (awaiting_user).
+The full lifecycle — legal transitions, invariants, the no-dead-end
+guarantee, and crash-recovery sweeps — is normatively defined in
+`docs/state-machine.md` and enforced by `STEP_TRANSITIONS` in the
+engine (every state write asserts its transition).
 A distributed queue remains a contained swap if multi-node ever
 becomes real. Two lanes:
 
