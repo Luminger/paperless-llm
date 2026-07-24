@@ -87,8 +87,13 @@ never lock you out of the UI that would fix it.
 ### Webhook ingress
 
 Status (both sides: secret configured here, workflow present in
-paperless), the runtime-editable webhook settings (shared secret, this
-app's public URL, re-OCR default, apply policy), and one admin action:
+paperless — and whether that workflow's **content actually matches the
+current settings**: URL, secret header, payload shape, trigger.
+Existence is not sync — after changing the public URL or secret the
+workflow still posts the old values, and the status says so loudly
+until you re-run the setup), the runtime-editable webhook settings
+(shared secret, this app's public URL, re-OCR default, apply policy),
+and one admin action:
 
 - **Set up automatically** — creates the paperless workflow for you:
   trigger “Document Added” (all sources), webhook action posting

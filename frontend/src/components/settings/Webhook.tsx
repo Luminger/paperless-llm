@@ -76,13 +76,27 @@ export function WebhookCard() {
                 unknown — this paperless exposes no workflows API to us
               </span>
             ) : hook.workflow_found ? (
-              <span className="flex items-center gap-2">
-                <OnOff
-                  on={hook.workflow_enabled}
-                  labels={["workflow active", "workflow DISABLED"]}
-                />
-                <span className="text-muted-foreground">{hook.workflow_name}</span>
-              </span>
+              hook.workflow_synced === false ? (
+                // Existence is not sync: the workflow still posts OLD
+                // values (URL/secret/...) until it is healed.
+                <span className="text-amber-600 dark:text-amber-500">
+                  workflow OUT OF SYNC ({hook.workflow_drift.join(", ")}) —
+                  re-run “Set up automatically” to heal it
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <OnOff
+                    on={hook.workflow_enabled}
+                    labels={["workflow active", "workflow DISABLED"]}
+                  />
+                  <span className="text-muted-foreground">{hook.workflow_name}</span>
+                  {hook.workflow_synced === true && (
+                    <span className="text-xs text-muted-foreground/70">
+                      · settings in sync
+                    </span>
+                  )}
+                </span>
+              )
             ) : (
               <span className="text-destructive">
                 no paperless workflow posts to this app

@@ -1963,3 +1963,80 @@ async def test_webhook_setup_generates_secret_when_missing(client, db, monkeypat
         set_runtime_overrides({})
 
 
+
+
+def _live_workflow(url="http://pllm.self.test/api/webhooks/paperless", token="s3cret",
+                   params=None, as_json=True, trigger=2):
+    return {
+        "id": 11,
+        "name": "paperless-llm: analyze new documents",
+        "enabled": True,
+        "triggers": [{"type": trigger, "sources": [1, 2, 3]}],
+        "actions": [{
+            "type": 4,
+            "webhook": {
+                "url": url,
+                "use_params": True,
+                "as_json": as_json,
+                "params": params if params is not None else {"url": "{doc_url}"},
+                "headers": {"X-PLLM-Token": token},
+                "include_document": False,
+            },
+        }],
+    }
+
+
+@respx.mock
+async def test_webhook_status_reports_synced_workflow(client, _webhook_cfg):
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(200, json={"results": [_live_workflow()]})
+    )
+    body = (await client.get("/api/settings/webhook")).json()
+    assert body["workflow_found"] is True
+    assert body["workflow_synced"] is True
+    assert body["workflow_drift"] == []
+
+
+@respx.mock
+async def test_webhook_status_detects_stale_url_and_secret(client, _webhook_cfg):
+    """Existence is not sync: a workflow posting the OLD url/secret must
+    show as drifted, not as 'workflow active'."""
+    stale = _live_workflow(
+        url="http://127.0.0.1:8100/api/webhooks/paperless", token="old-secret"
+    )
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(200, json={"results": [stale]})
+    )
+    body = (await client.get("/api/settings/webhook")).json()
+    assert body["workflow_found"] is True
+    assert body["workflow_synced"] is False
+    assert body["workflow_drift"] == ["url", "secret"]
+
+
+@respx.mock
+async def test_webhook_status_detects_payload_and_trigger_drift(client, _webhook_cfg):
+    odd = _live_workflow(params={"id": "{doc_pk}"}, trigger=3)
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(200, json={"results": [odd]})
+    )
+    body = (await client.get("/api/settings/webhook")).json()
+    assert body["workflow_synced"] is False
+    assert body["workflow_drift"] == ["payload", "trigger"]
+
+
+@respx.mock
+async def test_webhook_status_sync_unknown_without_config(client, monkeypatch):
+    """No public_url/secret app-side -> sync is not judgeable (None),
+    not a false 'in sync'."""
+    from app.config import get_settings
+
+    cfg = get_settings().webhook
+    monkeypatch.setattr(cfg, "public_url", "")
+    monkeypatch.setattr(cfg, "secret", "")
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(200, json={"results": [_live_workflow()]})
+    )
+    body = (await client.get("/api/settings/webhook")).json()
+    assert body["workflow_found"] is True
+    assert body["workflow_synced"] is None
+    assert body["workflow_drift"] == []

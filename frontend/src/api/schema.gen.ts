@@ -2409,6 +2409,11 @@ export interface components {
             /** Secret Configured */
             secret_configured: boolean;
             /**
+             * Workflow Drift
+             * @default []
+             */
+            workflow_drift: string[];
+            /**
              * Workflow Enabled
              * @default true
              */
@@ -2420,6 +2425,8 @@ export interface components {
              * @default
              */
             workflow_name: string;
+            /** Workflow Synced */
+            workflow_synced?: boolean | null;
             /** Workflows Url */
             workflows_url: string;
         };

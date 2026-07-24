@@ -161,6 +161,13 @@ class WebhookStatusOut(BaseModel):
     workflow_found: bool | None = None
     workflow_name: str = ""
     workflow_enabled: bool = True
+    # Whether the workflow's CONTENT matches the current settings (URL,
+    # secret header, payload shape, trigger) — a workflow can exist and
+    # still post old values somewhere else. None = not judgeable
+    # (public_url/secret unset, or no workflow).
+    workflow_synced: bool | None = None
+    # What exactly drifted, for the UI: "url", "secret", "payload", "trigger".
+    workflow_drift: list[str] = []
     # Where the super administrator manages workflows in paperless.
     workflows_url: str
 
@@ -178,6 +185,35 @@ def _find_webhook_workflow(flows: list[dict]) -> dict | None:
         if _WEBHOOK_PATH in _json.dumps(flow.get("actions", [])):
             return flow
     return None
+
+
+def _workflow_drift(flow: dict, public_url: str, secret: str) -> list[str]:
+    """Compare the workflow's ACTUAL content against what the one-click
+    setup would write today. Existence is not sync: after a public_url
+    or secret change the workflow still posts the OLD values until it
+    is healed."""
+    hook: dict | None = None
+    for action in flow.get("actions") or []:
+        wh = action.get("webhook") or {}
+        if _WEBHOOK_PATH in str(wh.get("url", "")):
+            hook = wh
+            break
+    if hook is None:
+        # Matched only via the serialized dump — a shape this code
+        # doesn't know. Treat as drift so the heal path runs.
+        return ["unreadable"]
+    drift: list[str] = []
+    if hook.get("url") != f"{public_url.rstrip('/')}{_WEBHOOK_PATH}":
+        drift.append("url")
+    if (hook.get("headers") or {}).get("X-PLLM-Token") != secret:
+        drift.append("secret")
+    if (hook.get("params") or {}).get("url") != "{doc_url}" or not hook.get("as_json"):
+        drift.append("payload")
+    if not any(
+        t.get("type") == 2 for t in flow.get("triggers") or []
+    ):
+        drift.append("trigger")
+    return drift
 
 
 @router.get("/settings/webhook")
@@ -200,6 +236,12 @@ async def webhook_status(
     if flow is not None:
         out.workflow_name = str(flow.get("name", ""))
         out.workflow_enabled = bool(flow.get("enabled", True))
+        # Only judge sync when the expected values exist app-side.
+        if s.webhook.public_url and s.webhook.secret:
+            out.workflow_drift = _workflow_drift(
+                flow, s.webhook.public_url, s.webhook.secret
+            )
+            out.workflow_synced = not out.workflow_drift
     return out
 
 
