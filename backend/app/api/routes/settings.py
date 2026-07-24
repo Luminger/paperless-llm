@@ -154,6 +154,8 @@ class WebhookStatusOut(BaseModel):
     AND the paperless side (a workflow that actually posts to us)."""
 
     secret_configured: bool
+    # The URL paperless posts to (webhook.public_url); empty = not set.
+    public_url: str = ""
     # None = this paperless doesn't expose the workflows API (or the
     # app's credentials can't read it) — honestly unknown.
     workflow_found: bool | None = None
@@ -163,32 +165,152 @@ class WebhookStatusOut(BaseModel):
     workflows_url: str
 
 
+_WEBHOOK_PATH = "/api/webhooks/paperless"
+_WORKFLOW_NAME = "paperless-llm: analyze new documents"
+
+
+def _find_webhook_workflow(flows: list[dict]) -> dict | None:
+    """Version-tolerant: a webhook action carries our URL somewhere in
+    its serialized form."""
+    import json as _json
+
+    for flow in flows:
+        if _WEBHOOK_PATH in _json.dumps(flow.get("actions", [])):
+            return flow
+    return None
+
+
 @router.get("/settings/webhook")
 async def webhook_status(
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> WebhookStatusOut:
-    import json as _json
-
     s = get_settings()
     external = (s.paperless.external_url or s.paperless.base_url).rstrip("/")
     out = WebhookStatusOut(
         secret_configured=bool(s.webhook.secret),
+        public_url=s.webhook.public_url,
         workflows_url=f"{external}/workflows",
     )
     try:
         flows = await paperless.list_workflows()
     except Exception:  # noqa: BLE001 — older paperless / missing permission
         return out
-    out.workflow_found = False
-    for flow in flows:
-        # Version-tolerant: a webhook action carries our URL somewhere in
-        # its serialized form.
-        if "/api/webhooks/paperless" in _json.dumps(flow.get("actions", [])):
-            out.workflow_found = True
-            out.workflow_name = str(flow.get("name", ""))
-            out.workflow_enabled = bool(flow.get("enabled", True))
-            break
+    flow = _find_webhook_workflow(flows)
+    out.workflow_found = flow is not None
+    if flow is not None:
+        out.workflow_name = str(flow.get("name", ""))
+        out.workflow_enabled = bool(flow.get("enabled", True))
     return out
+
+
+
+class WebhookSetupOut(BaseModel):
+    ok: bool
+    created: bool = False  # False on ok=True means an existing workflow was updated
+    workflow_id: int | None = None
+    workflow_name: str = ""
+    secret_generated: bool = False
+    message: str
+
+
+@router.post("/settings/webhook/setup")
+async def webhook_setup(
+    db: AsyncSession = Depends(get_session),
+    paperless: PaperlessClient = Depends(get_paperless),
+    user: CurrentUser = Depends(require_admin),
+) -> WebhookSetupOut:
+    """One-click ingress: generate a secret when none exists (runtime
+    override), then create — or fix up — the paperless workflow that
+    posts new documents to this app. Requires webhook.public_url."""
+    import secrets as _secrets
+
+    cfg = get_settings().webhook
+    if not cfg.public_url:
+        return WebhookSetupOut(
+            ok=False,
+            message="webhook.public_url is not set — configure the URL this "
+            "app is reachable at from paperless first",
+        )
+    secret_generated = False
+    secret = cfg.secret
+    if not secret:
+        if "webhook.secret" in env_provided_keys():
+            return WebhookSetupOut(
+                ok=False,
+                message="webhook.secret is locked (empty) by the environment "
+                "— set PLLM_WEBHOOK__SECRET to a value first",
+            )
+        secret = _secrets.token_urlsafe(32)
+        merged = runtime_overrides()
+        merged["webhook.secret"] = secret
+        set_runtime_overrides(merged)
+        get_settings()  # revalidate with the new layer active
+        await save_overrides(db, merged)
+        secret_generated = True
+
+    url = f"{cfg.public_url.rstrip('/')}{_WEBHOOK_PATH}"
+    payload = {
+        "name": _WORKFLOW_NAME,
+        "order": 0,
+        "enabled": True,
+        # Trigger type 2 = Document Added (post-consumption — content and
+        # metadata exist); sources: consume folder, API upload, mail.
+        "triggers": [{"type": 2, "sources": [1, 2, 3]}],
+        "actions": [
+            {
+                "type": 4,  # webhook
+                "webhook": {
+                    "url": url,
+                    "use_params": True,
+                    "as_json": True,
+                    # {doc_url} is the only id-bearing placeholder the
+                    # webhook action offers; our ingress parses the id
+                    # out of it (_extract_document_ids).
+                    "params": {"url": "{doc_url}"},
+                    "headers": {"X-PLLM-Token": secret},
+                    "include_document": False,
+                },
+            }
+        ],
+    }
+    try:
+        flows = await paperless.list_workflows()
+        existing = _find_webhook_workflow(flows)
+        if existing is not None:
+            # Keep the user's name; replace triggers/actions wholesale so
+            # a stale URL or secret is healed.
+            payload["name"] = str(existing.get("name") or _WORKFLOW_NAME)
+            payload["order"] = existing.get("order", 0)
+            flow = await paperless.update_workflow(int(existing["id"]), payload)
+            created = False
+        else:
+            flow = await paperless.create_workflow(payload)
+            created = True
+    except Exception as e:  # noqa: BLE001 — surface, don't 500
+        return WebhookSetupOut(
+            ok=False,
+            secret_generated=secret_generated,
+            message=f"paperless rejected the workflow: {e} — does the app's "
+            "account have workflow permissions (superuser)?",
+        )
+    await record(
+        db, "webhook", "workflow_created" if created else "workflow_updated",
+        workflow_id=flow.get("id"), url=url, user=user.name,
+        secret_generated=secret_generated,
+    )
+    await db.commit()
+    return WebhookSetupOut(
+        ok=True,
+        created=created,
+        workflow_id=flow.get("id"),
+        workflow_name=str(payload["name"]),
+        secret_generated=secret_generated,
+        message=(
+            "workflow created — new documents now flow to this app"
+            if created
+            else "existing workflow updated (URL and secret refreshed)"
+        ),
+    )
 
 
 # ----- LLM diagnostics -------------------------------------------------

@@ -66,8 +66,14 @@ services:
       PLLM_LLM__EMBEDDINGS__MODEL: ${PLLM_EMBEDDINGS_MODEL:-}
       PLLM_LLM__RERANKER__BASE_URL: ${PLLM_RERANKER_BASE_URL:-}
       PLLM_LLM__RERANKER__MODEL: ${PLLM_RERANKER_MODEL:-}
-      # Webhook ingress shared secret (empty disables the endpoint).
+      # Webhook ingress shared secret (empty disables the endpoint;
+      # the one-click setup in Settings → Paperless generates one).
       PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
+      # URL THIS app is reachable at FROM THE PAPERLESS CONTAINER —
+      # what the workflow webhook posts to. The app is host-networked
+      # on 8100; host.containers.internal is podman's name for the
+      # host as seen from inside a container.
+      PLLM_WEBHOOK__PUBLIC_URL: ${PLLM_WEBHOOK_PUBLIC_URL:-http://host.containers.internal:8100}
       # URL users reach paperless under (deep links); LAN-reachable.
       PLLM_PAPERLESS__EXTERNAL_URL: ${PLLM_PAPERLESS_EXTERNAL_URL:-}
       PLLM_DATABASE_URL: sqlite+aiosqlite:////data/paperless_llm.sqlite3

@@ -275,6 +275,16 @@ class PaperlessClient:
         data = await self._get_json("/api/workflows/", page_size=100)
         return list(data.get("results", []))
 
+    async def create_workflow(self, payload: dict) -> dict:
+        resp = await self._request("POST", "/api/workflows/", json=payload)
+        return resp.json()
+
+    async def update_workflow(self, workflow_id: int, payload: dict) -> dict:
+        resp = await self._request(
+            "PUT", f"/api/workflows/{workflow_id}/", json=payload
+        )
+        return resp.json()
+
     async def get_document(self, doc_id: int) -> Document:
         return Document.model_validate(await self._get_json(f"/api/documents/{doc_id}/"))
 

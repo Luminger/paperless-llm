@@ -36,12 +36,13 @@ const GROUPS: {
   { title: "Reranker", prefix: ["llm.reranker."], probe: "reranker" },
   {
     title: "Behavior",
-    prefix: ["queue.", "webhook."],
-    hint: "Webhook defaults apply to documents arriving via the paperless workflow.",
+    prefix: ["queue."],
   },
 ];
+// Webhook keys live on the Paperless tab (Webhook.tsx) — next to the
+// status they belong to.
 
-const LABELS: Record<string, string> = {
+export const LABELS: Record<string, string> = {
   base_url: "Endpoint",
   model: "Model",
   api_key: "API key",
@@ -57,8 +58,10 @@ const LABELS: Record<string, string> = {
   native_text: "Born-digital gate (read embedded text)",
   native_auto_accept_similarity: "Born-digital auto-accept similarity",
   auto_continuation_limit: "Auto-continuation limit",
-  redo_ocr: "Webhook: re-do OCR",
-  apply_policy: "Webhook: apply policy",
+  secret: "Shared secret",
+  public_url: "This app's URL (as paperless sees it)",
+  redo_ocr: "Re-do OCR on arrival",
+  apply_policy: "Apply policy",
 };
 
 const CHOICES: Record<string, { value: string; label: string }[]> = {
@@ -69,7 +72,7 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
   ],
 };
 
-function FieldEditor({
+export function FieldEditor({
   row,
   draft,
   onChange,

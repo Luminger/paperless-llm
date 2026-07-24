@@ -21,7 +21,7 @@ UTC and converted for display.
 
 The runtime-editable slice of the configuration: agent / OCR /
 embeddings / reranker endpoints and knobs, the auto-continuation
-brake, webhook defaults. Every value shows **where it comes from** —
+brake. Every value shows **where it comes from** —
 environment (locked), set here, config file, or default — per the
 [precedence rules](../configuration.md#precedence). Admin changes
 apply immediately, validate before persisting, and can be reset back
@@ -80,9 +80,27 @@ affected transcriptions — prompt tweaks always take effect.
 
 The instance this app is attached to: a link to it, the API endpoint,
 how the app authenticates, TLS verification state (with a loud warning
-when disabled), and the webhook status. Read-only by design — the
-connection is configured via environment or config file only, so a bad
-value can never lock you out of the UI that would fix it.
+when disabled). The connection itself is read-only by design —
+configured via environment or config file only, so a bad value can
+never lock you out of the UI that would fix it.
+
+### Webhook ingress
+
+Status (both sides: secret configured here, workflow present in
+paperless), the runtime-editable webhook settings (shared secret, this
+app's public URL, re-OCR default, apply policy), and one admin action:
+
+- **Set up automatically** — creates the paperless workflow for you:
+  trigger “Document Added” (all sources), webhook action posting
+  `{doc_url}` to this app with the secret header. Generates and
+  persists a secret first when none is configured. If a workflow
+  already posts to this app, it is **healed** instead — URL and secret
+  refreshed, your custom name and order kept. Requires
+  `webhook.public_url` and a superuser paperless account.
+
+Paperless offers no way to test-fire a workflow, so the proof of the
+full path is simply the next consumed document: it shows up as a
+`webhook ingested` audit record and a webhook job.
 
 ## System
 

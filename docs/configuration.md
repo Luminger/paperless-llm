@@ -143,9 +143,16 @@ unaffected by user auth.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `webhook.secret` | *(empty = endpoint disabled)* | Expected in the `X-PLLM-Token` header |
+| `webhook.secret` | *(empty = endpoint disabled)* | Expected in the `X-PLLM-Token` header. The one-click setup on the Paperless settings tab generates one when empty |
+| `webhook.public_url` | *(empty)* | Base URL **this app** is reachable at *from paperless* (e.g. `http://paperless-llm:8100` inside a compose network, or the reverse-proxy URL). Env: `PLLM_WEBHOOK__PUBLIC_URL`. Required for the one-click workflow setup |
 | `webhook.redo_ocr` | `false` | Re-OCR webhook-ingested documents |
 | `webhook.apply_policy` | `review` | `review` (proposals wait for you) or `auto` (applied immediately, journaled, revertible) |
+
+All four are runtime-editable on the **Paperless** settings tab, which
+also offers **Set up automatically** (creates or heals the paperless
+workflow: trigger “Document Added”, webhook action posting `{doc_url}`
+to this app with the secret header — requires the app's paperless
+account to be a superuser).
 
 ## Queue & retries
 

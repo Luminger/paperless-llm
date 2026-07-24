@@ -183,8 +183,14 @@ class AuthConfig(BaseModel):
 
 class WebhookConfig(BaseModel):
     # Shared secret expected in the X-PLLM-Token header of webhook ingress.
-    # Empty disables the webhook endpoint entirely.
+    # Empty disables the webhook endpoint entirely. The one-click setup
+    # generates one when empty (stored as a runtime override).
     secret: str = ""
+    # Base URL THIS app is reachable at FROM PAPERLESS — what the
+    # paperless workflow posts to (e.g. "http://paperless-llm:8100" in a
+    # compose network, or the reverse-proxy URL). Env:
+    # PLLM_WEBHOOK__PUBLIC_URL. Required for the one-click workflow setup.
+    public_url: str = ""
     # Defaults for sessions created via webhook ingress.
     redo_ocr: bool = False
     apply_policy: Literal["review", "auto"] = "review"
@@ -384,6 +390,8 @@ EDITABLE_KEYS: tuple[str, ...] = (
     "llm.reranker.model",
     "llm.reranker.api_key",
     "queue.auto_continuation_limit",
+    "webhook.secret",
+    "webhook.public_url",
     "webhook.redo_ocr",
     "webhook.apply_policy",
 )

@@ -34,6 +34,7 @@ export type ConfigRow = S["ConfigRowOut"];
 export type LlmTest = S["LlmTestOut"];
 export type LlmDetect = S["LlmDetectOut"];
 export type WebhookStatus = S["WebhookStatusOut"];
+export type WebhookSetup = S["WebhookSetupOut"];
 export type DocumentHistory = S["DocumentHistoryOut"];
 export type EntityRef = S["EntityOut"];
 export type CustomFieldDef = S["CustomFieldOut"];
@@ -116,6 +117,8 @@ export const api = {
   detectLlm: (profile: "agent" | "ocr") =>
     request<LlmDetect>(`/api/settings/llm/${profile}/detect`, { method: "POST" }),
   getWebhookStatus: () => request<WebhookStatus>("/api/settings/webhook"),
+  setupWebhook: () =>
+    request<WebhookSetup>("/api/settings/webhook/setup", { method: "POST" }),
   putConfig: (values: Record<string, unknown>) =>
     request<ConfigRow[]>("/api/settings/config", {
       method: "PUT",

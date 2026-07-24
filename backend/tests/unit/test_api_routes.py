@@ -1873,3 +1873,93 @@ async def test_llm_test_covers_embeddings_and_reranker(client):
         body = r.json()
         assert body["ok"] is False
         assert "not configured" in body["error"]
+
+
+@pytest.fixture
+def _webhook_cfg(monkeypatch):
+    """Configured webhook + clean runtime overrides around the test."""
+    from app.config import get_settings, set_runtime_overrides
+
+    cfg = get_settings().webhook
+    monkeypatch.setattr(cfg, "public_url", "http://pllm.self.test")
+    monkeypatch.setattr(cfg, "secret", "s3cret")
+    yield cfg
+    set_runtime_overrides({})
+
+
+@respx.mock
+async def test_webhook_setup_creates_workflow(client, _webhook_cfg):
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    create = respx.post(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(201, json={"id": 9, "name": "x"})
+    )
+    body = (await client.post("/api/settings/webhook/setup")).json()
+    assert body["ok"] is True and body["created"] is True
+    assert body["workflow_id"] == 9
+    import json as _json
+
+    sent = _json.loads(create.calls.last.request.content)
+    assert sent["triggers"] == [{"type": 2, "sources": [1, 2, 3]}]
+    hook = sent["actions"][0]["webhook"]
+    assert hook["url"] == "http://pllm.self.test/api/webhooks/paperless"
+    assert hook["headers"] == {"X-PLLM-Token": "s3cret"}
+    assert hook["params"] == {"url": "{doc_url}"}  # id parsed from doc_url
+
+
+@respx.mock
+async def test_webhook_setup_heals_existing_workflow(client, _webhook_cfg):
+    existing = {
+        "id": 4,
+        "name": "my custom ingest",
+        "order": 7,
+        "actions": [{"type": 4, "webhook": {"url": "http://old/api/webhooks/paperless"}}],
+    }
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(200, json={"results": [existing]})
+    )
+    update = respx.put(f"{PAPERLESS_URL}/api/workflows/4/").mock(
+        return_value=httpx.Response(200, json={"id": 4, "name": "my custom ingest"})
+    )
+    body = (await client.post("/api/settings/webhook/setup")).json()
+    assert body["ok"] is True and body["created"] is False
+    import json as _json
+
+    sent = _json.loads(update.calls.last.request.content)
+    assert sent["name"] == "my custom ingest"  # user's name preserved
+    assert sent["order"] == 7
+    assert sent["actions"][0]["webhook"]["url"].startswith("http://pllm.self.test")
+
+
+@respx.mock
+async def test_webhook_setup_generates_secret_when_missing(client, db, monkeypatch):
+    from app.config import get_settings, set_runtime_overrides
+
+    cfg = get_settings().webhook
+    monkeypatch.setattr(cfg, "public_url", "http://pllm.self.test")
+    monkeypatch.setattr(cfg, "secret", "")
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    create = respx.post(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(201, json={"id": 1, "name": "x"})
+    )
+    try:
+        body = (await client.post("/api/settings/webhook/setup")).json()
+        assert body["ok"] is True
+        assert body["secret_generated"] is True
+        import json as _json
+
+        token = _json.loads(create.calls.last.request.content)["actions"][0][
+            "webhook"
+        ]["headers"]["X-PLLM-Token"]
+        assert len(token) >= 32  # a real generated secret, sent to paperless
+        # ...and persisted as a runtime override for OUR ingress.
+        from app.config import runtime_overrides
+
+        assert runtime_overrides()["webhook.secret"] == token
+    finally:
+        set_runtime_overrides({})
+
+
