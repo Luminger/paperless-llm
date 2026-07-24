@@ -13,7 +13,7 @@ services:
     image: docker.io/library/redis:7-alpine
 
   paperless:
-    image: ghcr.io/paperless-ngx/paperless-ngx:2.14.7
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15
     depends_on:
       - broker
     ports:

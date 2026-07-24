@@ -27,7 +27,9 @@ def _wait_healthy(timeout: float = 180.0) -> bool:
     while time.time() < deadline:
         try:
             r = httpx.get(f"{PAPERLESS_TEST_URL}/api/", timeout=5)
-            if r.status_code in (200, 401, 403):
+            # 302: newer paperless (>= 2.20) redirects /api/ to the schema
+            # view for anonymous requests — the server is up either way.
+            if r.status_code in (200, 302, 401, 403):
                 return True
         except httpx.HTTPError:
             pass
