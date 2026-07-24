@@ -52,11 +52,24 @@ def _settings_from(
         settings["max_tokens"] = sampling.max_tokens
     if sampling.presence_penalty is not None:
         settings["presence_penalty"] = sampling.presence_penalty
+    if sampling.frequency_penalty is not None:
+        settings["frequency_penalty"] = sampling.frequency_penalty
+    # Non-OpenAI-standard levers travel via extra_body — vLLM, SGLang,
+    # llama.cpp and Ollama's OpenAI compat all accept them there (and
+    # tolerate unknown parameters). These are the anti-repetition-loop
+    # knobs for pages a VLM can't read.
+    extra: dict[str, Any] = {}
+    if sampling.repetition_penalty is not None:
+        extra["repetition_penalty"] = sampling.repetition_penalty
+    if sampling.top_k is not None:
+        extra["top_k"] = sampling.top_k
+    if sampling.min_p is not None:
+        extra["min_p"] = sampling.min_p
     if thinking != "server_default":
         # vLLM/SGLang-style opt-in/out; harmless elsewhere.
-        settings["extra_body"] = {
-            "chat_template_kwargs": {"enable_thinking": thinking == "on"}
-        }
+        extra["chat_template_kwargs"] = {"enable_thinking": thinking == "on"}
+    if extra:
+        settings["extra_body"] = extra
     return ModelSettings(**settings)  # type: ignore[typeddict-item]
 
 

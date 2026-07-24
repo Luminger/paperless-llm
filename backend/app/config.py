@@ -36,12 +36,28 @@ from pydantic_settings import (
 
 
 class SamplingOverrides(BaseModel):
-    """Optional per-profile sampling overrides; unset values defer to the server."""
+    """Optional per-profile sampling overrides; unset values defer to the
+    server.
+
+    The penalty/truncation knobs are the levers against VLM repetition
+    loops (a page the model can't read makes it emit the same lines
+    until the output limit): ``presence_penalty`` / ``frequency_penalty``
+    are standard OpenAI parameters; ``repetition_penalty``, ``top_k`` and
+    ``min_p`` travel via ``extra_body`` for vLLM/SGLang/llama.cpp-style
+    servers (unknown-parameter tolerant); ``max_tokens`` bounds how far a
+    runaway loop can run before it fails fast."""
 
     temperature: float | None = None
     top_p: float | None = None
-    max_tokens: int | None = None
-    presence_penalty: float | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+    frequency_penalty: float | None = Field(default=None, ge=-2, le=2)
+    # Multiplicative penalty on already-seen tokens (vLLM/SGLang;
+    # typical anti-loop range 1.05-1.3). Sent via extra_body.
+    repetition_penalty: float | None = Field(default=None, gt=0)
+    # Sent via extra_body; useful to break greedy-decode loops.
+    top_k: int | None = Field(default=None, ge=1)
+    min_p: float | None = Field(default=None, ge=0, le=1)
 
 
 class AgentProfile(BaseModel):
@@ -383,6 +399,16 @@ EDITABLE_KEYS: tuple[str, ...] = (
     "llm.ocr.native_auto_accept_similarity",
     "llm.ocr.max_concurrent",
     "llm.ocr.timeout_seconds",
+    # The OCR sampling levers are runtime-editable: repetition loops on
+    # hard pages are tuned away with penalties/caps, not code changes.
+    "llm.ocr.sampling.temperature",
+    "llm.ocr.sampling.top_p",
+    "llm.ocr.sampling.top_k",
+    "llm.ocr.sampling.min_p",
+    "llm.ocr.sampling.max_tokens",
+    "llm.ocr.sampling.presence_penalty",
+    "llm.ocr.sampling.frequency_penalty",
+    "llm.ocr.sampling.repetition_penalty",
     "llm.embeddings.base_url",
     "llm.embeddings.model",
     "llm.embeddings.api_key",

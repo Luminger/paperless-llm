@@ -2040,3 +2040,36 @@ async def test_webhook_status_sync_unknown_without_config(client, monkeypatch):
     assert body["workflow_found"] is True
     assert body["workflow_synced"] is None
     assert body["workflow_drift"] == []
+
+
+async def test_ocr_sampling_levers_runtime_editable(client):
+    """The anti-loop levers (penalties, caps) are tunable from the UI
+    and validate like any other override."""
+    from app.config import get_settings, set_runtime_overrides
+
+    set_runtime_overrides({})
+    r = await client.put(
+        "/api/settings/config",
+        json={"values": {
+            "llm.ocr.sampling.presence_penalty": 1.5,
+            "llm.ocr.sampling.repetition_penalty": 1.08,
+            "llm.ocr.sampling.max_tokens": 3000,
+            "llm.ocr.sampling.top_k": 40,
+        }},
+    )
+    assert r.status_code == 200
+    rows = {row["key"]: row for row in r.json()}
+    assert rows["llm.ocr.sampling.presence_penalty"]["source"] == "ui"
+    ocr = get_settings().llm.ocr.sampling
+    assert (ocr.presence_penalty, ocr.repetition_penalty, ocr.max_tokens, ocr.top_k) == (
+        1.5, 1.08, 3000, 40,
+    )
+
+    # Out-of-range value: rejected, running config untouched.
+    r = await client.put(
+        "/api/settings/config",
+        json={"values": {"llm.ocr.sampling.repetition_penalty": 0}},
+    )
+    assert r.status_code == 422
+    assert get_settings().llm.ocr.sampling.repetition_penalty == 1.08
+    set_runtime_overrides({})

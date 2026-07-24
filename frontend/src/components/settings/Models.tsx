@@ -57,12 +57,49 @@ export const LABELS: Record<string, string> = {
   render_dpi: "Render DPI",
   native_text: "Born-digital gate (read embedded text)",
   native_auto_accept_similarity: "Born-digital auto-accept similarity",
+  temperature: "Temperature",
+  top_p: "Top-p",
+  top_k: "Top-k",
+  min_p: "Min-p",
+  max_tokens: "Output token cap per call",
+  presence_penalty: "Presence penalty",
+  frequency_penalty: "Frequency penalty",
+  repetition_penalty: "Repetition penalty",
   auto_continuation_limit: "Auto-continuation limit",
   secret: "Shared secret",
   public_url: "This app's URL (as paperless sees it)",
   redo_ocr: "Re-do OCR on arrival",
   apply_policy: "Apply policy",
 };
+
+// Per-key explanations (hover on the label). The sampling block is the
+// lever set against VLM repetition loops — pages the model can't read
+// make it emit the same lines until the output limit.
+export const HINTS: Record<string, string> = {
+  "llm.ocr.sampling.temperature": "Unset = server default. Pure greedy decoding (0) is the most loop-prone; a small value like 0.1–0.3 lets the model escape a repetition.",
+  "llm.ocr.sampling.top_p": "Nucleus sampling cut-off (0–1). Unset = server default.",
+  "llm.ocr.sampling.top_k": "Only sample from the k most likely tokens. Sent via extra_body (vLLM, SGLang, llama.cpp, Ollama).",
+  "llm.ocr.sampling.min_p": "Drop tokens below this fraction of the top token's probability (0–1). Sent via extra_body.",
+  "llm.ocr.sampling.max_tokens": "Hard output cap per OCR call. Set it so a looping page fails fast instead of generating until the context window is full — Autodetect's tok/page measurement × images per request plus headroom is a good value.",
+  "llm.ocr.sampling.presence_penalty": "Flat penalty on tokens that already appeared (-2–2). Qwen-VL's own recommendation against transcription loops is up to 1.5.",
+  "llm.ocr.sampling.frequency_penalty": "Penalty growing with each recurrence (-2–2). Milder alternative to presence penalty; high values distort legitimately repetitive documents (tables).",
+  "llm.ocr.sampling.repetition_penalty": "Multiplicative penalty on seen tokens (vLLM/SGLang-style, via extra_body). 1 = off; anti-loop range is typically 1.05–1.3.",
+};
+
+// Fields that are numeric even when currently unset (null) — the type
+// can't be sniffed from the value then.
+const NUMERIC_FIELDS = new Set([
+  "temperature",
+  "top_p",
+  "top_k",
+  "min_p",
+  "max_tokens",
+  "presence_penalty",
+  "frequency_penalty",
+  "repetition_penalty",
+  "timeout_seconds",
+  "max_concurrent",
+]);
 
 const CHOICES: Record<string, { value: string; label: string }[]> = {
   thinking: ["server_default", "on", "off"].map((v) => ({ value: v, label: v })),
@@ -123,14 +160,26 @@ export function FieldEditor({
       />
     );
   }
-  const numeric = typeof row.value === "number";
+  // Nullable numeric levers (sampling) have no value to sniff the type
+  // from when unset — recognize them by name. Emptying the input clears
+  // the override (null) instead of sending an unparsable "".
+  const numeric = typeof row.value === "number" || NUMERIC_FIELDS.has(field);
   return (
     <Input
       aria-label={row.key}
       type={numeric ? "number" : "text"}
+      step={numeric ? "any" : undefined}
       disabled={disabled}
       value={String(value ?? "")}
-      onChange={(e) => onChange(numeric ? Number(e.target.value) : e.target.value)}
+      onChange={(e) =>
+        onChange(
+          numeric
+            ? e.target.value === ""
+              ? null
+              : Number(e.target.value)
+            : e.target.value,
+        )
+      }
       className="h-8"
     />
   );
@@ -320,9 +369,17 @@ export function ModelsConfig() {
                   key={row.key}
                   className="grid grid-cols-[13rem_1fr_auto] items-center gap-3"
                 >
-                  <Label className="font-normal text-muted-foreground">
-                    {LABELS[row.key.split(".").pop()!] ?? row.key}
-                  </Label>
+                  {HINTS[row.key] ? (
+                    <Tip content={HINTS[row.key]}>
+                      <Label className="cursor-help font-normal text-muted-foreground underline decoration-dotted underline-offset-2">
+                        {LABELS[row.key.split(".").pop()!] ?? row.key}
+                      </Label>
+                    </Tip>
+                  ) : (
+                    <Label className="font-normal text-muted-foreground">
+                      {LABELS[row.key.split(".").pop()!] ?? row.key}
+                    </Label>
+                  )}
                   <FieldEditor
                     row={row}
                     draft={draft[row.key]}

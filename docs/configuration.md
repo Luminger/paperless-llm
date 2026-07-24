@@ -56,7 +56,7 @@ limits, concurrency, streaming support, thinking mode, sampling.
 | `thinking` | `server_default` | `on` / `off` sends `chat_template_kwargs`; `server_default` sends nothing. |
 | `max_input_tokens` | `32768` | Used to clamp tool results (e.g. long documents), not enforced server-side. |
 | `max_tool_iterations` | `12` | Cap on tool-loop rounds per agent turn. |
-| `sampling.*` | server defaults | `temperature`, `top_p`, `max_tokens`, `presence_penalty` |
+| `sampling.*` | server defaults | `temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`, `presence_penalty`, `frequency_penalty`, `repetition_penalty` — standard knobs go natively, server-specific ones (`top_k`, `min_p`, `repetition_penalty`) via `extra_body` (vLLM/SGLang/llama.cpp/Ollama accept them there) |
 
 ### `llm.ocr` — the vision model
 
@@ -76,6 +76,29 @@ multimodal endpoint needs no extra config.
 OCR results are cached keyed on document + content checksum + model +
 prompt, so nothing is re-transcribed needlessly — and editing the OCR
 prompt in Settings invalidates exactly the right cache entries.
+
+#### Fighting repetition loops (`llm.ocr.sampling.*`)
+
+Vision models sometimes hit a page they can't actually read — heavy
+handwriting, stamps, degraded scans — and instead of `[illegible]` they
+fall into a repetition loop, emitting the same lines until the output
+context is full. That failure mode is tuned away with sampling levers,
+all runtime-editable in **Settings → Models → OCR model** (hover a
+label for details):
+
+| Lever | Suggested start | Why |
+| --- | --- | --- |
+| `sampling.presence_penalty` | `1.0`–`1.5` | Flat penalty on already-seen tokens. Qwen-VL's own recommendation against transcription loops is up to `1.5`. |
+| `sampling.repetition_penalty` | `1.05`–`1.1` | Multiplicative variant (vLLM/SGLang-style, sent via `extra_body`). Gentler on legitimately repetitive documents than a high presence penalty. |
+| `sampling.max_tokens` | tok/page × images per request + headroom | Damage control: a looping page fails fast instead of generating until the server's context is exhausted. The OCR **Autodetect** button measures tok/page at your render DPI. |
+| `sampling.temperature` | `0.1`–`0.3` | Pure greedy decoding (`0`) is the most loop-prone; a little randomness lets the model escape a cycle. Pair with `top_p` ≈ `0.9` or a `min_p` ≈ `0.05` to keep digits safe. |
+
+Start with a presence penalty alone; add the others only if loops
+persist. High `frequency_penalty` values distort documents that are
+GENUINELY repetitive (account statements, tables) — prefer
+`presence_penalty`/`repetition_penalty` for OCR. All knobs default to
+unset (server defaults), and env vars work too, e.g.
+`PLLM_LLM__OCR__SAMPLING__PRESENCE_PENALTY=1.5`.
 
 ### `llm.embeddings` — optional
 
