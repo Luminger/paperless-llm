@@ -259,6 +259,53 @@ describe("Dashboard inbox block", () => {
     );
   });
 
+  const inboxOf12 = {
+    count: 12,
+    page_size: 25,
+    all: null,
+    results: [],
+  };
+
+  it("analyze dialog carries a re-OCR flag", async () => {
+    mocked.getInbox.mockResolvedValue(inboxOf12 as never);
+    mocked.createJob.mockResolvedValue({ id: 4 } as never);
+    renderWithProviders(<Dashboard />);
+    await screen.findByText(/12 documents waiting/);
+    await userEvent.click(screen.getByRole("button", { name: /analyze the inbox/i }));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: /re-do ocr first/i }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /start job/i }));
+    await waitFor(() =>
+      expect(mocked.createJob).toHaveBeenCalledWith({
+        inbox: true,
+        redo_ocr: true,
+        apply_policy: "review",
+        instructions: undefined,
+      }),
+    );
+  });
+
+  it("dedicated Re-OCR button starts an OCR-only job via its own dialog", async () => {
+    mocked.getInbox.mockResolvedValue(inboxOf12 as never);
+    mocked.createJob.mockResolvedValue({ id: 5 } as never);
+    renderWithProviders(<Dashboard />);
+    await screen.findByText(/12 documents waiting/);
+    await userEvent.click(screen.getByRole("button", { name: /^re-ocr/i }));
+    // OCR-only: no analysis — the dialog says so and nothing runs yet.
+    expect(await screen.findByText(/no metadata analysis/i)).toBeInTheDocument();
+    expect(mocked.createJob).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: /start re-ocr/i }));
+    await waitFor(() =>
+      expect(mocked.createJob).toHaveBeenCalledWith({
+        inbox: true,
+        ocr_only: true,
+        apply_policy: "review",
+        instructions: undefined,
+      }),
+    );
+  });
+
   it("vanishes when the inbox is clear", async () => {
     mocked.getInbox.mockResolvedValue({ count: 0, page_size: 25, all: null, results: [] });
     renderWithProviders(<Dashboard />);

@@ -12,7 +12,10 @@ passes**, each one making the next one easier.
 Three blocks at the top of the dashboard tell you where the work is:
 
 - **Inbox** — documents carrying an inbox tag that have *no active
-  session yet*. One button sends the whole inbox through analysis.
+  session yet*. One button sends the whole inbox through analysis (the
+  dialog offers a **re-do OCR first** flag for scans whose stored text
+  is rotten); a **Re-OCR…** button next to it runs the OCR-only
+  pipeline over the inbox instead — new text, no metadata analysis.
 - **Corpus** — a progress bar: *"118 of 2,400 documents analyzed"* —
   with an **Analyze next batch** button. This is the heart of the
   cleanup workflow, described below.
@@ -23,8 +26,9 @@ Three blocks at the top of the dashboard tell you where the work is:
 
 Metadata analysis is only as good as the text it reads, so the first
 pass over a rotten corpus is usually **Re-do OCR only** (Jobs → New
-job): every document in scope is re-transcribed by the vision model and
-the pipeline **stops there** — no analysis follows, no metadata is
+job, or the inbox card's **Re-OCR…** button for inbox scope): every
+document in scope is re-transcribed by the vision model and the
+pipeline **stops there** — no analysis follows, no metadata is
 touched. The **All documents** scope exists precisely for this job.
 
 - In **review** mode each document parks at the OCR gate; you accept,

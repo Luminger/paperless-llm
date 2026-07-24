@@ -27,6 +27,9 @@ export function StartJobDialog({
   busy = false,
   error,
   onStart,
+  redoOcrOption = false,
+  autoLabel = "auto-apply proposals (journaled & revertible)",
+  startLabel = "Start job",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -36,9 +39,19 @@ export function StartJobDialog({
   children?: React.ReactNode;
   busy?: boolean;
   error?: unknown;
-  onStart: (opts: { apply_policy: "review" | "auto"; instructions?: string }) => void;
+  onStart: (opts: {
+    apply_policy: "review" | "auto";
+    instructions?: string;
+    redo_ocr?: boolean;
+  }) => void;
+  /** Offer a "re-do OCR first" checkbox (document-scoped analyze jobs). */
+  redoOcrOption?: boolean;
+  /** The auto-apply checkbox text — OCR-only jobs apply text, not proposals. */
+  autoLabel?: string;
+  startLabel?: string;
 }) {
   const [auto, setAuto] = useState(false);
+  const [redoOcr, setRedoOcr] = useState(false);
   const [instructions, setInstructions] = useState("");
   // Fresh state per open (AUDIT FP-L9): dashboard callers keep this
   // mounted, so stale auto/instructions/error must not leak into the
@@ -46,6 +59,7 @@ export function StartJobDialog({
   useEffect(() => {
     if (open) {
       setAuto(false);
+      setRedoOcr(false);
       setInstructions("");
     }
   }, [open]);
@@ -58,9 +72,18 @@ export function StartJobDialog({
         </DialogHeader>
         <div className="space-y-4">
           {children}
+          {redoOcrOption && (
+            <Label className="flex items-center gap-1.5 text-sm font-normal">
+              <Checkbox
+                checked={redoOcr}
+                onCheckedChange={(v) => setRedoOcr(v === true)}
+              />
+              re-do OCR first (vision model; the new text passes the OCR gate)
+            </Label>
+          )}
           <Label className="flex items-center gap-1.5 text-sm font-normal">
             <Checkbox checked={auto} onCheckedChange={(v) => setAuto(v === true)} />
-            auto-apply proposals (journaled &amp; revertible)
+            {autoLabel}
           </Label>
           <Textarea
             aria-label="job instructions"
@@ -82,10 +105,11 @@ export function StartJobDialog({
               onStart({
                 apply_policy: auto ? "auto" : "review",
                 instructions: instructions.trim() || undefined,
+                ...(redoOcrOption ? { redo_ocr: redoOcr || undefined } : {}),
               })
             }
           >
-            Start job
+            {startLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

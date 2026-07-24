@@ -30,6 +30,7 @@ import { SessionList } from "../components/SessionList";
 function InboxBlock() {
   const navigate = useNavigate();
   const [dialog, setDialog] = useState(false);
+  const [ocrDialog, setOcrDialog] = useState(false);
   const { data, error: inboxError } = useQuery({
     queryKey: keys.inbox(),
     queryFn: api.getInbox,
@@ -37,8 +38,16 @@ function InboxBlock() {
   });
   const { data: correspondents } = useEntityList("correspondent");
   const start = useMutation({
+    mutationFn: (opts: {
+      apply_policy: "review" | "auto";
+      instructions?: string;
+      redo_ocr?: boolean;
+    }) => api.createJob({ inbox: true, ...opts }),
+    onSuccess: (job) => navigate(`/jobs/${job.id}`),
+  });
+  const startOcr = useMutation({
     mutationFn: (opts: { apply_policy: "review" | "auto"; instructions?: string }) =>
-      api.createJob({ inbox: true, ...opts }),
+      api.createJob({ inbox: true, ocr_only: true, ...opts }),
     onSuccess: (job) => navigate(`/jobs/${job.id}`),
   });
   // A failing inbox query must not silently HIDE work items (FP-L7).
@@ -57,6 +66,9 @@ function InboxBlock() {
       footer={
         <>
           <span className="flex-1" />
+          <Button size="sm" variant="outline" onClick={() => setOcrDialog(true)}>
+            Re-OCR…
+          </Button>
           <Button size="sm" onClick={() => setDialog(true)}>
             Analyze the inbox…
           </Button>
@@ -67,7 +79,19 @@ function InboxBlock() {
             description={`Starts an analysis session for each of the ${data.count} waiting document${data.count === 1 ? "" : "s"}.`}
             busy={start.isPending}
             error={start.error}
+            redoOcrOption
             onStart={(opts) => start.mutate(opts)}
+          />
+          <StartJobDialog
+            open={ocrDialog}
+            onOpenChange={setOcrDialog}
+            title="Re-OCR the inbox"
+            description={`Re-runs OCR for each of the ${data.count} waiting document${data.count === 1 ? "" : "s"} and stops there — no metadata analysis. The new text goes through the OCR gate for review.`}
+            busy={startOcr.isPending}
+            error={startOcr.error}
+            autoLabel="auto-apply the new text (journaled & revertible)"
+            startLabel="Start re-OCR"
+            onStart={(opts) => startOcr.mutate(opts)}
           />
         </>
       }
@@ -124,8 +148,11 @@ function CorpusBlock() {
     refetchInterval: 30_000,
   });
   const start = useMutation({
-    mutationFn: (opts: { apply_policy: "review" | "auto"; instructions?: string }) =>
-      api.createJob({ next_batch: Number(size), ...opts }),
+    mutationFn: (opts: {
+      apply_policy: "review" | "auto";
+      instructions?: string;
+      redo_ocr?: boolean;
+    }) => api.createJob({ next_batch: Number(size), ...opts }),
     onSuccess: (job) => navigate(`/jobs/${job.id}`),
   });
   if (corpusError)
@@ -160,6 +187,7 @@ function CorpusBlock() {
               description="Review-first curation: the next never-analyzed documents, oldest first."
               busy={start.isPending}
               error={start.error}
+              redoOcrOption
               onStart={(opts) => start.mutate(opts)}
             >
               <div className="flex items-center gap-3">
