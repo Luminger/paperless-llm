@@ -48,7 +48,12 @@ replace.
 When **every** page was born-digital and the extracted text matches
 the stored content, the gate resolves itself (shown as *born-digital —
 embedded text verified*): there is no OCR decision for a human to
-make, and bulk OCR jobs flow straight through such documents. If a
+make, and bulk OCR jobs flow straight through such documents. In
+**OCR-only** runs the shortcut is stricter: it only fires when the
+native text is genuinely equivalent to the stored content (whitespace
+and case aside) — an explicit re-OCR exists to change text, so any
+real difference parks at the gate for a decision instead of finishing
+the session with an unactionable diff. If a
 document was misclassified, the gate's re-run fold offers *“Ignore the
 PDF's embedded text”* to force the vision model over every page.
 Tunables: `llm.ocr.native_text` (the gate itself) and

@@ -170,6 +170,12 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
+def texts_equivalent(a: str, b: str) -> bool:
+    """Whitespace/case-insensitive equality — "nothing to change": a
+    rewrite would alter formatting at most, never content."""
+    return _normalize(a) == _normalize(b)
+
+
 def content_similarity(a: str, b: str) -> float:
     """0..1 similarity between two OCR text bodies (whitespace/case
     insensitive token-set ratio — robust to layout reflow)."""

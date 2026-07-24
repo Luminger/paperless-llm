@@ -138,3 +138,47 @@ async def test_native_result_is_recorded_on_the_step(db, monkeypatch):
     _, _, step = await _run(db, monkeypatch, _outcome())
     assert step.result["native_pages"] == 1
     assert step.result["pages"] == 1
+
+
+async def test_ocr_only_with_real_text_change_keeps_the_gate(db, monkeypatch):
+    """An explicit re-OCR run exists to CHANGE the text: born-digital
+    pages whose native text differs from the stored content (even at
+    high similarity) must park at the gate — auto-resolving would end
+    the session with a diff nobody can accept anymore."""
+    verdict, session, step = await _run(
+        db,
+        monkeypatch,
+        _outcome(
+            text="native text, corrected trailing part",
+            similarity=0.96,
+        ),
+        params={"ocr_only": True},
+    )
+    assert verdict == AWAIT_USER
+    assert "resolution" not in step.result
+    assert "ocr_gate" not in session.params
+
+
+async def test_ocr_only_whitespace_only_difference_still_auto_resolves(db, monkeypatch):
+    """Reflowed whitespace/case is NOT a change worth a human decision —
+    the OCR-only shortcut still applies."""
+    verdict, session, _ = await _run(
+        db,
+        monkeypatch,
+        _outcome(text="Native\n\ntext", previous_content="native text"),
+        params={"ocr_only": True},
+    )
+    assert verdict is None
+    assert session.params["ocr_gate"] == "auto_native"
+
+
+async def test_analysis_run_high_similarity_still_auto_resolves(db, monkeypatch):
+    """Non-OCR-only pipelines keep the lenient threshold: OCR is input
+    to analysis there, and a near-identical rewrite is pure noise."""
+    verdict, session, _ = await _run(
+        db,
+        monkeypatch,
+        _outcome(text="native text, corrected trailing part", similarity=0.96),
+    )
+    assert verdict is None
+    assert session.params["ocr_gate"] == "auto_native"

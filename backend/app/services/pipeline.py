@@ -24,7 +24,7 @@ from app.db.models import (
     StepKind,
     StepState,
 )
-from app.llm.ocr import run_ocr
+from app.llm.ocr import run_ocr, texts_equivalent
 from app.paperless import PaperlessClient
 from app.proposals.apply import apply_proposal
 from app.proposals.kinds import is_internal, visible
@@ -89,14 +89,26 @@ async def _exec_ocr(
     # The gate resolves itself and the pipeline continues (or ends,
     # for OCR-only sessions).
     thresh = get_settings().llm.ocr.native_auto_accept_similarity
-    if (
+    auto_native = (
         thresh is not None
-        and outcome.pages
+        and bool(outcome.pages)
         and outcome.native_pages == len(outcome.pages)
         and not outcome.truncated
         and outcome.similarity is not None
         and outcome.similarity >= thresh
+    )
+    # An explicit re-OCR run exists to CHANGE the text. For OCR-only
+    # sessions the shortcut only holds when there is genuinely nothing
+    # to change — a high-but-imperfect similarity would otherwise
+    # finish the session showing a diff nobody can accept anymore
+    # (review mode) or silently drop the new text (auto mode).
+    if (
+        auto_native
+        and session.params.get("ocr_only")
+        and not texts_equivalent(outcome.text or "", outcome.previous_content or "")
     ):
+        auto_native = False
+    if auto_native:
         step.result = {**step.result, "resolution": "auto_native", "edited": False}
         session.params = {**session.params, "ocr_gate": "auto_native"}
         if session.params.get("ocr_only"):
