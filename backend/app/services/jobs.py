@@ -167,7 +167,9 @@ async def create_job(
 
     ``ocr_only``: the corpus-rehab job — each document is re-OCRed and
     the pipeline STOPS there (gate in review mode, direct journaled
-    write in auto mode). No analysis follows."""
+    write in auto mode). No analysis follows. Born-digital documents
+    whose text layer matches the stored content resolve their gate
+    automatically in either mode (see _exec_ocr's auto_native path)."""
     if ocr_only:
         kind = "bulk_ocr"
         redo_ocr = True

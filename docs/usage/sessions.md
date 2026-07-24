@@ -36,6 +36,25 @@ fresh transcription:
 
 Nothing downstream sees unreviewed OCR output.
 
+### Born-digital documents
+
+Not every PDF is a scan. Pages with a real, visible embedded text
+layer are read directly from the PDF — no vision model involved, no
+waiting. Previously-OCRed scans (invisible text over a page image,
+e.g. paperless's own tesseract layer) still get the full VLM
+treatment: that stale layer is exactly what re-OCR is meant to
+replace.
+
+When **every** page was born-digital and the extracted text matches
+the stored content, the gate resolves itself (shown as *born-digital —
+embedded text verified*): there is no OCR decision for a human to
+make, and bulk OCR jobs flow straight through such documents. If a
+document was misclassified, the gate's re-run fold offers *“Ignore the
+PDF's embedded text”* to force the vision model over every page.
+Tunables: `llm.ocr.native_text` (the gate itself) and
+`llm.ocr.native_auto_accept_similarity` (auto-resolve threshold,
+unset to always gate).
+
 ## The decision loop
 
 The agent proposes **one change per turn** — the most foundational

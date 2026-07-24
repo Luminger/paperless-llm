@@ -99,6 +99,14 @@ class OcrProfile(BaseModel):
     # vision model sees them. Paperless's own rotate-pages pass misses
     # some documents; a flipped page craters transcription quality.
     auto_rotate: bool = True
+    # Born-digital gate: pages with a real VISIBLE native text layer
+    # are read directly from the PDF instead of a VLM round-trip.
+    # Invisible (Tr 3) OCR layers over scans still go to the VLM.
+    native_text: bool = True
+    # When EVERY page was native and the text matches the stored
+    # paperless content at >= this similarity, the OCR gate resolves
+    # itself — nothing for a human to review. None disables.
+    native_auto_accept_similarity: float | None = Field(default=0.95, ge=0.0, le=1.0)
     sampling: SamplingOverrides = SamplingOverrides(temperature=0.1)
     # OCR results are cached keyed on (doc, checksum, model, prompt_version).
     prompt_version: int = 1
@@ -365,6 +373,8 @@ EDITABLE_KEYS: tuple[str, ...] = (
     "llm.ocr.max_pages",
     "llm.ocr.render_dpi",
     "llm.ocr.auto_rotate",
+    "llm.ocr.native_text",
+    "llm.ocr.native_auto_accept_similarity",
     "llm.ocr.max_concurrent",
     "llm.ocr.timeout_seconds",
     "llm.embeddings.base_url",

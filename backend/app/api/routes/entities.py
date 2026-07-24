@@ -158,18 +158,11 @@ async def _archived(paperless: PaperlessClient, doc_id: int) -> tuple[bytes, str
 def _render_single_page(
     data: bytes, content_type: str, page: int, dpi: int
 ) -> bytes | None:
-    import fitz
+    from app import pdfio
 
-    doc = fitz.open(
-        stream=data, filetype="pdf" if "pdf" in content_type else None
-    )
-    try:
-        if page < 1 or page > doc.page_count:
-            return None
-        zoom = dpi / 72.0
-        return doc[page - 1].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
-    finally:
-        doc.close()
+    if page < 1 or page > pdfio.page_count(data, content_type):
+        return None
+    return pdfio.render_page(data, content_type, page - 1, dpi)
 
 
 @router.get("/documents/{doc_id}/preview")
@@ -177,14 +170,11 @@ async def preview_info(
     doc_id: int, paperless: PaperlessClient = Depends(get_paperless)
 ) -> dict:
     """Page count of the archived rendition — drives the pager."""
-    import fitz
+    from app import pdfio
 
     data, content_type = await _archived(paperless, doc_id)
-    doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
-    try:
-        return {"pages": doc.page_count}
-    finally:
-        doc.close()
+    pages = await asyncio.to_thread(pdfio.page_count, data, content_type)
+    return {"pages": pages}
 
 
 @router.get("/documents/{doc_id}/preview/{page}")
@@ -196,7 +186,7 @@ async def preview_page(
 ) -> Response:
     """One page of the archived rendition as PNG (1-based)."""
     data, content_type = await _archived(paperless, doc_id)
-    # Render OFF the event loop (PyMuPDF is pure CPU), and only the
+    # Render OFF the event loop (pdfio is pure CPU), and only the
     # requested page — not every page up to it.
     png = await asyncio.to_thread(
         _render_single_page, data, content_type, page, min(max(dpi, 50), 220)

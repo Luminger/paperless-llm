@@ -120,13 +120,26 @@ Plain vision calls outside any tool loop — sidesteps the unverified
 "images + tool calls in one request" combination and keeps agent contexts
 small:
 
-1. Fetch original file from paperless; render pages to images (PyMuPDF),
-   configurable DPI.
-2. Per request: ≤ `max_images_per_request` pages → markdown text. Low
-   temperature. Language-agnostic prompt.
-3. Concatenate; compute similarity vs. existing `content` (normalized
-   Levenshtein / token-set ratio) to flag "paperless OCR is bad here".
-4. Cache results keyed by (doc id, file checksum, model, prompt version).
+1. Fetch original file from paperless; classify pages (`app.pdfio`,
+   pdfminer.six): a page is **born-digital** when it has a real VISIBLE
+   native text layer and is not mostly bitmap. Invisible (Tr 3) text
+   over a full-page image — a previously-OCRed scan, e.g. paperless's
+   own tesseract layer — classifies as a scan (OCRmyPDF `--redo-ocr`
+   semantics).
+2. Born-digital pages read their text straight from the PDF (pypdfium2)
+   — zero VLM calls; scan pages render to images (pypdfium2),
+   configurable DPI. `force_vlm` (the gate's re-run escape hatch)
+   disables the gate for misclassified documents.
+3. Per request: ≤ `max_images_per_request` scan pages → markdown text.
+   Low temperature. Language-agnostic prompt.
+4. Concatenate in page order; compute similarity vs. existing `content`
+   (normalized Levenshtein / token-set ratio) to flag "paperless OCR is
+   bad here".
+5. Cache results keyed by (doc id, file checksum, model, prompt version).
+6. When EVERY page was born-digital and similarity ≥
+   `llm.ocr.native_auto_accept_similarity`, the OCR gate resolves
+   itself (`auto_native`) — there is no OCR decision for a human to
+   make; bulk corpus-rehab jobs flow straight through.
 
 ## RAG subsystem (optional feature)
 

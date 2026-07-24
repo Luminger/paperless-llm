@@ -63,10 +63,12 @@ async def _exec_ocr(
         force=True,
         instructions=step.input.get("instructions"),
         dpi=dpi,
+        force_vlm=bool(step.input.get("force_vlm")),
         progress=publish_progress,
     )
     step.result = {
         "pages": len(outcome.pages),
+        "native_pages": outcome.native_pages,
         "total_pages": outcome.total_pages,
         "duration_s": round(sum(t.get("duration_s", 0) for t in outcome.timings or []), 1),
         "dpi": dpi,
@@ -80,6 +82,33 @@ async def _exec_ocr(
         "text": outcome.text,
         "previous_content": outcome.previous_content,
     }
+    # Born-digital auto-resolve: every page was read from the PDF's own
+    # text layer and it matches the stored content — there is no OCR
+    # decision for a human to make (and nothing worth rewriting: a
+    # near-identical journaled content replace would be pure noise).
+    # The gate resolves itself and the pipeline continues (or ends,
+    # for OCR-only sessions).
+    thresh = get_settings().llm.ocr.native_auto_accept_similarity
+    if (
+        thresh is not None
+        and outcome.pages
+        and outcome.native_pages == len(outcome.pages)
+        and not outcome.truncated
+        and outcome.similarity is not None
+        and outcome.similarity >= thresh
+    ):
+        step.result = {**step.result, "resolution": "auto_native", "edited": False}
+        session.params = {**session.params, "ocr_gate": "auto_native"}
+        if session.params.get("ocr_only"):
+            return None
+        analysis_input: dict[str, Any] = {"gate": "auto_native"}
+        if session.params.get("instructions"):
+            analysis_input["instructions"] = session.params["instructions"]
+        # Same pattern as _maybe_auto_apply: created (and committed)
+        # from inside the executor; the engine marks THIS step
+        # succeeded right after.
+        await create_step(db, session, StepKind.analysis, analysis_input, lane=step.lane)
+        return None
     # OCR-only + auto policy: no gate — the new text is written straight
     # away (journaled, revertible) and the pipeline ends here.
     if session.params.get("ocr_only") and session.params.get("apply_policy") == "auto":
@@ -126,6 +155,12 @@ def _kickoff_prompt(session: Session, step: Step) -> str:
         prompt += (
             "\nThe user reviewed a re-OCR of this document and chose to keep "
             "the existing content."
+        )
+    elif gate == "auto_native":
+        prompt += (
+            "\nThe document is born-digital: its embedded text layer was "
+            "verified against the stored content (no OCR was needed) - treat "
+            "the stored content as accurate and do not second-guess it."
         )
     instructions = step.input.get("instructions") or session.params.get("instructions")
     if instructions:

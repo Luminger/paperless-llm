@@ -5,20 +5,15 @@ from __future__ import annotations
 
 import subprocess
 
-import fitz
 import pytest
 
 from app.llm import ocr as ocr_mod
 from app.llm.ocr import detect_rotation, render_page_range
+from tests.fixtures.pdfs import digital_pdf
 
 
 def _pdf_with_text() -> bytes:
-    doc = fitz.open()
-    page = doc.new_page(width=200, height=300)
-    page.insert_text((50, 100), "Hello OCR")
-    data = doc.tobytes()
-    doc.close()
-    return data
+    return digital_pdf("Hello OCR")
 
 
 @pytest.fixture(autouse=True)

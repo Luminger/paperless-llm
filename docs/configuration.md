@@ -69,6 +69,8 @@ multimodal endpoint needs no extra config.
 | `max_images_per_request` | `2` | Match your server's multimodal limit (e.g. vLLM `--limit-mm-per-prompt`) |
 | `max_pages` | `0` | Page cap per document (0 = all) |
 | `render_dpi` | `150` | PDF page render resolution |
+| `native_text` | `true` | Born-digital gate: pages with a real visible text layer are read from the PDF directly (no VLM call); invisible OCR layers over scans still go to the VLM |
+| `native_auto_accept_similarity` | `0.95` | All pages born-digital + text matches stored content at ≥ this → the OCR gate resolves itself; unset to always gate |
 | `prompt_version` | `1` | Part of the OCR cache key |
 
 OCR results are cached keyed on document + content checksum + model +

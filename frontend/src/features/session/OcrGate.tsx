@@ -22,6 +22,7 @@ export function OcrGateBody({ step }: { step: Step }) {
   });
   const [newText, setNewText] = useState<string | null>(null);
   const [rerunInstructions, setRerunInstructions] = useState("");
+  const [forceVlm, setForceVlm] = useState(false);
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: keys.session(step.session_id) });
   const resolve = useMutation({
@@ -33,6 +34,7 @@ export function OcrGateBody({ step }: { step: Step }) {
     mutationFn: () =>
       api.redoStep(step.session_id, step.id, {
         instructions: rerunInstructions.trim() || undefined,
+        force_vlm: forceVlm || undefined,
       }),
     onSuccess: invalidate,
   });
@@ -88,6 +90,19 @@ export function OcrGateBody({ step }: { step: Step }) {
             value={rerunInstructions}
             onChange={(e) => setRerunInstructions(e.target.value)}
           />
+          {/* Escape hatch for a misclassified born-digital page: skip
+              the native text layer and send every page to the vision
+              model. Only offered when the run actually used it. */}
+          {((step.result.native_pages as number | undefined) ?? 0) > 0 && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
+              <input
+                type="checkbox"
+                checked={forceVlm}
+                onChange={(e) => setForceVlm(e.target.checked)}
+              />
+              Ignore the PDF's embedded text — OCR every page with the vision model
+            </label>
+          )}
           <Button
             size="sm"
             variant="secondary"

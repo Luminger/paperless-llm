@@ -173,9 +173,13 @@ type OcrBatch = {
   output_tokens?: number;
   tps?: number;
   text?: string;
+  // Born-digital pages: text read straight from the PDF's own layer.
+  native?: boolean;
+  count?: number;
 };
 
 function batchStats(b: OcrBatch): string {
+  if (b.native) return "embedded text layer (born-digital) — no OCR call";
   const bits: string[] = [];
   if (b.duration_s != null) bits.push(`${b.duration_s}s`);
   if (b.output_tokens != null) bits.push(`${b.output_tokens.toLocaleString()} tok`);
@@ -277,6 +281,8 @@ export function OcrTimingSummary({ result }: { result: Record<string, unknown> }
       {tokens > 0 && ` · ${tokens.toLocaleString()} tok`}
       {avgTps != null && ` · ${avgTps.toFixed(1)} tok/s`}
       {rotated > 0 && ` · ${rotated} page${rotated === 1 ? "" : "s"} auto-rotated`}
+      {((result.native_pages as number | undefined) ?? 0) > 0 &&
+        ` · ${String(result.native_pages)} born-digital`}
     </span>
   );
 }
@@ -323,7 +329,9 @@ function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
                   <PanelTitleMuted>
                     {resolution === "kept_existing"
                       ? "existing content kept"
-                      : "content unchanged"}
+                      : resolution === "auto_native"
+                        ? "born-digital — embedded text verified, gate auto-resolved"
+                        : "content unchanged"}
                   </PanelTitleMuted>
                 </>
               )}

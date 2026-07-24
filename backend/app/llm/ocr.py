@@ -1,9 +1,16 @@
 """OCR pipeline — plain vision calls, deliberately OUTSIDE any agent
 tool loop (DESIGN.md "OCR pipeline").
 
-Flow: fetch original from paperless -> render pages to PNG (PyMuPDF) ->
-batches of <= max_images_per_request pages per completion -> concatenate
-markdown -> similarity vs. existing paperless `content` -> cache.
+Flow: fetch original from paperless -> classify pages (born-digital vs
+scan, app.pdfio) -> digital pages read their native text layer directly
+-> scan pages render to PNG (pypdfium2) in batches of
+<= max_images_per_request per completion -> concatenate markdown ->
+similarity vs. existing paperless `content` -> cache.
+
+A page counts as born-digital only when it has a real VISIBLE text
+layer: invisible (Tr 3) text over a full-page image — a previously
+OCRed scan, e.g. paperless's own tesseract layer — classifies as a
+scan and gets the full VLM treatment (--redo-ocr semantics).
 """
 
 from __future__ import annotations
@@ -18,12 +25,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import lru_cache
 
-import fitz  # PyMuPDF
 from pydantic_ai import Agent, BinaryContent
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import pdfio
 from app.db.models import OcrResult
 from app.llm.factory import ocr_model
 from app.paperless import PaperlessClient
@@ -63,6 +70,9 @@ class OcrOutcome:
     similarity: float | None  # vs. paperless `content` at run time; None if no content
     from_cache: bool
     timings: list[dict] | None = None  # per-batch LLM call metrics
+    # Pages whose text came straight from the PDF's native text layer
+    # (born-digital) — no VLM involved.
+    native_pages: int = 0
     # Partial run (max_pages limit hit): pages/text cover only the head.
     truncated: bool = False
     total_pages: int | None = None
@@ -72,11 +82,7 @@ class OcrOutcome:
 
 
 def page_count(data: bytes, content_type: str) -> int:
-    doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
-    try:
-        return doc.page_count
-    finally:
-        doc.close()
+    return pdfio.page_count(data, content_type)
 
 
 @lru_cache(maxsize=1)
@@ -107,37 +113,57 @@ def detect_rotation(png: bytes) -> int:
         return 0
 
 
+def render_pages(
+    data: bytes, content_type: str, dpi: int, indices: list[int],
+    auto_rotate: bool = False,
+) -> list[tuple[bytes, int]]:
+    """Render the given 0-based pages as (png, applied_rotation) tuples
+    — AUDIT BC-F3: batches render lazily so peak memory is ONE batch,
+    not the whole document. Indices need not be contiguous (the
+    born-digital gate can punch holes into the scan set).
+
+    ``auto_rotate``: PDFium already honors PDF /Rotate metadata; this
+    additionally detects raster content that is itself upside-down or
+    sideways (raw scans) and re-renders upright."""
+    out: list[tuple[bytes, int]] = []
+    for i in indices:
+        png = pdfio.render_page(data, content_type, i, dpi)
+        rotation = 0
+        if auto_rotate:
+            rotation = detect_rotation(png)
+            if rotation:
+                png = pdfio.render_page(data, content_type, i, dpi, rotation=rotation)
+        out.append((png, rotation))
+    return out
+
+
 def render_page_range(
     data: bytes, content_type: str, dpi: int, start: int, count: int,
     auto_rotate: bool = False,
 ) -> list[tuple[bytes, int]]:
-    """Render pages [start, start+count) as (png, applied_rotation)
-    tuples — AUDIT BC-F3: batches render lazily so peak memory is ONE
-    batch, not the whole document.
+    """Contiguous-range convenience over :func:`render_pages`."""
+    total = page_count(data, content_type)
+    return render_pages(
+        data, content_type, dpi, list(range(start, min(total, start + count))),
+        auto_rotate,
+    )
 
-    ``auto_rotate``: PyMuPDF already honors PDF /Rotate metadata; this
-    additionally detects raster content that is itself upside-down or
-    sideways (raw scans) and re-renders upright."""
-    doc = fitz.open(stream=data, filetype="pdf" if "pdf" in content_type else None)
-    try:
-        zoom = dpi / 72.0
-        end = min(doc.page_count, start + count)
-        out: list[tuple[bytes, int]] = []
-        for i in range(start, end):
-            png = doc[i].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
-            rotation = 0
-            if auto_rotate:
-                rotation = detect_rotation(png)
-                if rotation:
-                    png = (
-                        doc[i]
-                        .get_pixmap(matrix=fitz.Matrix(zoom, zoom).prerotate(rotation))
-                        .tobytes("png")
-                    )
-            out.append((png, rotation))
-        return out
-    finally:
-        doc.close()
+
+def _span_label(nums: list[int]) -> str:
+    """Human page label for a sorted list of 1-based page numbers:
+    [2, 5, 6, 7] -> "2, 5-7"."""
+    spans: list[list[int]] = []
+    for n in nums:
+        if spans and n == spans[-1][1] + 1:
+            spans[-1][1] = n
+        else:
+            spans.append([n, n])
+    return ", ".join(f"{a}-{b}" if a != b else f"{a}" for a, b in spans)
+
+
+def _native_count(timings: list[dict] | None) -> int:
+    """Born-digital page count recorded in a run's timing entries."""
+    return sum(t.get("count", 0) for t in timings or [] if t.get("native"))
 
 
 def _normalize(text: str) -> str:
@@ -165,13 +191,16 @@ async def run_ocr(
     force: bool = False,
     instructions: str | None = None,
     dpi: int | None = None,
+    force_vlm: bool = False,
     progress: ProgressFn | None = None,
 ) -> OcrOutcome:
     """OCR one document, using the cache unless ``force``.
 
     ``instructions`` (user-supplied, e.g. from the OCR gate's re-run
     action) are appended to the OCR system prompt; ``dpi`` overrides the
-    profile's render DPI for this run."""
+    profile's render DPI for this run; ``force_vlm`` disables the
+    born-digital gate and sends every page to the vision model (the
+    gate's escape hatch for misclassified documents)."""
     model, model_settings, profile, semaphore = ocr_model()
     doc = await paperless.get_document(document_id)
     data, content_type = await paperless.download_original(document_id)
@@ -210,12 +239,13 @@ async def run_ocr(
                 similarity=cached.similarity,
                 from_cache=True,
                 timings=list(cached.timings or []),
+                native_pages=_native_count(cached.timings),
                 truncated=bool(cached.truncated),
                 total_pages=cached.total_pages,
                 previous_content=doc.content,
             )
 
-    # AUDIT BC-F3: PyMuPDF is pure CPU — everything renders in worker
+    # AUDIT BC-F3: pdfio is pure CPU — everything renders in worker
     # threads, and only ONE batch of PNGs is in memory at a time (a
     # 100-page scan at 150 DPI is hundreds of MB fully materialized).
     total = await asyncio.to_thread(page_count, data, content_type)
@@ -223,27 +253,52 @@ async def run_ocr(
     truncated = n_pages < total
     effective_dpi = dpi or profile.render_dpi
 
+    # Born-digital gate: pages with a real visible text layer skip the
+    # VLM entirely — their native text IS the ground truth.
+    page_texts: list[str | None] = [None] * n_pages
+    native_idx: list[int] = []
+    timings: list[dict] = []
+    if profile.native_text and not force_vlm and pdfio.is_pdf(content_type):
+        profiles = await asyncio.to_thread(pdfio.classify_pages, data, content_type)
+        if any(p.digital for p in profiles[:n_pages]):
+            texts = await asyncio.to_thread(pdfio.native_page_texts, data, content_type)
+            for i in range(min(n_pages, len(profiles), len(texts))):
+                # Classifier said digital but extraction came back empty:
+                # trust nothing, fall through to the VLM.
+                if profiles[i].digital and texts[i].strip():
+                    page_texts[i] = texts[i]
+                    native_idx.append(i)
+    if native_idx:
+        timings.append({
+            "pages": _span_label([i + 1 for i in native_idx]),
+            "native": True,
+            "count": len(native_idx),
+            "duration_s": 0.0,
+        })
+
     prompt = base_prompt
     if instructions:
         prompt += f"\nAdditional instructions from the user (follow them):\n{instructions}\n"
     agent: Agent[None, str] = Agent(model, system_prompt=prompt, model_settings=model_settings)
     batch = max(1, profile.max_images_per_request)
-    pages: list[str] = []
-    timings: list[dict] = []
-    total_batches = -(-n_pages // batch)
-    for i in range(0, n_pages, batch):
+    scan_idx = [i for i in range(n_pages) if page_texts[i] is None]
+    batches = [scan_idx[i : i + batch] for i in range(0, len(scan_idx), batch)]
+    total_batches = len(batches)
+    done_scans = 0
+    for indices in batches:
         chunk = await asyncio.to_thread(
-            render_page_range, data, content_type, effective_dpi, i,
-            min(batch, n_pages - i), profile.auto_rotate,
+            render_pages, data, content_type, effective_dpi, indices,
+            profile.auto_rotate,
         )
-        rotated = [i + 1 + k for k, (_png, rot) in enumerate(chunk) if rot]
+        label = _span_label([i + 1 for i in indices])
+        rotated = [indices[k] + 1 for k, (_png, rot) in enumerate(chunk) if rot]
         parts: list[str | BinaryContent] = [
-            f"Transcribe page(s) {i + 1}-{i + len(chunk)} of {n_pages}."
+            f"Transcribe page(s) {label} of {n_pages}."
         ]
         parts += [BinaryContent(data=png, media_type="image/png") for png, _rot in chunk]
         async with semaphore:
             result = await agent.run(parts)
-        entry: dict = {"pages": f"{i + 1}-{i + len(chunk)}"}
+        entry: dict = {"pages": label}
         if rotated:
             entry["rotated"] = rotated
         for message in result.new_messages():
@@ -252,12 +307,13 @@ async def run_ocr(
                 entry.update(details["pllm_timing"])
         timings.append(entry)
         out = result.output.strip()
+        done_scans += len(chunk)
         if progress is not None:
             # Live view: batch text travels with the snapshot (the final
             # result stores only the concatenated text).
             await progress({
                 "total_pages": n_pages,
-                "done_pages": min(i + len(chunk), n_pages),
+                "done_pages": len(native_idx) + done_scans,
                 "total_batches": total_batches,
                 "batches": [
                     *timings[:-1],
@@ -266,13 +322,21 @@ async def run_ocr(
             })
         if len(chunk) > 1:
             split = re.split(r"\n-{3,}\n", out)
-            # If the model didn't separate pages as instructed, keep the
-            # blob as one page entry — the concatenated text is what matters.
-            pages += [s.strip() for s in split] if len(split) == len(chunk) else [out]
+            if len(split) == len(chunk):
+                for k, i in enumerate(indices):
+                    page_texts[i] = split[k].strip()
+            else:
+                # The model didn't separate pages as instructed — keep
+                # the blob on the batch's first page; the concatenated
+                # text is what matters.
+                page_texts[indices[0]] = out
+                for i in indices[1:]:
+                    page_texts[i] = ""
         else:
-            pages.append(out)
+            page_texts[indices[0]] = out
 
-    text = "\n\n".join(pages).strip()
+    pages = [t if t is not None else "" for t in page_texts]
+    text = "\n\n".join(p for p in pages if p.strip()).strip()
     # AUDIT BC-F17: similarity vs. the FULL existing content is
     # meaningless for a partial transcription — report unknown instead
     # of "artificially low".
@@ -342,7 +406,8 @@ async def run_ocr(
         db,
         ocr_runs=1,
         ocr_pages=len(pages),
-        llm_requests=len(timings),
+        # Native entries are bookkeeping, not LLM calls.
+        llm_requests=sum(1 for t in timings if not t.get("native")),
         llm_input_tokens=sum(t.get("input_tokens") or 0 for t in timings),
         llm_output_tokens=sum(t.get("output_tokens") or 0 for t in timings),
     )
@@ -357,6 +422,7 @@ async def run_ocr(
         similarity=similarity,
         from_cache=False,
         timings=timings,
+        native_pages=len(native_idx),
         truncated=truncated,
         total_pages=total,
         previous_content=doc.content,
