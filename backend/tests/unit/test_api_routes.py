@@ -1818,3 +1818,58 @@ async def test_preview_cache_authorizes_every_caller(client):
         assert resp.status_code == 404  # cache did NOT leak
     finally:
         ent._preview_cache.pop(42, None)
+
+
+async def test_llm_test_route_reports_outcome(client, monkeypatch):
+    """Settings connectivity test: dataclass outcome -> response shape."""
+    from app.llm import diagnostics as diag
+
+    async def fake_test(profile):
+        assert profile == "ocr"
+        return diag.LlmTestResult(
+            ok=True, base_url="http://x/v1", model="qwen-vl",
+            latency_ms=250, reply="red",
+        )
+
+    monkeypatch.setattr(diag, "run_llm_test", fake_test)
+    r = await client.post("/api/settings/llm/ocr/test")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["reply"] == "red"
+    assert body["latency_ms"] == 250
+
+
+async def test_llm_detect_route_returns_suggestions(client, monkeypatch):
+    from app.llm import diagnostics as diag
+
+    async def fake_detect(profile):
+        return diag.LlmDetectResult(
+            base_url="http://x/v1", model="qwen3",
+            context_length=32768, context_source="max_model_len (vLLM) via /models",
+            suggestions={"llm.agent.max_input_tokens": 24576},
+        )
+
+    monkeypatch.setattr(diag, "run_llm_detect", fake_detect)
+    r = await client.post("/api/settings/llm/agent/detect")
+    assert r.status_code == 200
+    assert r.json()["suggestions"] == {"llm.agent.max_input_tokens": 24576}
+
+
+async def test_llm_diagnostics_bad_profile_rejected(client):
+    r = await client.post("/api/settings/llm/nope/test")
+    assert r.status_code == 422
+    # Detection stays completions-only — no capability probe for
+    # embeddings/reranker (their test IS the whole story).
+    r = await client.post("/api/settings/llm/embeddings/detect")
+    assert r.status_code == 422
+
+
+async def test_llm_test_covers_embeddings_and_reranker(client):
+    """Unconfigured optional profiles answer cleanly instead of 500ing."""
+    for profile in ("embeddings", "reranker"):
+        r = await client.post(f"/api/settings/llm/{profile}/test")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is False
+        assert "not configured" in body["error"]

@@ -191,6 +191,72 @@ async def webhook_status(
     return out
 
 
+# ----- LLM diagnostics -------------------------------------------------
+
+
+class LlmTestOut(BaseModel):
+    """One real completion against the profile's endpoint — the vision
+    profile is tested WITH an image attached."""
+
+    ok: bool
+    base_url: str
+    model: str
+    latency_ms: int | None = None
+    reply: str | None = None
+    error: str | None = None
+
+
+class LlmDetectOut(BaseModel):
+    """Best-effort capability detection. ``suggestions`` maps runtime-
+    editable config keys to detected values — the UI fills them into
+    the form for review, nothing is saved server-side."""
+
+    base_url: str
+    model: str
+    context_length: int | None = None
+    context_source: str | None = None
+    max_images: int | None = None
+    # False = probed up to the ceiling without hitting a server cap.
+    max_images_exact: bool | None = None
+    # Measured page cost (one blank A4 at render_dpi, usage-reported)
+    # and the resulting context-fit prediction.
+    render_dpi: int | None = None
+    tokens_per_image: int | None = None
+    images_in_context: int | None = None
+    error: str | None = None
+    suggestions: dict[str, int] = {}
+
+
+@router.post("/settings/llm/{profile}/test")
+async def llm_connectivity_test(
+    profile: Literal["agent", "ocr", "embeddings", "reranker"],
+    user: CurrentUser = Depends(require_admin),
+) -> LlmTestOut:
+    """Fire one tiny call at the configured endpoint (admin-only: it
+    spends real tokens). The OCR profile resolves its agent-profile
+    fallback exactly like production calls do; embeddings and reranker
+    go through their production client code paths."""
+    from dataclasses import asdict
+
+    from app.llm.diagnostics import run_llm_test
+
+    return LlmTestOut(**asdict(await run_llm_test(profile)))
+
+
+@router.post("/settings/llm/{profile}/detect")
+async def llm_capability_detect(
+    profile: Literal["agent", "ocr"],
+    user: CurrentUser = Depends(require_admin),
+) -> LlmDetectOut:
+    """Detect the server's context window (agent) / images-per-request
+    limit (ocr, via an empirical probe with tiny images)."""
+    from dataclasses import asdict
+
+    from app.llm.diagnostics import run_llm_detect
+
+    return LlmDetectOut(**asdict(await run_llm_detect(profile)))
+
+
 # ----- the runtime override layer --------------------------------------
 
 

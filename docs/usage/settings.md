@@ -27,6 +27,37 @@ environment (locked), set here, config file, or default — per the
 apply immediately, validate before persisting, and can be reset back
 to the underlying config-file/default value per field.
 
+Every model card carries a **Test connection** probe, and the two
+completion cards an **Autodetect** (admin-only — they spend a few real
+tokens):
+
+- **Test connection** — one tiny call through the same code path
+  production uses. The OCR profile is tested **with an image
+  attached**, so a text-only server that would fail real OCR runs
+  fails the test too. Embeddings embed a test string (the result shows
+  the vector dimension); the reranker ranks an obvious two-document
+  pair (the result shows whether the invoice actually came first).
+  Shows latency and the model's reply.
+- **Autodetect (agent)** — reads the server's context window from
+  whatever metadata it exposes (vLLM `/v1/models` `max_model_len`,
+  llama.cpp `/props`, Ollama `/api/show` — preferring the *serving*
+  window over the model-card maximum) and fills a suggested input
+  clamp (~¾ of the window) into the form.
+- **Autodetect (OCR)** — three findings, combined into one suggestion:
+  the server's **images-per-request cap** (empirical probe with tiny
+  images, binary search up to 16), the **token cost of one page** at
+  your configured render DPI (measured by diffing the usage-reported
+  prompt tokens of a text-only call vs. one with a blank A4 page — so
+  the server's own preprocessor pricing is what's measured), and from
+  that plus the context window, **how many pages actually fit one
+  request** including ~1k reserved output tokens per page. The
+  suggested `max_images_per_request` is the binding constraint —
+  whichever of server cap and context fit is smaller.
+
+Detected values are only ever drafts — you review and save them like
+any hand-typed change. When a server exposes no metadata or no image
+cap, the probe says so instead of guessing.
+
 ## Prompts
 
 Four prompts, shown in full — nothing hidden behind folds:

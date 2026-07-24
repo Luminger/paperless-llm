@@ -1036,6 +1036,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/llm/{profile}/detect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Llm Capability Detect
+         * @description Detect the server's context window (agent) / images-per-request
+         *     limit (ocr, via an empirical probe with tiny images).
+         */
+        post: operations["llm_capability_detect_api_settings_llm__profile__detect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/llm/{profile}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Llm Connectivity Test
+         * @description Fire one tiny call at the configured endpoint (admin-only: it
+         *     spends real tokens). The OCR profile resolves its agent-profile
+         *     fallback exactly like production calls do; embeddings and reranker
+         *     go through their production client code paths.
+         */
+        post: operations["llm_connectivity_test_api_settings_llm__profile__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/webhook": {
         parameters: {
             query?: never;
@@ -1047,6 +1091,28 @@ export interface paths {
         get: operations["webhook_status_api_settings_webhook_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/webhook/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Webhook Setup
+         * @description One-click ingress: generate a secret when none exists (runtime
+         *     override), then create — or fix up — the paperless workflow that
+         *     posts new documents to this app. Requires webhook.public_url.
+         */
+        post: operations["webhook_setup_api_settings_webhook_setup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1626,6 +1692,60 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "completed" | "failed" | "cancelled" | "paused";
+        /**
+         * LlmDetectOut
+         * @description Best-effort capability detection. ``suggestions`` maps runtime-
+         *     editable config keys to detected values — the UI fills them into
+         *     the form for review, nothing is saved server-side.
+         */
+        LlmDetectOut: {
+            /** Base Url */
+            base_url: string;
+            /** Context Length */
+            context_length?: number | null;
+            /** Context Source */
+            context_source?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Images In Context */
+            images_in_context?: number | null;
+            /** Max Images */
+            max_images?: number | null;
+            /** Max Images Exact */
+            max_images_exact?: boolean | null;
+            /** Model */
+            model: string;
+            /** Render Dpi */
+            render_dpi?: number | null;
+            /**
+             * Suggestions
+             * @default {}
+             */
+            suggestions: {
+                [key: string]: number;
+            };
+            /** Tokens Per Image */
+            tokens_per_image?: number | null;
+        };
+        /**
+         * LlmTestOut
+         * @description One real completion against the profile's endpoint — the vision
+         *     profile is tested WITH an image attached.
+         */
+        LlmTestOut: {
+            /** Base Url */
+            base_url: string;
+            /** Error */
+            error?: string | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Model */
+            model: string;
+            /** Ok */
+            ok: boolean;
+            /** Reply */
+            reply?: string | null;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Password */
@@ -2251,12 +2371,41 @@ export interface components {
             /** Redo Ocr */
             redo_ocr: boolean;
         };
+        /** WebhookSetupOut */
+        WebhookSetupOut: {
+            /**
+             * Created
+             * @default false
+             */
+            created: boolean;
+            /** Message */
+            message: string;
+            /** Ok */
+            ok: boolean;
+            /**
+             * Secret Generated
+             * @default false
+             */
+            secret_generated: boolean;
+            /** Workflow Id */
+            workflow_id?: number | null;
+            /**
+             * Workflow Name
+             * @default
+             */
+            workflow_name: string;
+        };
         /**
          * WebhookStatusOut
          * @description Deterministic webhook state: the app side (secret configured)
          *     AND the paperless side (a workflow that actually posts to us).
          */
         WebhookStatusOut: {
+            /**
+             * Public Url
+             * @default
+             */
+            public_url: string;
             /** Secret Configured */
             secret_configured: boolean;
             /**
@@ -3971,6 +4120,68 @@ export interface operations {
             };
         };
     };
+    llm_capability_detect_api_settings_llm__profile__detect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile: "agent" | "ocr";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmDetectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    llm_connectivity_test_api_settings_llm__profile__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile: "agent" | "ocr" | "embeddings" | "reranker";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmTestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     webhook_status_api_settings_webhook_get: {
         parameters: {
             query?: never;
@@ -3987,6 +4198,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebhookStatusOut"];
+                };
+            };
+        };
+    };
+    webhook_setup_api_settings_webhook_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSetupOut"];
                 };
             };
         };

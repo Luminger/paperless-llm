@@ -12,20 +12,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
-import { api, type ConfigRow } from "../../api";
+import { api, type ConfigRow, type LlmDetect, type LlmTest } from "../../api";
 import { keys } from "../../lib/keys";
 import { useAuth } from "../../lib/auth";
 import { SourceBadge } from "./shared";
 
-const GROUPS: { title: string; prefix: string[]; hint?: string }[] = [
-  { title: "Agent model", prefix: ["llm.agent."] },
+type ProbeProfile = "agent" | "ocr" | "embeddings" | "reranker";
+
+const GROUPS: {
+  title: string;
+  prefix: string[];
+  hint?: string;
+  probe?: ProbeProfile;
+}[] = [
+  { title: "Agent model", prefix: ["llm.agent."], probe: "agent" },
   {
     title: "OCR model",
     prefix: ["llm.ocr."],
     hint: "Unset endpoint/model fall back to the agent profile.",
+    probe: "ocr",
   },
-  { title: "Embeddings", prefix: ["llm.embeddings."] },
-  { title: "Reranker", prefix: ["llm.reranker."] },
+  { title: "Embeddings", prefix: ["llm.embeddings."], probe: "embeddings" },
+  { title: "Reranker", prefix: ["llm.reranker."], probe: "reranker" },
   {
     title: "Behavior",
     prefix: ["queue.", "webhook."],
@@ -46,6 +54,8 @@ const LABELS: Record<string, string> = {
   max_images_per_request: "Images per request",
   max_pages: "Page cap (0 = all)",
   render_dpi: "Render DPI",
+  native_text: "Born-digital gate (read embedded text)",
+  native_auto_accept_similarity: "Born-digital auto-accept similarity",
   auto_continuation_limit: "Auto-continuation limit",
   redo_ocr: "Webhook: re-do OCR",
   apply_policy: "Webhook: apply policy",
@@ -123,6 +133,132 @@ function FieldEditor({
   );
 }
 
+function testSummary(t: LlmTest): string {
+  if (!t.ok) return `✗ ${t.error ?? "failed"}`;
+  const reply = t.reply ? ` · “${t.reply}”` : "";
+  return `✓ ${t.model} reachable · ${t.latency_ms} ms${reply}`;
+}
+
+function detectSummary(d: LlmDetect, profile: ProbeProfile): string {
+  const bits: string[] = [];
+  if (d.context_length != null)
+    bits.push(
+      `context window ${d.context_length.toLocaleString()} (${d.context_source})`,
+    );
+  if (profile === "ocr") {
+    if (d.max_images != null)
+      bits.push(
+        d.max_images_exact
+          ? `server cap: ${d.max_images} images/request`
+          : `no server cap up to ${d.max_images}`,
+      );
+    if (d.tokens_per_image != null)
+      bits.push(
+        `≈ ${d.tokens_per_image.toLocaleString()} tok/page @ ${d.render_dpi} DPI`,
+      );
+    if (d.images_in_context != null)
+      bits.push(
+        `context fits ~${d.images_in_context} page${d.images_in_context === 1 ? "" : "s"} (incl. output)`,
+      );
+  }
+  if (bits.length === 0) return `✗ ${d.error ?? "nothing detected"}`;
+  const applied = Object.keys(d.suggestions).length > 0;
+  return `✓ ${bits.join(" · ")}${applied ? " — suggestion filled into the form, review & save" : ""}`;
+}
+
+/** Connectivity + capability probes for one LLM profile. Detection
+ * results only ever land in the FORM (as a draft) — the admin reviews
+ * and saves like any hand-typed value. */
+function LlmDiagnostics({
+  profile,
+  onSuggest,
+}: {
+  profile: ProbeProfile;
+  onSuggest: (values: Record<string, number>) => void;
+}) {
+  const canDetect = profile === "agent" || profile === "ocr";
+  const test = useMutation({ mutationFn: () => api.testLlm(profile) });
+  const detect = useMutation({
+    mutationFn: () => {
+      // The Autodetect button only renders for these two profiles.
+      if (profile !== "agent" && profile !== "ocr")
+        throw new Error("detection is only available for completion profiles");
+      return api.detectLlm(profile);
+    },
+    onSuccess: (d) => {
+      const s = d.suggestions as Record<string, number>;
+      if (Object.keys(s).length > 0) onSuggest(s);
+    },
+  });
+  const busy = test.isPending || detect.isPending;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <Tip
+          content={
+            profile === "ocr"
+              ? "Sends one tiny completion WITH a test image — verifies the endpoint really serves vision"
+              : profile === "embeddings"
+                ? "Embeds one test string via the production client — shows the vector dimension"
+                : profile === "reranker"
+                  ? "Reranks an obvious two-document pair — shows whether the model actually ranks"
+                  : "Sends one tiny completion to the configured endpoint"
+          }
+        >
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            disabled={busy}
+            onClick={() => test.mutate()}
+          >
+            {test.isPending ? "Testing…" : "Test connection"}
+          </Button>
+        </Tip>
+        {canDetect && (
+          <Tip
+            content={
+              profile === "ocr"
+                ? "Probes the server's image cap, measures the token cost of one page at your render DPI, and predicts how many pages fit the context window"
+                : "Reads the server's context window from its metadata endpoint (vLLM, llama.cpp, Ollama) and suggests an input clamp"
+            }
+          >
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={busy}
+              onClick={() => detect.mutate()}
+            >
+              {detect.isPending ? "Detecting…" : "Autodetect"}
+            </Button>
+          </Tip>
+        )}
+      </div>
+      {test.data && (
+        <p
+          className={`text-xs ${test.data.ok ? "text-muted-foreground" : "text-destructive"}`}
+        >
+          {testSummary(test.data)}
+        </p>
+      )}
+      {detect.data && (
+        <p
+          className={`text-xs ${
+            detect.data.error && Object.keys(detect.data.suggestions).length === 0 && detect.data.context_length == null && detect.data.max_images == null
+              ? "text-destructive"
+              : "text-muted-foreground"
+          }`}
+        >
+          {detectSummary(detect.data, profile)}
+        </p>
+      )}
+      <ErrorNotice error={test.error} />
+      <ErrorNotice error={detect.error} />
+    </div>
+  );
+}
+
 export function ModelsConfig() {
   const { role } = useAuth();
   const qc = useQueryClient();
@@ -165,6 +301,16 @@ export function ModelsConfig() {
             <CardContent className="space-y-2">
               {group.hint && (
                 <p className="mb-2 text-xs text-muted-foreground/70">{group.hint}</p>
+              )}
+              {group.probe && isAdmin && (
+                <div className="mb-3">
+                  <LlmDiagnostics
+                    profile={group.probe}
+                    onSuggest={(values) =>
+                      setDraft((d) => ({ ...d, ...values }))
+                    }
+                  />
+                </div>
               )}
               {groupRows.map((row) => (
                 <div

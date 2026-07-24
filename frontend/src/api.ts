@@ -31,6 +31,8 @@ export type Stats = S["StatsOut"];
 export type Corpus = S["CorpusOut"];
 export type JobAttention = S["JobAttentionOut"];
 export type ConfigRow = S["ConfigRowOut"];
+export type LlmTest = S["LlmTestOut"];
+export type LlmDetect = S["LlmDetectOut"];
 export type WebhookStatus = S["WebhookStatusOut"];
 export type DocumentHistory = S["DocumentHistoryOut"];
 export type EntityRef = S["EntityOut"];
@@ -109,6 +111,10 @@ export const api = {
 
   getMeta: () => request<Meta>("/api/meta"),
   getConfig: () => request<ConfigRow[]>("/api/settings/config"),
+  testLlm: (profile: "agent" | "ocr" | "embeddings" | "reranker") =>
+    request<LlmTest>(`/api/settings/llm/${profile}/test`, { method: "POST" }),
+  detectLlm: (profile: "agent" | "ocr") =>
+    request<LlmDetect>(`/api/settings/llm/${profile}/detect`, { method: "POST" }),
   getWebhookStatus: () => request<WebhookStatus>("/api/settings/webhook"),
   putConfig: (values: Record<string, unknown>) =>
     request<ConfigRow[]>("/api/settings/config", {
