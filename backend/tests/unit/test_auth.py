@@ -12,6 +12,13 @@ from app.services.auth import CurrentUser, make_cookie, parse_cookie
 SECRET = "test-secret"
 
 
+def _cookie_header(cookies: dict[str, str]) -> dict[str, str]:
+    """Per-request cookies= is deprecated in httpx (ambiguous jar
+    persistence); one-off requests as ANOTHER session send an explicit
+    Cookie header instead."""
+    return {"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())}
+
+
 def test_cookie_roundtrip_and_tamper_resistance():
     user = CurrentUser(name="simon", paperless_token="tok123")
     cookie = make_cookie(user, SECRET)
@@ -149,7 +156,7 @@ async def test_session_revocation_kills_access(client, respx_mock, monkeypatch):
     # The OTHER session revokes fine…
     assert (await client.delete(f"/api/auth/sessions/{other['sid']}")).status_code == 200
     # …and its cookie is dead immediately.
-    r = await client.get("/api/stats", cookies=victim_cookie)
+    r = await client.get("/api/stats", headers=_cookie_header(victim_cookie))
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "session_revoked"
     # The current session still works.
@@ -174,7 +181,7 @@ async def test_session_listing_scoped_to_user_unless_admin(
     assert {s["username"] for s in mine} == {"erika"}
     # …and cannot revoke simon's (404, not 403 — no enumeration).
     admin_sessions = (
-        await client.get("/api/auth/sessions", cookies=admin_cookie)
+        await client.get("/api/auth/sessions", headers=_cookie_header(admin_cookie))
     ).json()
     simons = next(s for s in admin_sessions if s["username"] == "simon")
     assert (await client.delete(f"/api/auth/sessions/{simons['sid']}")).status_code == 404
@@ -195,7 +202,7 @@ async def test_legacy_cookie_without_sid_forces_relogin(
     legacy = make_cookie(
         CurrentUser(name="simon", role="admin", sid=None), "test-secret"
     )
-    r = await client.get("/api/stats", cookies={COOKIE_NAME: legacy})
+    r = await client.get("/api/stats", headers=_cookie_header({COOKIE_NAME: legacy}))
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "session_revoked"
 
