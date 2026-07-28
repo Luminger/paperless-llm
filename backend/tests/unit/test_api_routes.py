@@ -1128,7 +1128,7 @@ async def test_audit_records_apply_and_revert(client, db):
     body = (await client.get("/api/audit")).json()
     assert body["count"] >= 2
     actions = [(e["kind"], e["action"]) for e in body["results"]]
-    assert ("proposal", "reverted") == actions[0]  # newest first
+    assert actions[0] == ("proposal", "reverted")  # newest first
     assert ("proposal", "applied") in actions
     applied = next(e for e in body["results"] if e["action"] == "applied")
     assert applied["detail"]["proposal_id"] == p_id
@@ -1141,8 +1141,8 @@ async def test_audit_records_archive_ops(client, db):
     await client.post(f"/api/sessions/{sid}/unarchive")
     body = (await client.get("/api/audit")).json()
     actions = [(e["kind"], e["action"]) for e in body["results"]]
-    assert ("session", "unarchived") == actions[0]
-    assert ("session", "archived") == actions[1]
+    assert actions[0] == ("session", "unarchived")
+    assert actions[1] == ("session", "archived")
 
 
 @respx.mock

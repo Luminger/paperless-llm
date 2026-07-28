@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.deps import require_user
 from app.api.errors import register_error_handlers
 from app.api.routes import (
     audit,
@@ -25,9 +27,12 @@ from app.api.routes import (
     settings as settings_routes,
 )
 from app.api.schemas import HealthOut, MetaOut
-from app.config import get_settings
+from app.config import get_settings, warn_env_file_collisions
 from app.db.migrations import run_migrations
-from app.db.session import dispose_engine
+from app.db.session import dispose_engine, session_scope
+from app.services.actor import actor_var
+from app.services.paperless_log import drain, writer_loop
+from app.services.runtime_config import init_from_db
 from app.services.steps import recover, workers
 
 log = logging.getLogger(__name__)
@@ -39,18 +44,11 @@ async def lifespan(app: FastAPI):
     await run_migrations()
     # Config layering: UI overrides from the DB become active, and any
     # config-file value shadowed by the environment gets called out.
-    from app.config import warn_env_file_collisions
-    from app.services.runtime_config import init_from_db
-
     await init_from_db()
     warn_env_file_collisions()
     stats = await recover()
     if any(stats.values()):
         log.warning("startup recovery: %s", stats)
-    import asyncio
-
-    from app.services.paperless_log import drain, writer_loop
-
     traffic_writer = asyncio.create_task(writer_loop())
     await workers.start()
     yield
@@ -60,8 +58,6 @@ async def lifespan(app: FastAPI):
     # "Task was destroyed but it is pending".
     traffic_writer.cancel()
     await asyncio.gather(traffic_writer, return_exceptions=True)
-    from app.db.session import session_scope
-
     try:
         async with session_scope() as db:  # final flush
             await drain(db)
@@ -79,17 +75,11 @@ def create_app() -> FastAPI:
     async def _actor_middleware(request, call_next):
         # Work caused by an API request is attributed to the user;
         # background work keeps the contextvar default ("system").
-        from app.services.actor import actor_var
-
         token = actor_var.set("user")
         try:
             return await call_next(request)
         finally:
             actor_var.reset(token)
-
-    from fastapi import Depends
-
-    from app.api.deps import require_user
 
     guard = [Depends(require_user)]
     # Protected: everything a browser calls. Unprotected: auth itself,

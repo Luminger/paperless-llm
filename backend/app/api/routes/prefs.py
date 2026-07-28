@@ -41,6 +41,10 @@ class PrefsUpdate(BaseModel):
     time_format: TimeFormat | None = None
     time_zone: str | None = None
     doc_panel_side: PanelSide | None = None
+    agent_prompt_base: str | None = None
+    agent_prompt_addition: str | None = None
+    ocr_prompt_base: str | None = None
+    ocr_prompt_addition: str | None = None
 
     @field_validator("time_zone")
     @classmethod
@@ -49,15 +53,11 @@ class PrefsUpdate(BaseModel):
         # frontend — reject it at the door.
         if v is None or v == "system":
             return v
-        import zoneinfo
+        import zoneinfo  # deliberately lazy — only login-rare updates pay
 
         if v not in zoneinfo.available_timezones():
             raise ValueError(f"unknown time zone {v!r}")
         return v
-    agent_prompt_base: str | None = None
-    agent_prompt_addition: str | None = None
-    ocr_prompt_base: str | None = None
-    ocr_prompt_addition: str | None = None
 
 
 async def _load(db: AsyncSession) -> PrefsOut:

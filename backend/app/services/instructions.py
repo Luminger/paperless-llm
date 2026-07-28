@@ -51,9 +51,8 @@ async def ensure_inbox_defaults(db: AsyncSession, tags: list[Any]) -> None:
     inbox = [t for t in tags if getattr(t, "is_inbox_tag", False)]
     if not inbox:
         return
-    existing = {
-        r
-        for r in (
+    existing = set(
+        (
             await db.scalars(
                 select(EntityInstruction.entity_id).where(
                     EntityInstruction.entity_type == "tag",
@@ -61,7 +60,7 @@ async def ensure_inbox_defaults(db: AsyncSession, tags: list[Any]) -> None:
                 )
             )
         ).all()
-    }
+    )
     changed = False
     for t in inbox:
         if t.id not in existing:

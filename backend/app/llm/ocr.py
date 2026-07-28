@@ -234,22 +234,21 @@ async def run_ocr(
             OcrResult.prompt_fingerprint == fingerprint,
         )
     )
-    if not force:
-        if cached:
-            return OcrOutcome(
-                document_id=document_id,
-                checksum=checksum,
-                model=model.model_name,
-                pages=list(cached.pages),
-                text=cached.text,
-                similarity=cached.similarity,
-                from_cache=True,
-                timings=list(cached.timings or []),
-                native_pages=_native_count(cached.timings),
-                truncated=bool(cached.truncated),
-                total_pages=cached.total_pages,
-                previous_content=doc.content,
-            )
+    if not force and cached:
+        return OcrOutcome(
+            document_id=document_id,
+            checksum=checksum,
+            model=model.model_name,
+            pages=list(cached.pages),
+            text=cached.text,
+            similarity=cached.similarity,
+            from_cache=True,
+            timings=list(cached.timings or []),
+            native_pages=_native_count(cached.timings),
+            truncated=bool(cached.truncated),
+            total_pages=cached.total_pages,
+            previous_content=doc.content,
+        )
 
     # AUDIT BC-F3: pdfio is pure CPU — everything renders in worker
     # threads, and only ONE batch of PNGs is in memory at a time (a

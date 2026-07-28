@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AuditLog
+from app.services.actor import current_actor
 
 log = logging.getLogger(__name__)
 
@@ -24,8 +25,6 @@ async def record(
     "user" inside API requests, "system" in background work). Never
     raises — the audit trail must not break the operation it
     describes."""
-    from app.services.actor import current_actor
-
     try:
         # SAVEPOINT so a failed flush cannot poison the caller's
         # transaction (AUDIT SV-M4 — same hazard as counters).

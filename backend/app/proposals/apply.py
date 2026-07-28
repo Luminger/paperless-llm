@@ -6,6 +6,7 @@ Applies ``user_payload`` when present, else the ``agent_payload``.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import update as sa_update
@@ -143,9 +144,10 @@ async def _is_noop(paperless: PaperlessClient, p: AnyProposal) -> bool:  # noqa:
                       "archive_serial_number"):
                 if f in provided and provided[f] != getattr(doc, f):
                     return False
-            if "created" in provided and provided["created"]:
-                if str(provided["created"])[:10] != (doc.created or "")[:10]:
-                    return False
+            if "created" in provided and provided["created"] and (
+                str(provided["created"])[:10] != (doc.created or "")[:10]
+            ):
+                return False
             if any(t not in doc.tags for t in p.add_tags):
                 return False
             if any(t in doc.tags for t in p.remove_tags):
@@ -191,8 +193,6 @@ async def _is_noop(paperless: PaperlessClient, p: AnyProposal) -> bool:  # noqa:
 
 
 def _fmt(v: Any) -> str:
-    import json
-
     return json.dumps(v, ensure_ascii=False, default=str)
 
 
@@ -669,7 +669,7 @@ async def _revert_claimed(
         case UpdateEntity():
             spec = TAXONOMY[typed.entity_type]
             entity = before["entity"]
-            await spec.update(paperless, 
+            await spec.update(paperless,
                 typed.entity_id,
                 **{
                     k: entity[k]
@@ -702,7 +702,7 @@ async def _revert_claimed(
             # Recreate the source entity (new id) and reassign the docs back.
             spec = TAXONOMY[typed.entity_type]
             src = before["source_entity"]
-            recreated = await spec.create(paperless, 
+            recreated = await spec.create(paperless,
                 **{
                     k: src[k]
                     for k in ENTITY_RULE_FIELDS
@@ -725,7 +725,7 @@ async def _revert_claimed(
         case DeleteEntity():
             spec = TAXONOMY[typed.entity_type]
             src = before["entity"]
-            recreated = await spec.create(paperless, 
+            recreated = await spec.create(paperless,
                 **{
                     k: src[k]
                     for k in ENTITY_RULE_FIELDS

@@ -7,6 +7,9 @@ reported.
 
 from __future__ import annotations
 
+import json
+import secrets
+from dataclasses import asdict
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,6 +29,7 @@ from app.config import (
     set_runtime_overrides,
 )
 from app.db.session import get_session
+from app.llm import diagnostics
 from app.llm.ocr import OCR_PROMPT
 from app.paperless import PaperlessClient
 from app.services.audit import record
@@ -179,10 +183,8 @@ _WORKFLOW_NAME = "paperless-llm: analyze new documents"
 def _find_webhook_workflow(flows: list[dict]) -> dict | None:
     """Version-tolerant: a webhook action carries our URL somewhere in
     its serialized form."""
-    import json as _json
-
     for flow in flows:
-        if _WEBHOOK_PATH in _json.dumps(flow.get("actions", [])):
+        if _WEBHOOK_PATH in json.dumps(flow.get("actions", [])):
             return flow
     return None
 
@@ -264,8 +266,6 @@ async def webhook_setup(
     """One-click ingress: generate a secret when none exists (runtime
     override), then create — or fix up — the paperless workflow that
     posts new documents to this app. Requires webhook.public_url."""
-    import secrets as _secrets
-
     cfg = get_settings().webhook
     if not cfg.public_url:
         return WebhookSetupOut(
@@ -282,7 +282,7 @@ async def webhook_setup(
                 message="webhook.secret is locked (empty) by the environment "
                 "— set PLLM_WEBHOOK__SECRET to a value first",
             )
-        secret = _secrets.token_urlsafe(32)
+        secret = secrets.token_urlsafe(32)
         merged = runtime_overrides()
         merged["webhook.secret"] = secret
         set_runtime_overrides(merged)
@@ -400,11 +400,8 @@ async def llm_connectivity_test(
     spends real tokens). The OCR profile resolves its agent-profile
     fallback exactly like production calls do; embeddings and reranker
     go through their production client code paths."""
-    from dataclasses import asdict
-
-    from app.llm.diagnostics import run_llm_test
-
-    return LlmTestOut(**asdict(await run_llm_test(profile)))
+    # Via the module so tests can monkeypatch diagnostics.run_llm_test.
+    return LlmTestOut(**asdict(await diagnostics.run_llm_test(profile)))
 
 
 @router.post("/settings/llm/{profile}/detect")
@@ -414,11 +411,7 @@ async def llm_capability_detect(
 ) -> LlmDetectOut:
     """Detect the server's context window (agent) / images-per-request
     limit (ocr, via an empirical probe with tiny images)."""
-    from dataclasses import asdict
-
-    from app.llm.diagnostics import run_llm_detect
-
-    return LlmDetectOut(**asdict(await run_llm_detect(profile)))
+    return LlmDetectOut(**asdict(await diagnostics.run_llm_detect(profile)))
 
 
 # ----- the runtime override layer --------------------------------------

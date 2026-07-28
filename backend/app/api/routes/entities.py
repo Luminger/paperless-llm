@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import pdfio
 from app.api.deps import get_paperless
 from app.api.schemas import (
     CustomFieldOut,
@@ -24,7 +25,7 @@ from app.api.schemas import (
     InstructionsUpdate,
     MergeCandidateOut,
 )
-from app.db.models import EntityType, Session, SessionStatus
+from app.db.models import AppliedChange, EntityType, Proposal, Session, SessionStatus
 from app.db.session import get_session
 from app.paperless import PaperlessClient
 from app.paperless.taxonomy import TAXONOMY, TAXONOMY_TYPES
@@ -34,6 +35,7 @@ from app.services.instructions import (
     get_map,
     set_instructions,
 )
+from app.services.jobs import ACTIVE_PHASES
 
 router = APIRouter(prefix="/api/entities", tags=["entities"])
 
@@ -94,8 +96,6 @@ async def inbox_backlog(
     """The inbox WITHOUT documents that already have an active session
     — the dashboard's "waiting to be looked at" list. ``count`` is the
     full backlog; ``results`` are the first ``limit`` entries."""
-    from app.services.jobs import ACTIVE_PHASES
-
     inbox_tags = [t.id for t in await paperless.list_tags() if t.is_inbox_tag]
     if not inbox_tags:
         return DocumentSearchPage(count=0, results=[])
@@ -158,8 +158,6 @@ async def _archived(paperless: PaperlessClient, doc_id: int) -> tuple[bytes, str
 def _render_single_page(
     data: bytes, content_type: str, page: int, dpi: int
 ) -> bytes | None:
-    from app import pdfio
-
     if page < 1 or page > pdfio.page_count(data, content_type):
         return None
     return pdfio.render_page(data, content_type, page - 1, dpi)
@@ -170,8 +168,6 @@ async def preview_info(
     doc_id: int, paperless: PaperlessClient = Depends(get_paperless)
 ) -> dict:
     """Page count of the archived rendition — drives the pager."""
-    from app import pdfio
-
     data, content_type = await _archived(paperless, doc_id)
     pages = await asyncio.to_thread(pdfio.page_count, data, content_type)
     return {"pages": pages}
@@ -207,14 +203,11 @@ async def document_history(
 ) -> list[DocumentHistoryOut]:
     """Every change this app applied to the document — journaled,
     attributed, linked to the session that produced it."""
-    from app.db.models import AppliedChange, Proposal
-    from app.db.models import Session as SessionModel
-
     rows = (
         await db.execute(
-            select(Proposal, AppliedChange, SessionModel.title)
+            select(Proposal, AppliedChange, Session.title)
             .join(AppliedChange, AppliedChange.proposal_id == Proposal.id)
-            .outerjoin(SessionModel, SessionModel.id == Proposal.session_id)
+            .outerjoin(Session, Session.id == Proposal.session_id)
             .where(
                 Proposal.entity_type == EntityType.document,
                 Proposal.entity_id == doc_id,
@@ -247,7 +240,9 @@ async def document_history(
 
 
 @router.get("/documents/{doc_id}/thumb")
-async def get_thumbnail(doc_id: int, paperless: PaperlessClient = Depends(get_paperless)):
+async def get_thumbnail(
+    doc_id: int, paperless: PaperlessClient = Depends(get_paperless)
+) -> Response:
     content, media_type = await paperless.get_thumbnail(doc_id)
     return Response(content=content, media_type=media_type)
 

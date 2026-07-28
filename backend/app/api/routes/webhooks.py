@@ -10,12 +10,15 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_paperless
 from app.config import get_settings
+from app.db.models import Session
 from app.db.session import get_session
 from app.paperless import PaperlessClient
+from app.services.actor import actor_var
 from app.services.audit import record
 from app.services.jobs import create_job
 
@@ -69,8 +72,6 @@ async def paperless_webhook(
     if not hmac.compare_digest(supplied, cfg.secret.encode("utf-8", "replace")):
         raise HTTPException(403, "bad webhook token")
     # Machine-to-machine: not a user action.
-    from app.services.actor import actor_var
-
     actor_var.set("system")
 
     try:
@@ -91,10 +92,6 @@ async def paperless_webhook(
         kind="webhook_analyze",
         trigger="webhook",
     )
-    from sqlalchemy import select
-
-    from app.db.models import Session
-
     session_ids = list(
         (
             await db.scalars(

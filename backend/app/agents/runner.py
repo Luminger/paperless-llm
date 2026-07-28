@@ -166,7 +166,7 @@ async def run_agent_turn(
     # and the agent must agree on formatting.
     fmt = format_instructions(prefs)
     preamble = f"{preamble}\n\n{fmt}" if preamble else fmt
-    if history_exists := bool(session.message_history):
+    if session.message_history:
         # Follow-up turns: promises don't change proposals — tools do.
         followup = (
             "This is a follow-up turn. If you conclude that something "
@@ -178,7 +178,6 @@ async def run_agent_turn(
             "nothing needs to change anymore."
         )
         preamble = f"{preamble}\n\n{followup}" if preamble else followup
-    del history_exists
     history_start = len(session.message_history or [])
 
     async def _run(stream: bool):

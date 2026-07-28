@@ -82,7 +82,6 @@ class Document(_Permissive):
     modified: str | None = None
     archive_serial_number: int | None = None
     original_file_name: str | None = None
-    checksum: str | None = None  # only present via /api/documents/{id}/metadata/
     custom_fields: list[CustomFieldInstance] = []
     # Search-only fields.
     search_hit: dict[str, Any] | None = None

@@ -23,20 +23,20 @@ from app.services.steps import AWAIT_USER
 
 
 def _outcome(**kw) -> OcrOutcome:
-    base = dict(
-        document_id=7,
-        checksum="abc",
-        model="test",
-        pages=["native text"],
-        text="native text",
-        similarity=1.0,
-        from_cache=False,
-        timings=[{"pages": "1", "native": True, "count": 1, "duration_s": 0.0}],
-        native_pages=1,
-        truncated=False,
-        total_pages=1,
-        previous_content="native text",
-    )
+    base = {
+        "document_id": 7,
+        "checksum": "abc",
+        "model": "test",
+        "pages": ["native text"],
+        "text": "native text",
+        "similarity": 1.0,
+        "from_cache": False,
+        "timings": [{"pages": "1", "native": True, "count": 1, "duration_s": 0.0}],
+        "native_pages": 1,
+        "truncated": False,
+        "total_pages": 1,
+        "previous_content": "native text",
+    }
     return OcrOutcome(**{**base, **kw})
 
 
