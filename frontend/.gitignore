@@ -1,1 +1,4 @@
 openapi.json
+# package-lock.json is the canonical lockfile (deploy/Containerfile runs npm ci);
+# bun 1.3+ auto-writes bun.lock on install, which would drift from it.
+bun.lock
