@@ -32,6 +32,7 @@ from app.db.migrations import run_migrations
 from app.db.session import dispose_engine, session_scope
 from app.services.actor import actor_var
 from app.services.paperless_log import drain, writer_loop
+from app.services.retention import sweeper_enabled, sweeper_loop
 from app.services.runtime_config import init_from_db
 from app.services.steps import recover, workers
 
@@ -50,9 +51,17 @@ async def lifespan(app: FastAPI):
     if any(stats.values()):
         log.warning("startup recovery: %s", stats)
     traffic_writer = asyncio.create_task(writer_loop())
+    # Data-retention sweeper (docs/privacy.md "Retention"): only
+    # started when some retention.* window is configured.
+    retention_task = (
+        asyncio.create_task(sweeper_loop()) if sweeper_enabled() else None
+    )
     await workers.start()
     yield
     await workers.stop()
+    if retention_task is not None:
+        retention_task.cancel()
+        await asyncio.gather(retention_task, return_exceptions=True)
     # AUDIT SV-L5: await the cancellation — a writer mid-drain that is
     # cancelled un-awaited loses the records it already popped and logs
     # "Task was destroyed but it is pending".
