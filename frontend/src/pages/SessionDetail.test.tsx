@@ -193,6 +193,50 @@ describe("SessionDetail step feed", () => {
     );
   });
 
+  it("born-digital gates offer the force-VLM escape hatch", async () => {
+    const gate = mkStep({
+      kind: "ocr",
+      state: "awaiting_user",
+      result: { pages: 2, native_pages: 2 },
+    });
+    mocked.getSession.mockResolvedValue(
+      makeDetail({ phase: "ocr_review", params: { redo_ocr: true }, steps: [gate] }),
+    );
+    mocked.getOcrReview.mockResolvedValue({
+      document_id: 7, previous_content: "a", ocr_text: "b", pages: 2, timings: [],
+    });
+    mocked.redoStep.mockResolvedValue(mkStep({ kind: "ocr", state: "pending" }));
+    renderDetail();
+
+    await userEvent.click(await screen.findByText(/Re-run it with instructions/));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: /Ignore the PDF's embedded text/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Re-run OCR" }));
+    await waitFor(() =>
+      expect(mocked.redoStep).toHaveBeenCalledWith(9, gate.id, {
+        instructions: undefined,
+        force_vlm: true,
+      }),
+    );
+  });
+
+  it("the force-VLM toggle is absent when no page used the text layer", async () => {
+    const gate = mkStep({ kind: "ocr", state: "awaiting_user", result: { pages: 1 } });
+    mocked.getSession.mockResolvedValue(
+      makeDetail({ phase: "ocr_review", params: { redo_ocr: true }, steps: [gate] }),
+    );
+    mocked.getOcrReview.mockResolvedValue({
+      document_id: 7, previous_content: "a", ocr_text: "b", pages: 1, timings: [],
+    });
+    renderDetail();
+
+    await userEvent.click(await screen.findByText(/Re-run it with instructions/));
+    expect(
+      screen.queryByRole("checkbox", { name: /Ignore the PDF's embedded text/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("superseded steps collapse but stay inspectable: params, output, diff", async () => {
     const first = mkStep({
       kind: "ocr",

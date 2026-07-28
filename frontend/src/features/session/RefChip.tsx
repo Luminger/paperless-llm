@@ -22,7 +22,7 @@ import { formatDate } from "../../lib/format";
 import { proposalKindLabel } from "../../lib/proposal-payload";
 import { entityHref } from "../../pages/EntityPage";
 
-export const REF_TOKEN_RE =
+const REF_TOKEN_RE =
   /\[\[(document|tag|correspondent|document_type|storage_path|proposal):(\d+)\]\]/g;
 
 /** Remark plugin: rewrites [[type:id]] tokens into pllm:// links —

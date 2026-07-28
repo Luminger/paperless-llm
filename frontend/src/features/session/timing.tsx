@@ -1,5 +1,5 @@
 import type { CallTiming, TranscriptItem } from "../../api";
-import { Tip } from "@/components/app/Tip";
+import { formatCompact } from "../../lib/format";
 
 export function timingLabel(t: CallTiming): string {
   if (t.duration_s == null) return "";
@@ -7,19 +7,6 @@ export function timingLabel(t: CallTiming): string {
   if (t.tps != null) parts.push(`${t.tps.toFixed(0)} tok/s`);
   if (t.ttft_s != null) parts.push(`ttft ${t.ttft_s.toFixed(2)}s`);
   return parts.join(" · ");
-}
-
-export function TimingChip({ t }: { t: CallTiming | null | undefined }) {
-  if (!t) return null;
-  return (
-    <Tip
-      content={`${t.started_at} → ${t.finished_at}, ${t.input_tokens ?? "?"} in / ${t.output_tokens ?? "?"} out tokens`}
-    >
-      <span className="text-[10px] text-muted-foreground/60" tabIndex={0}>
-        {timingLabel(t)}
-      </span>
-    </Tip>
-  );
 }
 
 /** Whole-turn totals: items sharing an LLM call share one timing
@@ -53,16 +40,13 @@ export function aggregateTimings(items: TranscriptItem[]): {
   };
 }
 
-const fmtTokens = (n: number) =>
-  n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-
 /** "3 calls · 812 tokens · 41 tok/s · 24.1s" for a turn's footer. */
 export function StepTimingSummary({ items }: { items: TranscriptItem[] }) {
   const agg = aggregateTimings(items);
   if (!agg) return null;
   const parts = [
     `${agg.calls} LLM call${agg.calls !== 1 ? "s" : ""}`,
-    ...(agg.tokens > 0 ? [`${fmtTokens(agg.tokens)} tokens`] : []),
+    ...(agg.tokens > 0 ? [`${formatCompact(agg.tokens)} tokens`] : []),
     ...(agg.tps != null ? [`${agg.tps.toFixed(0)} tok/s`] : []),
     `${agg.duration.toFixed(1)}s`,
   ];

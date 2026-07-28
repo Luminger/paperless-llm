@@ -23,28 +23,6 @@ export const TONE_BADGE: Record<Tone, string> = {
   muted: "bg-muted text-muted-foreground",
 };
 
-/** Plain toned text (icons, inline hints). */
-export const TONE_TEXT: Record<Tone, string> = {
-  success: "text-success",
-  warning: "text-warning",
-  info: "text-info",
-  notice: "text-notice",
-  special: "text-special",
-  destructive: "text-destructive",
-  muted: "text-muted-foreground",
-};
-
-/** Soft panel surface (callouts, edited-value highlights). */
-export const TONE_PANEL: Record<Tone, string> = {
-  success: "bg-success/10",
-  warning: "bg-warning/10",
-  info: "bg-info/10",
-  notice: "bg-notice/10",
-  special: "bg-special/10",
-  destructive: "bg-destructive/10",
-  muted: "bg-muted/40",
-};
-
 /** Session/step/job/proposal status → tone. One map for every badge. */
 export const STATUS_TONE: Record<string, Tone> = {
   draft: "muted",
@@ -74,6 +52,21 @@ export const AUDIT_KIND_TONE: Record<string, Tone> = {
   paperless: "notice",
   session: "muted",
 };
+
+import type { Job } from "../api";
+
+/** Human name of a job's scope, e.g. "Inbox" or "3 selected
+ * documents". Jobs carry a label from creation; older ones fall back
+ * to their scope facts. Shared by the jobs list, the job page and the
+ * session flow bar. */
+export function scopeLabel(job: Job): string {
+  const p = job.params;
+  if (typeof p.label === "string" && p.label) return p.label;
+  if (p.inbox) return "Inbox";
+  if (p.untagged_only) return "Untagged documents";
+  if (Array.isArray(p.document_ids)) return `${p.document_ids.length} selected documents`;
+  return job.kind.replaceAll("_", " ");
+}
 
 /** "user:simon" → {label: "simon", user: true}; anything else is the
  * automatic pipeline. Shared by the audit log and change history. */

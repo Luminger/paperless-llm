@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { ErrorNotice } from "@/components/app/states";
 import { cn } from "@/lib/utils";
 import { api, type Proposal, type Step, type TranscriptItem } from "../../api";
+import { errorMessage } from "../../lib/errors";
 import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard } from "../../components/ProposalCard";
@@ -150,7 +151,9 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
         </Tip>
       )}
       {retry.error && (
-        <span className="text-xs text-destructive">{String(retry.error).slice(0, 140)}</span>
+        <span className="text-xs text-destructive">
+          {errorMessage(retry.error).slice(0, 140)}
+        </span>
       )}
       {redoOpen && (
         <RedoDialog
@@ -263,7 +266,7 @@ function OcrBatches({ batches }: { batches: OcrBatch[] }) {
 
 /** The OCR footer line — same statistics vocabulary as agent turns:
  * pages, DPI, wall time, tokens, generation speed, rotations. */
-export function OcrTimingSummary({ result }: { result: Record<string, unknown> }) {
+function OcrTimingSummary({ result }: { result: Record<string, unknown> }) {
   const batches = (result.batches as OcrBatch[] | undefined) ?? [];
   const tokens = batches.reduce((n, b) => n + (b.output_tokens ?? 0), 0);
   const withTps = batches.filter((b) => b.tps != null);
@@ -352,7 +355,7 @@ function OcrBody({ step, proposals }: { step: Step; proposals: Proposal[] }) {
 }
 
 /** The user's decision is part of the record: who applied it, when. */
-export function DecidedBy({ p }: { p: Proposal }) {
+function DecidedBy({ p }: { p: Proposal }) {
   if (!p.applied || !p.applied_by) return null;
   const label =
     p.applied_by === "system"

@@ -30,6 +30,7 @@ export function StartJobDialog({
   redoOcrOption = false,
   autoLabel = "auto-apply proposals (journaled & revertible)",
   startLabel = "Start job",
+  instructionsPlaceholder = "Optional instructions for the agent…",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,6 +50,8 @@ export function StartJobDialog({
   /** The auto-apply checkbox text — OCR-only jobs apply text, not proposals. */
   autoLabel?: string;
   startLabel?: string;
+  /** OCR-only jobs steer the transcription, not the agent. */
+  instructionsPlaceholder?: string;
 }) {
   const [auto, setAuto] = useState(false);
   const [redoOcr, setRedoOcr] = useState(false);
@@ -88,7 +91,7 @@ export function StartJobDialog({
           <Textarea
             aria-label="job instructions"
             rows={2}
-            placeholder="Optional instructions for the agent…"
+            placeholder={instructionsPlaceholder}
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
           />

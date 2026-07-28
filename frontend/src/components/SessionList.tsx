@@ -45,8 +45,7 @@ function SessionRow({
   });
   const busy = !s.archived_at && (s.status === "running" || s.phase === "queued");
   return (
-    <>
-      <TableRow className={s.archived_at ? "opacity-60" : ""}>
+    <TableRow className={s.archived_at ? "opacity-60" : ""}>
         {selection && (
           <TableCell>
             <Checkbox
@@ -152,9 +151,7 @@ function SessionRow({
             </Button>
           </Tip>
         </TableCell>
-      </TableRow>
-
-    </>
+    </TableRow>
   );
 }
 

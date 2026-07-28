@@ -252,8 +252,8 @@ function EntityTaxonomy() {
       <ErrorNotice error={bulkAnalyze.error} />
 
       {candidates && candidates.length > 0 && (
-        <div className="mb-6">
-          <h2 className="mb-2 text-sm font-medium text-warning">
+        <div className="mb-6 space-y-2">
+          <h2 className="text-sm font-medium text-warning">
             Possible duplicates ({candidates.length})
           </h2>
           <ul className="space-y-2">
@@ -261,10 +261,13 @@ function EntityTaxonomy() {
               <CandidateRow key={i} c={c} onReview={() => reviewCandidate.mutate(c)} />
             ))}
           </ul>
+          {/* The "Review with agent" failure belongs next to its buttons,
+              not below the pager at the page's end. */}
+          <ErrorNotice error={reviewCandidate.error} />
         </div>
       )}
 
-      {error && <ErrorNotice error={error} />}
+      <ErrorNotice error={error} />
       {isLoading ? (
         <LoadingState lines={5} />
       ) : visible.length === 0 ? (
@@ -343,9 +346,6 @@ function EntityTaxonomy() {
           />
         }
       />
-      <div className="mt-2">
-        <ErrorNotice error={reviewCandidate.error} />
-      </div>
     </div>
   );
 }

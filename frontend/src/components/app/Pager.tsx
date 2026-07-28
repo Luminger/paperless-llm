@@ -29,7 +29,7 @@ function pageItems(page: number, pages: number): (number | "…")[] {
   return items;
 }
 
-export const PAGE_SIZES = ["10", "25", "50", "100"];
+const PAGE_SIZES = ["10", "25", "50", "100"];
 
 export function Pager({
   page,

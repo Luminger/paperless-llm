@@ -11,22 +11,17 @@ import { ApiError } from "./lib/errors";
 type S = components["schemas"];
 
 export type Proposal = S["ProposalOut"];
-export type ProposalStatus = Proposal["status"];
 export type Session = S["SessionOut"];
 export type SessionDetail = S["SessionDetailOut"];
 export type SessionPage = S["SessionPage"];
 export type Step = S["StepOut"];
-export type StepKind = Step["kind"];
-export type StepState = Step["state"];
 export type TranscriptItem = S["TranscriptItem"];
 export type CallTiming = S["CallTiming"];
-export type AttemptRecord = S["AttemptRecord"];
 export type Job = S["JobOut"];
 export type JobDetail = S["JobOut"];
 // Request body: every field has a server-side default.
 export type JobCreate = Partial<S["JobCreate"]>;
 export type JobPage = S["JobPage"];
-export type ProposalPage = S["ProposalPage"];
 export type Stats = S["StatsOut"];
 export type Corpus = S["CorpusOut"];
 export type JobAttention = S["JobAttentionOut"];
@@ -93,12 +88,6 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listProposals: (status?: ProposalStatus) => {
-    const params = new URLSearchParams();
-    if (status) params.set("status", status);
-    const qs = params.toString();
-    return request<ProposalPage>(`/api/proposals${qs ? `?${qs}` : ""}`);
-  },
   getProposal: (id: number) => request<Proposal>(`/api/proposals/${id}`),
   patchProposal: (id: number, user_payload: S["ProposalPatch"]["user_payload"]) =>
     request<Proposal>(`/api/proposals/${id}`, {

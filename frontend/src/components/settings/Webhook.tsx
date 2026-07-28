@@ -79,7 +79,7 @@ export function WebhookCard() {
               hook.workflow_synced === false ? (
                 // Existence is not sync: the workflow still posts OLD
                 // values (URL/secret/...) until it is healed.
-                <span className="text-amber-600 dark:text-amber-500">
+                <span className="text-warning">
                   workflow OUT OF SYNC ({hook.workflow_drift.join(", ")}) —
                   re-run “Set up automatically” to heal it
                 </span>

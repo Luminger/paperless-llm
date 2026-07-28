@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "../api";
 import { keys } from "../lib/keys";
-import { formatDate } from "../lib/format";
+import { formatCompact, formatDate } from "../lib/format";
 import { entityName, useEntityList } from "../hooks/useTaxonomy";
 import { SessionList } from "../components/SessionList";
 
@@ -91,6 +91,7 @@ function InboxBlock() {
             error={startOcr.error}
             autoLabel="auto-apply the new text (journaled & revertible)"
             startLabel="Start re-OCR"
+            instructionsPlaceholder="Optional OCR instructions (layout hints, language…)"
             onStart={(opts) => startOcr.mutate(opts)}
           />
         </>
@@ -217,14 +218,6 @@ function CorpusBlock() {
   );
 }
 
-function fmt(n: number | undefined): string {
-  if (n == null) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 10_000) return `${(n / 1_000).toFixed(0)}k`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
 function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
     <Card className="py-3">
@@ -237,7 +230,7 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
 }
 
 export default function Dashboard() {
-  const { data: stats } = useQuery({
+  const { data: stats, error: statsError } = useQuery({
     queryKey: keys.stats(),
     queryFn: api.getStats,
     refetchInterval: 5000,
@@ -252,6 +245,12 @@ export default function Dashboard() {
         look at a failure. Finished sessions live on their document's or entity's page.
       </p>
 
+      {/* A failing stats query must not silently hide the cards. */}
+      {statsError != null && (
+        <div className="mb-6">
+          <ErrorNotice error={statsError} />
+        </div>
+      )}
       {stats && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard label="proposals to review" value={stats.pending_proposals} />
@@ -261,10 +260,13 @@ export default function Dashboard() {
             value={Object.values(stats.queue_pending).reduce((a, b) => a + b, 0)}
           />
           <StatCard label="active jobs" value={stats.active_jobs} />
-          <StatCard label="OCR runs (lifetime)" value={fmt(lifetime.ocr_runs)} />
+          <StatCard
+            label="OCR runs (lifetime)"
+            value={formatCompact(lifetime.ocr_runs)}
+          />
           <StatCard
             label="LLM tokens generated (lifetime)"
-            value={fmt(lifetime.llm_output_tokens)}
+            value={formatCompact(lifetime.llm_output_tokens)}
           />
         </div>
       )}

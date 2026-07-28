@@ -219,6 +219,16 @@ export function formatDateTime(iso: string | null | undefined): string {
   return `${formatDate(iso)}, ${formatClock(iso)}`;
 }
 
+/** "812" / "1.2k" / "34k" / "1.2M" — compact counts for stat cards
+ * and token totals. */
+export function formatCompact(n: number | null | undefined): string {
+  if (n == null) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${(n / 1_000).toFixed(0)}k`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 /** "3 min ago" / "2 h ago" — freshness labels. */
 export function formatAgo(iso: string | null | undefined): string {
   if (!iso) return "never";

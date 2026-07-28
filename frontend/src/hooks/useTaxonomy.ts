@@ -5,9 +5,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { keys } from "../lib/keys";
-import type { components } from "../api/schema.gen";
-
-export type EntityRef = components["schemas"]["EntityOut"];
 
 const FETCHERS = {
   tag: api.listTags,

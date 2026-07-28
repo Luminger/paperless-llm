@@ -24,13 +24,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
-import { ConfirmDialog } from "@/components/app/ConfirmDialog";
+import { CancelJobDialog } from "@/components/app/CancelJobDialog";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Pager } from "@/components/app/Pager";
 import { useListPage } from "../hooks/useListPage";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Job, type JobCreate } from "../api";
 import { keys } from "../lib/keys";
+import { scopeLabel } from "../lib/labels";
+import { useEntityList } from "../hooks/useTaxonomy";
 import { StatusBadge } from "../components/StatusBadge";
 
 function JobProgress({ job }: { job: Job }) {
@@ -46,16 +48,6 @@ function JobProgress({ job }: { job: Job }) {
   );
 }
 
-export function scopeLabel(job: Job): string {
-  const p = job.params;
-  // Jobs carry a human label from creation; fall back to scope facts.
-  if (typeof p.label === "string" && p.label) return p.label;
-  if (p.inbox) return "Inbox";
-  if (p.untagged_only) return "Untagged documents";
-  if (Array.isArray(p.document_ids)) return `${p.document_ids.length} selected documents`;
-  return job.kind.replaceAll("_", " ");
-}
-
 function NewJob({ onDone }: { onDone: () => void }) {
   const [mode, setMode] = useState<"analyze" | "ocr">("analyze");
   const [scope, setScope] = useState<"inbox" | "tag" | "untagged" | "all">("inbox");
@@ -64,10 +56,7 @@ function NewJob({ onDone }: { onDone: () => void }) {
   const [auto, setAuto] = useState(false);
   const [instructions, setInstructions] = useState("");
   const ocrOnly = mode === "ocr";
-  const { data: tags } = useQuery({
-    queryKey: keys.entities("tag"),
-    queryFn: api.listTags,
-  });
+  const { data: tags } = useEntityList("tag");
 
   const create = useMutation({
     mutationFn: (body: JobCreate) => api.createJob(body),
@@ -201,13 +190,6 @@ export default function Jobs() {
   });
   const jobs = data?.results;
   const [cancelTarget, setCancelTarget] = useState<Job | null>(null);
-  const cancel = useMutation({
-    mutationFn: (id: number) => api.cancelJob(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.jobs() });
-      setCancelTarget(null);
-    },
-  });
 
   return (
     <div>
@@ -306,24 +288,16 @@ export default function Jobs() {
           </TableBody>
         </Table>
       )}
-      <ConfirmDialog
+      <CancelJobDialog
+        job={cancelTarget}
         open={cancelTarget != null}
         onOpenChange={(open) => {
-          if (!open) {
-            setCancelTarget(null);
-            cancel.reset(); // a stale error must not haunt the next dialog
-          }
+          if (!open) setCancelTarget(null);
         }}
-        error={cancel.error}
-        title="Cancel this job?"
-        description={
-          cancelTarget
-            ? `"${scopeLabel(cancelTarget)}" — pending sessions will be cancelled; running steps finish and keep their results. Already-applied changes stay (revertible from the journal).`
-            : ""
-        }
-        confirmLabel="Cancel the job"
-        busy={cancel.isPending}
-        onConfirm={() => cancelTarget && cancel.mutate(cancelTarget.id)}
+        onDone={() => {
+          qc.invalidateQueries({ queryKey: keys.jobs() });
+          setCancelTarget(null);
+        }}
       />
       <Pager
         page={page}
