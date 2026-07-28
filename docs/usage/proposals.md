@@ -42,6 +42,18 @@ every other field, and like the delta-based revert restores them.
    snapshots. **Revert** restores the before-state (with its own
    staleness check, and a preview of exactly what would be restored).
 
+## Auto-apply scope
+
+Jobs and the webhook can run with `apply_policy=auto`, where fresh
+proposals are applied without review — but only when they target the
+session's **own** document (or, for entity-review sessions, the entity
+being reviewed; a `create_entity` qualifies when it assigns only the
+session's document). A proposal aimed at any *other* document or entity
+stays pending for your review instead — document text is untrusted
+input, and an embedded instruction must never fan out changes to other
+documents unreviewed. Each deferral is recorded in the audit trail as
+`auto_apply_deferred`.
+
 ## Revisions
 
 Asking the agent to revise (or the agent revising itself after your

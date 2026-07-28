@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession as DbSession
 
 from app.config import get_settings
 from app.db.models import (
+    EntityType,
     Proposal,
     ProposalStatus,
     QueueLane,
@@ -29,6 +30,7 @@ from app.paperless import PaperlessClient
 from app.proposals.apply import apply_proposal
 from app.proposals.kinds import is_internal, visible
 from app.proposals.schemas import ReplaceContent, dump_payload
+from app.services.audit import record
 from app.services.steps import (
     AWAIT_USER,
     EXECUTORS,
@@ -207,13 +209,59 @@ async def _exec_chat(
     return None
 
 
+def _auto_apply_in_scope(session: Session, proposal: Proposal) -> bool:
+    """Injection guard for the auto policy. apply_policy=auto runs with
+    ZERO human review, and the propose tools accept arbitrary ids
+    (update_document_metadata takes any document_id, create_entity can
+    assign_to_documents=[...]) — so a prompt injection embedded in ONE
+    document's text could otherwise fan writes out to unrelated
+    documents. Auto-apply is therefore scoped to the session's own
+    bound target:
+
+    - Document sessions (webhook/bulk): proposals whose
+      (entity_type, entity_id) equal the session's binding — i.e. the
+      one document that was queued. A create_entity carries no target
+      id; it stays in scope only when every document it assigns is the
+      session's own (creating the entity alone touches no other
+      document).
+    - Entity sessions: the reviewed entity itself. update/delete of
+      THAT entity — and a merge whose SOURCE is that entity (the
+      proposal's entity_id records the source) — keep auto-applying:
+      fan-out to the entity's documents is exactly the job the user
+      queued. Merges into a third entity, or edits of a different
+      entity, are cross-target and stay pending.
+
+    Internal kinds (replace_content) always carry the session's own
+    binding (set at creation in this module), so they pass unchanged —
+    and they are applied at their creation site anyway, never here.
+    """
+    if (
+        session.entity_type is not None
+        and session.entity_id is not None
+        and proposal.entity_type == session.entity_type
+        and proposal.entity_id == session.entity_id
+    ):
+        return True
+    if (
+        str(proposal.kind) == "create_entity"
+        and session.entity_type == EntityType.document
+        and session.entity_id is not None
+    ):
+        payload = proposal.user_payload or proposal.agent_payload or {}
+        assigned = payload.get("assign_to_documents") or []
+        return set(assigned) <= {session.entity_id}
+    return False
+
+
 async def _maybe_auto_apply(
     db: DbSession, paperless: PaperlessClient, session: Session, step: Step
 ) -> None:
     """apply_policy=auto (bulk jobs/webhook): apply fresh proposals right
-    away — validated, journaled, revertible. Failures stay pending for a
-    human instead of failing the step. Under the decision loop this
-    auto-continues the session (bounded), so autonomous runs converge."""
+    away — validated, journaled, revertible, and ONLY when they target
+    the session's own bound entity (_auto_apply_in_scope). Failures and
+    out-of-scope proposals stay pending for a human instead of failing
+    the step. Under the decision loop this auto-continues the session
+    (bounded), so autonomous runs converge."""
     if session.params.get("apply_policy") != "auto":
         return
     # AUDIT SV-M5: the user may have archived the session while this
@@ -235,6 +283,27 @@ async def _maybe_auto_apply(
         )
     ).all()
     for p in proposals:
+        # Out-of-scope (cross-target) proposals stay pending for the
+        # normal human review flow — audited so abuse patterns are
+        # visible. While they are open, continue_after_decision's
+        # open-proposal check refuses the auto-continuation below, so
+        # the session honestly stops and waits for the human instead of
+        # racing past undecided writes.
+        if not _auto_apply_in_scope(session, p):
+            log.warning(
+                "auto-apply deferred: proposal %s (%s) targets %s/%s, "
+                "session %s is bound to %s/%s — left pending for review",
+                p.id, p.kind, p.entity_type, p.entity_id,
+                session.id, session.entity_type, session.entity_id,
+            )
+            await record(
+                db, "proposal", "auto_apply_deferred", commit=True,
+                proposal_id=p.id, proposal_kind=p.kind,
+                session_id=session.id,
+                entity_type=p.entity_type.value if p.entity_type else None,
+                entity_id=p.entity_id,
+            )
+            continue
         try:
             await apply_proposal(paperless, db, p)
         except Exception:  # noqa: BLE001

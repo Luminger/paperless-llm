@@ -49,16 +49,15 @@ async def _make_proposal(db, payload: dict, status=ProposalStatus.pending) -> Pr
 async def _make_change(
     db, payload: dict, before: dict, after: dict
 ) -> tuple[Proposal, AppliedChange]:
-    """Returns (proposal, change). Callers must keep the proposal in
-    scope: revert_change resolves change.proposal via the identity map
-    (as the API routes do, which always hold the loaded proposal)."""
+    """Returns (proposal, change). revert_change loads change.proposal
+    itself (claim refresh includes the relationship), so callers need no
+    identity-map tricks — see test_revert_with_only_the_change_loaded."""
     p = await _make_proposal(db, payload, status=ProposalStatus.applied)
     change = AppliedChange(
         proposal_id=p.id, paperless_before=before, paperless_after=after
     )
     db.add(change)
     await db.commit()
-    await db.refresh(change, ["proposal"])
     return p, change
 
 
@@ -232,6 +231,33 @@ async def test_failed_revert_releases_claim_for_retry(db, paperless_client):
 
 
 # ----- delete with force ----------------------------------------------
+
+
+@respx.mock
+async def test_revert_with_only_the_change_loaded(db, paperless_client):
+    """Regression: revert_change must not depend on the caller holding
+    the Proposal ORM object. A caller loading ONLY the AppliedChange
+    (empty identity map) used to hit an async lazy-load on
+    change.proposal after the claim refresh (MissingGreenlet) — the
+    claim refresh now loads the relationship explicitly."""
+    _, change = await _make_change(
+        db,
+        {"kind": "update_document_metadata", "document_id": 7, "title": "Agent title"},
+        before={"document": {"id": 7, "title": "scan_0001"}},
+        after={"document": {"id": 7, "title": "Agent title"}},
+    )
+    change_id = change.id
+    db.expunge_all()  # simulate a fresh caller: neither object cached
+    change = await db.get(AppliedChange, change_id)
+    respx.get(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC | {"title": "Agent title"})
+    )
+    patch_route = respx.patch(f"{PAPERLESS_URL}/api/documents/7/").mock(
+        return_value=Response(200, json=DOC)
+    )
+    await revert_change(paperless_client, db, change)
+    assert change.reverted_at is not None
+    assert json.loads(patch_route.calls.last.request.content)["title"] == "scan_0001"
 
 
 @respx.mock
