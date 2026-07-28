@@ -56,7 +56,7 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC"]
+select = ["E", "W", "F", "I", "UP", "B", "ASYNC", "C4", "PIE", "PTH", "RET", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 # Depends(...) in argument defaults is the canonical FastAPI pattern.

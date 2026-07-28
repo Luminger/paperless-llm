@@ -12,6 +12,7 @@ redis-backed bus behind the same three methods.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
@@ -39,12 +40,10 @@ class EventBus:
             **data,
         }
         for q in list(self._subs.get(session_id, ())):
-            try:
+            # Slow consumer: drop. The signal is redundant with REST
+            # state, so a dropped event only delays a refetch.
+            with contextlib.suppress(asyncio.QueueFull):
                 q.put_nowait(event)
-            except asyncio.QueueFull:
-                # Slow consumer: drop. The signal is redundant with REST
-                # state, so a dropped event only delays a refetch.
-                pass
 
 
 bus = EventBus()

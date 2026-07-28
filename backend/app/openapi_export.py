@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
 
 def main() -> None:
@@ -22,9 +23,9 @@ def main() -> None:
 
     from app.main import create_app
 
-    out = sys.argv[1] if len(sys.argv) > 1 else "openapi.json"
+    out = Path(sys.argv[1] if len(sys.argv) > 1 else "openapi.json")
     schema = create_app().openapi()
-    with open(out, "w") as f:
+    with out.open("w") as f:
         json.dump(schema, f, indent=2, sort_keys=True)
     print(f"wrote {out} ({len(schema.get('paths', {}))} paths)")
 

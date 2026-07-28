@@ -42,8 +42,7 @@ def test_every_state_has_an_exit_or_defined_recovery():
     outgoing = {frm for frm, _ in STEP_TRANSITIONS}
     for state in StepState:
         if state in TERMINAL_FINAL:
-            assert state not in outgoing or True  # final; successor exists
-            continue
+            continue  # final by construction; no exit transition required
         assert state in outgoing, f"{state.value} is a dead end"
 
 

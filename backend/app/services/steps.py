@@ -22,6 +22,7 @@ tokens/tool calls.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import timedelta
 from typing import Any
@@ -471,10 +472,8 @@ class StepWorkers:
                 step_id = await self._claim(lane)
                 if step_id is None:
                     ev = self._wakeups[lane]
-                    try:
+                    with contextlib.suppress(TimeoutError):
                         await asyncio.wait_for(ev.wait(), timeout=poll)
-                    except TimeoutError:
-                        pass
                     ev.clear()
                     continue
                 await self._run(step_id)
@@ -485,74 +484,73 @@ class StepWorkers:
                 await asyncio.sleep(1)
 
     async def _claim(self, lane: QueueLane) -> int | None:
-        async with self._claim_locks[lane]:
-            async with session_scope() as db:
-                # AUDIT BC-F18: one turn per session at a time — a
-                # session whose step is already running must not get a
-                # second concurrent turn (message_history would be
-                # last-writer-wins). Correlated NOT EXISTS on a running
-                # sibling.
-                sibling = aliased(Step)
-                # Paused jobs: their steps stay pending but are never
-                # claimed — pause/resume is a single job-row flip, no
-                # step-state rewriting.
-                paused_job = (
-                    select(Job.id)
-                    .join(Session, Session.job_id == Job.id)
+        async with self._claim_locks[lane], session_scope() as db:
+            # AUDIT BC-F18: one turn per session at a time — a
+            # session whose step is already running must not get a
+            # second concurrent turn (message_history would be
+            # last-writer-wins). Correlated NOT EXISTS on a running
+            # sibling.
+            sibling = aliased(Step)
+            # Paused jobs: their steps stay pending but are never
+            # claimed — pause/resume is a single job-row flip, no
+            # step-state rewriting.
+            paused_job = (
+                select(Job.id)
+                .join(Session, Session.job_id == Job.id)
+                .where(
+                    Session.id == Step.session_id,
+                    Job.status == JobStatus.paused,
+                )
+                .exists()
+            )
+            step_id = await db.scalar(
+                select(Step.id)
+                .where(
+                    Step.state == StepState.pending,
+                    Step.lane == lane,
+                    (Step.scheduled_at.is_(None)) | (Step.scheduled_at <= utcnow()),
+                    ~select(sibling.id)
                     .where(
-                        Session.id == Step.session_id,
-                        Job.status == JobStatus.paused,
+                        sibling.session_id == Step.session_id,
+                        sibling.state == StepState.running,
                     )
-                    .exists()
+                    .exists(),
+                    ~paused_job,
                 )
-                step_id = await db.scalar(
-                    select(Step.id)
-                    .where(
-                        Step.state == StepState.pending,
-                        Step.lane == lane,
-                        (Step.scheduled_at.is_(None)) | (Step.scheduled_at <= utcnow()),
-                        ~select(sibling.id)
-                        .where(
-                            sibling.session_id == Step.session_id,
-                            sibling.state == StepState.running,
-                        )
-                        .exists(),
-                        ~paused_job,
-                    )
-                    .order_by(Step.id)
-                    .limit(1)
+                .order_by(Step.id)
+                .limit(1)
+            )
+            if step_id is None:
+                return None
+            # Atomic claim: the UPDATE only wins if the step is STILL
+            # pending — a second worker (or process) gets rowcount 0.
+            # The asyncio lock above is an optimization, not the guard.
+            assert_transition(StepState.pending, StepState.running)
+            claimed = await db.execute(
+                sa_update(Step)
+                .where(Step.id == step_id, Step.state == StepState.pending)
+                .values(
+                    state=StepState.running,
+                    attempt_count=Step.attempt_count + 1,
                 )
-                if step_id is None:
-                    return None
-                # Atomic claim: the UPDATE only wins if the step is STILL
-                # pending — a second worker (or process) gets rowcount 0.
-                # The asyncio lock above is an optimization, not the guard.
-                assert_transition(StepState.pending, StepState.running)
-                claimed = await db.execute(
-                    sa_update(Step)
-                    .where(Step.id == step_id, Step.state == StepState.pending)
-                    .values(
-                        state=StepState.running,
-                        attempt_count=Step.attempt_count + 1,
-                    )
-                )
-                if claimed.rowcount == 0:
-                    return None
-                step = await db.get(Step, step_id)
-                assert step is not None
-                step.started_at = step.started_at or utcnow()
-                # Engine paths never read the (potentially megabytes of)
-                # serialized history — don't deserialize it per claim
-                # (AUDIT SV-L4).
-                session = await db.get(
-                    Session, step.session_id,
-                    options=[defer(Session.message_history)],
-                )
-                if session is not None:
-                    await sync_session(db, session)
-                await db.commit()
-                _publish(step)
-                return step.id
+            )
+            if claimed.rowcount == 0:
+                return None
+            step = await db.get(Step, step_id)
+            assert step is not None
+            step.started_at = step.started_at or utcnow()
+            # Engine paths never read the (potentially megabytes of)
+            # serialized history — don't deserialize it per claim
+            # (AUDIT SV-L4).
+            session = await db.get(
+                Session, step.session_id,
+                options=[defer(Session.message_history)],
+            )
+            if session is not None:
+                await sync_session(db, session)
+            await db.commit()
+            _publish(step)
+            return step.id
 
     async def _execute(self, step_id: int, kind: StepKind) -> str | None:
         """One executor attempt; returns the verdict. Runs as a child

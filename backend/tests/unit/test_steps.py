@@ -86,7 +86,7 @@ FINAL = (StepState.succeeded, StepState.failed, StepState.awaiting_user)
 async def test_step_runs_to_success_and_syncs_session(file_db, monkeypatch):
     async def ok(db, paperless, session, step):
         step.result = {"hello": 1}
-        return None
+        return
 
     monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, ok)
     sid = await _make_session()
@@ -394,7 +394,7 @@ async def test_resolve_step_claims_atomically(file_db, monkeypatch):
 
     async def fake_resolver(db, paperless, session, step, body):
         calls["n"] += 1
-        return None
+        return
 
     monkeypatch.setitem(engine_mod.RESOLVERS, StepKind.chat, fake_resolver)
     monkeypatch.setattr(engine_mod, "_registered", True)
@@ -603,7 +603,7 @@ async def test_paused_job_steps_are_not_claimed_until_resume(file_db, monkeypatc
 
     async def ok(db, paperless, session, step):
         ran.set()
-        return None
+        return
 
     monkeypatch.setitem(engine.EXECUTORS, StepKind.analysis, ok)
     async with session_scope() as db:
