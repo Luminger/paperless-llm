@@ -136,7 +136,7 @@ export default function Documents() {
       />
       <ErrorNotice error={bulkAnalyze.error} />
 
-      {error && <ErrorNotice error={error} />}
+      <ErrorNotice error={error} />
       {isLoading ? (
         <LoadingState lines={5} />
       ) : data && data.results.length === 0 ? (

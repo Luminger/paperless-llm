@@ -229,7 +229,7 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
 }
 
 export default function Dashboard() {
-  const { data: stats } = useQuery({
+  const { data: stats, error: statsError } = useQuery({
     queryKey: keys.stats(),
     queryFn: api.getStats,
     refetchInterval: 5000,
@@ -244,6 +244,12 @@ export default function Dashboard() {
         look at a failure. Finished sessions live on their document's or entity's page.
       </p>
 
+      {/* A failing stats query must not silently hide the cards. */}
+      {statsError != null && (
+        <div className="mb-6">
+          <ErrorNotice error={statsError} />
+        </div>
+      )}
       {stats && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard label="proposals to review" value={stats.pending_proposals} />

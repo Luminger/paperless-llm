@@ -196,7 +196,7 @@ export default function JobDetail() {
         busy={retrySelected.isPending}
         onAction={() => retrySelected.mutate([...selection.selected])}
       />
-      {retrySelected.isError && <ErrorNotice error={retrySelected.error} />}
+      <ErrorNotice error={retrySelected.error} />
       {sessionsQuery.error ? (
         <ErrorNotice error={sessionsQuery.error} />
       ) : !sessionsQuery.data ? (

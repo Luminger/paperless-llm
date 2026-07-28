@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { ErrorNotice } from "@/components/app/states";
 import { cn } from "@/lib/utils";
 import { api, type Proposal, type Step, type TranscriptItem } from "../../api";
+import { errorMessage } from "../../lib/errors";
 import { formatClock, formatDateTime } from "../../lib/format";
 import type { LiveActivity } from "../../hooks/useSessionEvents";
 import { ProposalCard } from "../../components/ProposalCard";
@@ -150,7 +151,9 @@ function StepControls({ step, onChanged }: { step: Step; onChanged: () => void }
         </Tip>
       )}
       {retry.error && (
-        <span className="text-xs text-destructive">{String(retry.error).slice(0, 140)}</span>
+        <span className="text-xs text-destructive">
+          {errorMessage(retry.error).slice(0, 140)}
+        </span>
       )}
       {redoOpen && (
         <RedoDialog

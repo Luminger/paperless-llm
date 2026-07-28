@@ -19,7 +19,6 @@ import { customFieldTypeLabel, displayCustomValue } from "../lib/custom-fields";
 import { keys as qk, invalidateProposalEffects } from "../lib/keys";
 import { formatDate } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
-import { errorMessage } from "../lib/errors";
 import {
   buildEntityPayload,
   buildPayload,
@@ -1159,10 +1158,8 @@ export function ProposalCard({
           </Tip>
         )}
       </div>
-      {action.error && (
-        <p className="text-sm text-destructive">{errorMessage(action.error)}</p>
-      )}
-      {save.error && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
+      <ErrorNotice error={action.error} />
+      <ErrorNotice error={save.error} />
     </div>
   );
 }
