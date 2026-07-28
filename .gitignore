@@ -28,3 +28,4 @@ result
 paperless-llm.toml
 deploy/*/.env
 site/
+frontend/bun.lock
