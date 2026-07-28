@@ -91,6 +91,7 @@ function InboxBlock() {
             error={startOcr.error}
             autoLabel="auto-apply the new text (journaled & revertible)"
             startLabel="Start re-OCR"
+            instructionsPlaceholder="Optional OCR instructions (layout hints, language…)"
             onStart={(opts) => startOcr.mutate(opts)}
           />
         </>
