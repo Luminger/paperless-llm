@@ -14,8 +14,10 @@ A document analysis runs through phases:
 queued → [ocr_running → ocr_review] → analyzing → done
 ```
 
-The OCR stage only exists when you request re-OCR (per analysis, or as
-the webhook default). In an [OCR-only job](jobs.md#two-kinds-of-document-jobs)
+The OCR stage only exists when the run requests re-OCR: the *re-do
+OCR first* checkbox in the bulk dialogs, a document page's **Re-do
+OCR** action, the dashboard's **Re-OCR…** button, or the webhook
+default. In an [OCR-only job](jobs.md#two-kinds-of-document-jobs)
 the pipeline deliberately ends at the gate — resolved gate, session
 done, no analysis.
 

@@ -37,6 +37,12 @@ invalidates. The engine (`services/steps.py`) knows nothing about
 documents; executors and gate resolvers are registered by the pipeline
 (`services/pipeline.py`).
 
+The full lifecycle — legal transitions for steps, sessions, proposals
+and jobs, the no-dead-end guarantee, crash-recovery sweeps — is
+normatively defined in [The state machine](state-machine.md) and
+enforced in code (`STEP_TRANSITIONS`; every state write asserts its
+transition).
+
 ## Agents
 
 Built on [pydantic-ai](https://ai.pydantic.dev/). One agent per entity
@@ -56,9 +62,11 @@ search) and `propose_*` tools. Guardrails are code, not vibes:
   compact summaries with snippets — reach the model. Archives scale;
   the context doesn't have to.
 
-The OCR pipeline runs **outside** the tool loop: page rendering,
-batched vision calls, similarity scoring, caching — deterministic
-plumbing the model can't get creative with.
+The OCR pipeline runs **outside** the tool loop: born-digital page
+classification (`pdfio.py` — pages with a real *visible* text layer
+are read straight from the PDF, no vision call), orientation
+detection and rendering, batched vision calls, similarity scoring,
+caching — deterministic plumbing the model can't get creative with.
 
 ## Proposals, apply, journal
 

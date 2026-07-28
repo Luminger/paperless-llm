@@ -75,6 +75,16 @@ always allowed.
 - [Getting started](getting-started.md) — run it with podman/docker
   compose in a few minutes.
 - [Configuration](configuration.md) — model profiles, authentication,
-  webhook, tuning knobs.
+  webhook, tuning knobs, with every default.
+- Using it:
+  [sessions](usage/sessions.md) ·
+  [proposals & the journal](usage/proposals.md) ·
+  [jobs & automation](usage/jobs.md) ·
+  [cleaning up an archive](usage/corpus.md) ·
+  [taxonomy governance](usage/taxonomy.md) ·
+  [settings & prompts](usage/settings.md).
 - [Architecture](architecture.md) — how the step engine, proposals, and
-  the journal fit together.
+  the journal fit together; [the state machine](state-machine.md) is
+  the normative lifecycle reference.
+- [Privacy model](privacy.md) — what talks to what, exhaustively.
+- [Development](development.md) — repository layout, tests, docs.
