@@ -218,6 +218,36 @@ class WebhookConfig(BaseModel):
     apply_policy: Literal["review", "auto"] = "review"
 
 
+class RetentionConfig(BaseModel):
+    """App-side data retention (docs/privacy.md "Retention").
+
+    The app's DB accumulates document-derived data: OCR text, agent
+    transcripts, journal snapshots. Two independent sweeps bound that:
+    a purge of long-archived sessions' heavy payloads (opt-in — it
+    destroys the "why did it do that?" transcript), and removal of OCR
+    cache rows for documents that no longer exist in paperless (on by
+    default — that data can never be used again and is pure liability).
+
+    The AppliedChange journal is NEVER touched by retention:
+    revertibility — archived or not — is a core promise. Deliberately
+    config/env only (not UI-editable): destructive policy belongs in
+    the config file, not behind a settings toggle."""
+
+    # Purge message_history (and the document's OCR cache, when no
+    # other live session needs it) for sessions archived longer than
+    # this many days. None (default) disables the purge entirely.
+    archived_session_days: int | None = Field(default=None, ge=1)
+    # Delete OCR cache rows whose document 404s in paperless AND whose
+    # newest row is older than this many days. None disables.
+    orphaned_document_days: int | None = Field(default=30, ge=1)
+    # Sweep cadence: once shortly after startup, then this often.
+    sweep_interval_hours: float = Field(default=24.0, gt=0)
+    startup_delay_seconds: float = Field(default=300.0, ge=0)
+    # Bounded paperless existence checks per sweep (orphan detection
+    # never scans the whole archive).
+    orphan_check_limit: int = Field(default=25, ge=1)
+
+
 class QueueConfig(BaseModel):
     """In-process worker pool over the persistent DB queue. Two lanes:
     interactive (chat turns, single analyses) and batch (bulk jobs).
@@ -255,6 +285,7 @@ class Settings(BaseSettings):
     auth: AuthConfig = AuthConfig()
     webhook: WebhookConfig = WebhookConfig()
     queue: QueueConfig = QueueConfig()
+    retention: RetentionConfig = RetentionConfig()
 
     database_url: str = "sqlite+aiosqlite:///./data/paperless_llm.sqlite3"
     # Where OCR page renders / caches live.

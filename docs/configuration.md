@@ -204,6 +204,23 @@ account to be a superuser). The same tab shows whether the workflow's
 Queue concurrency multiplies against the per-endpoint `max_concurrent`
 semaphores — the model endpoint's cap is the real global limit.
 
+## Retention
+
+App-side data retention — see [Privacy · What this app
+stores](privacy.md#what-this-app-stores) for what accumulates and why
+these exist. Deliberately config/env only (never the Settings UI):
+destructive policy belongs in the config file. The applied-changes
+journal is **never** touched by retention — revertibility is a core
+promise, archived sessions included.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `retention.archived_session_days` | *(unset = off)* | Purge the transcript (`message_history`) of sessions archived longer than this, plus the document's OCR cache when no other live session needs it. The session row, its timeline, proposals and journal stay; each purge lands in the audit log. |
+| `retention.orphaned_document_days` | `30` | Delete OCR cache rows for documents that no longer exist in paperless (definitive 404), once their newest row is older than this. Unset to disable. |
+| `retention.sweep_interval_hours` | `24` | Sweep cadence — once shortly after startup, then this often |
+| `retention.startup_delay_seconds` | `300` | Delay before the first sweep after startup |
+| `retention.orphan_check_limit` | `25` | Max paperless existence checks per sweep (orphan detection never scans the whole archive) |
+
 ## Storage
 
 | Key | Default | Meaning |
