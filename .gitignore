@@ -29,3 +29,4 @@ paperless-llm.toml
 deploy/*/.env
 site/
 frontend/bun.lock
+HARDENING-REVIEW.local.md
