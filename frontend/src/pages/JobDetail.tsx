@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CirclePause, CirclePlay, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/app/Tip";
-import { ConfirmDialog } from "@/components/app/ConfirmDialog";
+import { CancelJobDialog } from "@/components/app/CancelJobDialog";
 import { MultiFilter } from "@/components/app/MultiFilter";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Pager } from "@/components/app/Pager";
@@ -215,41 +215,5 @@ export default function JobDetail() {
         </>
       )}
     </div>
-  );
-}
-
-
-function CancelJobDialog({
-  job,
-  open,
-  onOpenChange,
-  onDone,
-}: {
-  job: { id: number };
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  onDone: () => void;
-}) {
-  const cancel = useMutation({
-    mutationFn: () => api.cancelJob(job.id),
-    onSuccess: () => {
-      onDone();
-      onOpenChange(false);
-    },
-  });
-  return (
-    <ConfirmDialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) cancel.reset(); // fresh dialog per open
-        onOpenChange(next);
-      }}
-      error={cancel.error}
-      title="Cancel this job?"
-      description="Pending sessions are cancelled and running steps aborted. Already-applied changes stay (revertible from the journal)."
-      confirmLabel="Cancel the job"
-      busy={cancel.isPending}
-      onConfirm={() => cancel.mutate()}
-    />
   );
 }

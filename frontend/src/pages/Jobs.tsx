@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SimpleSelect } from "@/components/app/SimpleSelect";
-import { ConfirmDialog } from "@/components/app/ConfirmDialog";
+import { CancelJobDialog } from "@/components/app/CancelJobDialog";
 import { PageHeader } from "@/components/app/PageHeader";
 import { Pager } from "@/components/app/Pager";
 import { useListPage } from "../hooks/useListPage";
@@ -192,13 +192,6 @@ export default function Jobs() {
   });
   const jobs = data?.results;
   const [cancelTarget, setCancelTarget] = useState<Job | null>(null);
-  const cancel = useMutation({
-    mutationFn: (id: number) => api.cancelJob(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.jobs() });
-      setCancelTarget(null);
-    },
-  });
 
   return (
     <div>
@@ -297,24 +290,16 @@ export default function Jobs() {
           </TableBody>
         </Table>
       )}
-      <ConfirmDialog
+      <CancelJobDialog
+        job={cancelTarget}
         open={cancelTarget != null}
         onOpenChange={(open) => {
-          if (!open) {
-            setCancelTarget(null);
-            cancel.reset(); // a stale error must not haunt the next dialog
-          }
+          if (!open) setCancelTarget(null);
         }}
-        error={cancel.error}
-        title="Cancel this job?"
-        description={
-          cancelTarget
-            ? `"${scopeLabel(cancelTarget)}" — pending sessions will be cancelled; running steps finish and keep their results. Already-applied changes stay (revertible from the journal).`
-            : ""
-        }
-        confirmLabel="Cancel the job"
-        busy={cancel.isPending}
-        onConfirm={() => cancelTarget && cancel.mutate(cancelTarget.id)}
+        onDone={() => {
+          qc.invalidateQueries({ queryKey: keys.jobs() });
+          setCancelTarget(null);
+        }}
       />
       <Pager
         page={page}
