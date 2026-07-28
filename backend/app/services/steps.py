@@ -841,8 +841,6 @@ async def recover() -> dict[str, int]:
         # process kill strands status='draft' Proposal rows whose step is
         # no longer running. They'd never be promoted or superseded —
         # sweep them into `superseded` so they can't linger in listings.
-        from app.db.models import Proposal, ProposalStatus
-
         swept = await db.execute(
             sa_update(Proposal)
             .where(

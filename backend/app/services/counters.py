@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +45,5 @@ async def increment(db: AsyncSession, **deltas: int) -> None:
 
 
 async def get_all(db: AsyncSession) -> dict[str, int]:
-    from sqlalchemy import select
-
     rows = (await db.scalars(select(Counter))).all()
     return {c.key: c.value for c in rows}

@@ -6,6 +6,7 @@ Applies ``user_payload`` when present, else the ``agent_payload``.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import update as sa_update
@@ -191,8 +192,6 @@ async def _is_noop(paperless: PaperlessClient, p: AnyProposal) -> bool:  # noqa:
 
 
 def _fmt(v: Any) -> str:
-    import json
-
     return json.dumps(v, ensure_ascii=False, default=str)
 
 

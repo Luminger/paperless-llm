@@ -21,6 +21,7 @@ See DESIGN.md "Model profiles".
 
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from functools import lru_cache
@@ -360,8 +361,6 @@ def warn_env_file_collisions() -> list[str]:
     """Precedence is environment > config file; when the file sets a key
     the environment also sets, the file value silently loses — except it
     must not be silent. Called at startup."""
-    import logging
-
     shadowed = sorted(env_provided_keys() & file_provided_keys())
     for key in shadowed:
         logging.getLogger(__name__).warning(
