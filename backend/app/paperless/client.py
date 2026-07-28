@@ -288,11 +288,6 @@ class PaperlessClient:
     async def get_document(self, doc_id: int) -> Document:
         return Document.model_validate(await self._get_json(f"/api/documents/{doc_id}/"))
 
-    async def get_document_metadata(self, doc_id: int) -> dict[str, Any]:
-        """Includes original checksum, archive info, and paperless's own
-        page-level metadata."""
-        return await self._get_json(f"/api/documents/{doc_id}/metadata/")
-
     async def download_archived(self, doc_id: int) -> tuple[bytes, str]:
         """The archived (searchable-PDF) rendition — what previews show."""
         resp = await self._request("GET", f"/api/documents/{doc_id}/download/")
@@ -442,16 +437,6 @@ class PaperlessClient:
 
     async def list_custom_fields(self) -> list[CustomField]:
         return await self._drain("/api/custom_fields/", CustomField)
-
-    # ----- misc -------------------------------------------------------
-
-    async def ping(self) -> bool:
-        try:
-            await self._get_json("/api/documents/", page_size=1)
-            return True
-        except PaperlessError:
-            return False
-
 
 def make_client(token: str | None = None) -> PaperlessClient:
     """THE settings-based constructor. Every code path that talks to the
