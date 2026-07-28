@@ -1,0 +1,56 @@
+# Build context hygiene for deploy/Containerfile (context is the repo
+# root; both podman build and docker buildx honor this file). Keep the
+# context down to what the Containerfile actually COPYs: frontend
+# sources, backend app + alembic + lockfiles, and the seed corpus
+# (backend/tests/fixtures/corpus — deliberately NOT excluded).
+
+# VCS / CI / docs
+.git
+.github
+docs
+site
+mkdocs.yml
+*.md
+LICENSE
+
+# Nix / direnv
+flake.nix
+flake.lock
+.envrc
+.direnv
+result
+
+# Deploy assets (the Containerfile itself is passed via -f)
+deploy
+
+# Backend: caches, venv and the test suite stay out — except the
+# corpus fixtures the image ships for the seeder.
+backend/.venv
+backend/.pytest_cache
+backend/.ruff_cache
+backend/tests/unit
+backend/tests/integration
+backend/tests/live
+backend/tests/*.py
+backend/tests/fixtures/*.py
+**/__pycache__
+**/*.py[cod]
+
+# Frontend: dependencies are installed inside the build stage; nothing
+# generated on the host may leak in (a stale host node_modules or
+# tsbuildinfo would clobber the clean install).
+frontend/node_modules
+frontend/dist
+frontend/tsconfig.tsbuildinfo
+frontend/openapi.json
+frontend/scripts
+
+# Local state / config
+data
+*.sqlite3
+*.db
+paperless-llm.toml
+.coverage
+htmlcov
+.idea
+.vscode
