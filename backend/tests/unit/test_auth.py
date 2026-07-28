@@ -207,6 +207,136 @@ async def test_legacy_cookie_without_sid_forces_relogin(
     assert r.json()["detail"]["code"] == "session_revoked"
 
 
+# ----- login throttling ------------------------------------------------
+
+
+@pytest.fixture
+def throttle(monkeypatch):
+    """Isolated throttle state and a controllable clock."""
+    from app.services import login_throttle
+
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(login_throttle, "_entries", {})
+    monkeypatch.setattr(login_throttle, "_monotonic", lambda: clock["now"])
+    return clock
+
+
+def _mock_bad_credentials(respx_mock):
+    respx_mock.post("http://paperless.test/api/token/").mock(
+        return_value=httpx.Response(400, json={})
+    )
+    get_settings().paperless.base_url = "http://paperless.test"
+
+
+async def _fail_login(client, username="simon"):
+    return await client.post(
+        "/api/auth/login", json={"username": username, "password": "wrong"}
+    )
+
+
+async def test_login_burst_triggers_429_with_retry_after(
+    client, db, respx_mock, throttle
+):
+    """After the free failure budget, further attempts are 429 with a
+    Retry-After header — and never reach paperless (no oracle)."""
+    _mock_bad_credentials(respx_mock)
+    for _ in range(get_settings().auth.login_backoff_after):
+        assert (await _fail_login(client)).status_code == 401
+    r = await _fail_login(client)
+    assert r.status_code == 429
+    assert int(r.headers["Retry-After"]) >= 1
+    assert r.json()["detail"]["code"] == "too_many_attempts"
+    # Throttled attempts are audit-recorded distinctly.
+    from sqlalchemy import select
+
+    from app.db.models import AuditLog
+    actions = [a.action for a in (await db.scalars(select(AuditLog))).all()]
+    assert actions.count("login_throttled") == 1
+    assert actions.count("login_failed") == 5
+
+
+async def test_login_throttle_scoped_to_username_and_ip(
+    client, respx_mock, throttle
+):
+    """simon being throttled must not affect erika (same IP), and the
+    same username from another IP keeps its own counter."""
+    from app.services import login_throttle
+
+    _mock_bad_credentials(respx_mock)
+    for _ in range(get_settings().auth.login_backoff_after):
+        await _fail_login(client, "simon")
+    assert (await _fail_login(client, "simon")).status_code == 429
+    assert (await _fail_login(client, "erika")).status_code == 401
+    # Different IP, same username: unaffected (module-level — the ASGI
+    # test transport always presents one peer address).
+    assert login_throttle.retry_after("simon", "10.9.8.7") == 0
+
+
+async def test_login_throttle_success_resets(client, respx_mock, throttle, monkeypatch):
+    """A real login wipes the failure slate for that (user, ip) key."""
+    from app.services import auth as auth_service
+
+    monkeypatch.setattr(auth_service, "_secret_cache", "test-secret")
+    _mock_bad_credentials(respx_mock)
+    for _ in range(get_settings().auth.login_backoff_after):
+        await _fail_login(client)
+    assert (await _fail_login(client)).status_code == 429
+    # Wait out the block, then succeed.
+    throttle["now"] += 10
+    respx_mock.post("http://paperless.test/api/token/").mock(
+        side_effect=lambda request: (
+            httpx.Response(200, json={"token": "user-token"})
+            if b"right" in request.content
+            else httpx.Response(400, json={})
+        )
+    )
+    respx_mock.get("http://paperless.test/api/users/").mock(
+        return_value=httpx.Response(403, json={})
+    )
+    r = await client.post(
+        "/api/auth/login", json={"username": "simon", "password": "right"}
+    )
+    assert r.status_code == 200
+    # Counters cleared: the next failure is #1 again, not #6.
+    assert (await _fail_login(client)).status_code == 401
+
+
+async def test_login_throttle_window_expiry_reallows(client, respx_mock, throttle):
+    """Blocked attempts re-allow once the wait passes, and a long-idle
+    key is forgiven entirely."""
+    _mock_bad_credentials(respx_mock)
+    for _ in range(get_settings().auth.login_backoff_after):
+        await _fail_login(client)
+    assert (await _fail_login(client)).status_code == 429
+    # Past the current wait: attempts flow again (still to paperless).
+    throttle["now"] += 5
+    assert (await _fail_login(client)).status_code == 401
+    # That failure doubled the wait…
+    assert (await _fail_login(client)).status_code == 429
+    # …but one idle cap-length forgives the whole history.
+    throttle["now"] += get_settings().auth.login_backoff_cap_seconds + 1
+    assert (await _fail_login(client)).status_code == 401
+
+
+def test_client_ip_ignores_forwarded_header_unless_trusted(monkeypatch):
+    """X-Forwarded-For is attacker-controlled without a proxy — only
+    the explicit trusted-proxy flag makes the throttle honor it."""
+    from starlette.requests import Request as StarletteRequest
+
+    from app.api.routes.auth import client_ip
+
+    scope = {
+        "type": "http",
+        "headers": [(b"x-forwarded-for", b"1.2.3.4, 10.0.0.1")],
+        "client": ("9.9.9.9", 1234),
+    }
+    request = StarletteRequest(scope)
+    monkeypatch.setattr(get_settings().auth, "trust_proxy_headers", False)
+    assert client_ip(request) == "9.9.9.9"
+    monkeypatch.setattr(get_settings().auth, "trust_proxy_headers", True)
+    assert client_ip(request) == "1.2.3.4"
+
+
 async def test_session_timestamps_carry_utc_offset(client, respx_mock, monkeypatch):
     """Wire contract: every timestamp is explicit UTC. SQLite returns
     naive datetimes — bare `datetime` fields serialized them without

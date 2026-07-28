@@ -201,6 +201,19 @@ class AuthConfig(BaseModel):
     # Set the cookie's Secure flag (TLS deployments; the app can't
     # reliably infer HTTPS behind a reverse proxy). AUDIT API-F8.
     cookie_secure: bool = False
+    # Login throttle (in-process exponential backoff, see
+    # services/login_throttle.py): this many failed attempts per
+    # (username, client-ip) are free, then each further failure doubles
+    # the required wait (2 s, 4 s, …) up to the cap. Deliberately NOT
+    # UI-editable — a bad value must never lock admins out of the very
+    # UI needed to fix it.
+    login_backoff_after: int = 5
+    login_backoff_cap_seconds: int = 300
+    # Trusted-proxy mode: take the client IP from the FIRST entry of
+    # X-Forwarded-For instead of the socket peer. Enable ONLY when a
+    # reverse proxy you control sets/overwrites that header — trusted
+    # blindly, it lets any client spoof its way around the throttle.
+    trust_proxy_headers: bool = False
 
 
 class WebhookConfig(BaseModel):
@@ -216,6 +229,16 @@ class WebhookConfig(BaseModel):
     # Defaults for sessions created via webhook ingress.
     redo_ocr: bool = False
     apply_policy: Literal["review", "auto"] = "review"
+    # Ingress caps: reject request bodies larger than this (bytes, 413)
+    # and requests carrying more document ids than this (422). Paperless
+    # posts ONE document per workflow event — these are abuse brakes,
+    # not sizing knobs, and stay file/env-only.
+    max_body_bytes: int = 64 * 1024
+    max_documents: int = 50
+    # Replay dedup: a document id accepted within this window is
+    # acknowledged (200) but not re-enqueued. 0 disables. Recoverable,
+    # so UI-editable like the other webhook knobs.
+    dedup_window_seconds: int = 300
 
 
 class RetentionConfig(BaseModel):
@@ -462,6 +485,9 @@ EDITABLE_KEYS: tuple[str, ...] = (
     "webhook.public_url",
     "webhook.redo_ocr",
     "webhook.apply_policy",
+    # Recoverable (worst case: replays re-analyze) — unlike the hard
+    # ingress caps and the login throttle, which stay file/env-only.
+    "webhook.dedup_window_seconds",
 )
 
 

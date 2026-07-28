@@ -169,6 +169,13 @@ so.
 | `auth.session_hours` | `168` (one week) | Signed httpOnly session cookie lifetime |
 | `auth.session_secret` | *(generated)* | HMAC secret for the cookie; empty = generated once and persisted app-side (survives restarts) |
 | `auth.cookie_secure` | `false` | Set the cookie's `Secure` flag — turn on for TLS deployments (the app can't reliably infer HTTPS behind a reverse proxy) |
+| `auth.login_backoff_after` | `5` | Failed logins per (username, client IP) before the throttle kicks in; each further failure doubles the required wait (2 s, 4 s, …) and throttled attempts get a `429` with `Retry-After` |
+| `auth.login_backoff_cap_seconds` | `300` | Upper bound on the backoff wait; a successful login (or a quiet period of one cap-length) clears the counter |
+| `auth.trust_proxy_headers` | `false` | Take the client IP for the login throttle from the first `X-Forwarded-For` entry. Enable **only** behind a reverse proxy you control that sets/overwrites the header — otherwise clients can spoof it |
+
+The throttle keys are deliberately **not** UI-editable: a bad value
+must never lock administrators out of the very settings UI needed to
+fix it. The counters live in-process and reset on restart.
 
 The webhook is separate machine-to-machine auth (shared secret) and is
 unaffected by user auth.
@@ -181,8 +188,12 @@ unaffected by user auth.
 | `webhook.public_url` | *(empty)* | Base URL **this app** is reachable at *from paperless* (e.g. `http://paperless-llm:8100` inside a compose network, or the reverse-proxy URL). Env: `PLLM_WEBHOOK__PUBLIC_URL`. Required for the one-click workflow setup |
 | `webhook.redo_ocr` | `false` | Re-OCR webhook-ingested documents |
 | `webhook.apply_policy` | `review` | `review` (proposals wait for you) or `auto` (applied immediately, journaled, revertible) |
+| `webhook.max_body_bytes` | `65536` (64 KiB) | Request bodies larger than this are rejected with `413`. Abuse brake, config/env only |
+| `webhook.max_documents` | `50` | More document ids than this in one request are rejected with `422` (paperless posts one document per workflow event). Abuse brake, config/env only |
+| `webhook.dedup_window_seconds` | `300` | A document id accepted within this window is acknowledged (`200`, `"status": "duplicate"`) but not re-analyzed — brakes workflow replay loops. `0` disables |
 
-All four are runtime-editable on the **Paperless** settings tab, which
+The first four and the dedup window are runtime-editable on the
+**Paperless** settings tab, which
 also offers **Set up automatically** (creates or heals the paperless
 workflow: trigger "Document Added", webhook action posting `{doc_url}`
 to this app with the secret header — requires the app's paperless
