@@ -32,6 +32,7 @@ import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Job, type JobCreate } from "../api";
 import { keys } from "../lib/keys";
 import { scopeLabel } from "../lib/labels";
+import { useEntityList } from "../hooks/useTaxonomy";
 import { StatusBadge } from "../components/StatusBadge";
 
 function JobProgress({ job }: { job: Job }) {
@@ -55,10 +56,7 @@ function NewJob({ onDone }: { onDone: () => void }) {
   const [auto, setAuto] = useState(false);
   const [instructions, setInstructions] = useState("");
   const ocrOnly = mode === "ocr";
-  const { data: tags } = useQuery({
-    queryKey: keys.entities("tag"),
-    queryFn: api.listTags,
-  });
+  const { data: tags } = useEntityList("tag");
 
   const create = useMutation({
     mutationFn: (body: JobCreate) => api.createJob(body),
