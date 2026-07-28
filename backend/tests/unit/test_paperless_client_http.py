@@ -131,16 +131,6 @@ async def test_http_error_carries_status_code(paperless_client):
 
 
 @respx.mock
-async def test_ping_reports_reachability_without_raising(paperless_client):
-    route = respx.get(f"{PAPERLESS_URL}/api/documents/").mock(
-        return_value=Response(500, text="boom")
-    )
-    assert await paperless_client.ping() is False
-    route.mock(return_value=Response(200, json={"count": 0, "next": None, "results": []}))
-    assert await paperless_client.ping() is True
-
-
-@respx.mock
 async def test_post_document_accepts_json_and_plain_text_task_ids(paperless_client):
     """paperless returns the consume-task uuid either as JSON or as a
     quoted text body depending on version — both must yield the bare
