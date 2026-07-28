@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy import select
 
 import app.services.pipeline  # noqa: F401 — populate registries
-from app.config import reset_settings_cache
 from app.db.models import (
     AgentKind,
     EntityType,
@@ -20,7 +19,7 @@ from app.db.models import (
     StepState,
     utcnow,
 )
-from app.db.session import dispose_engine, init_db, session_scope
+from app.db.session import session_scope
 from app.services.steps import (
     STEP_TRANSITIONS,
     StepWorkers,
@@ -88,15 +87,7 @@ def test_no_transition_leaves_superseded():
 # ----- crash recovery closes every transient state --------------------
 
 
-@pytest.fixture
-async def file_db(tmp_path, monkeypatch):
-    monkeypatch.setenv("PLLM_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/s.sqlite3")
-    reset_settings_cache()
-    await dispose_engine()
-    await init_db()
-    yield
-    await dispose_engine()
-    reset_settings_cache()
+# `file_db` comes from tests/conftest.py.
 
 
 async def _session_with_step(state: StepState, **step_kw) -> tuple[int, int]:
