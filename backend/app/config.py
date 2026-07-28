@@ -196,6 +196,19 @@ class AuthConfig(BaseModel):
     # Set the cookie's Secure flag (TLS deployments; the app can't
     # reliably infer HTTPS behind a reverse proxy). AUDIT API-F8.
     cookie_secure: bool = False
+    # Login throttle (in-process exponential backoff, see
+    # services/login_throttle.py): this many failed attempts per
+    # (username, client-ip) are free, then each further failure doubles
+    # the required wait (2 s, 4 s, …) up to the cap. Deliberately NOT
+    # UI-editable — a bad value must never lock admins out of the very
+    # UI needed to fix it.
+    login_backoff_after: int = 5
+    login_backoff_cap_seconds: int = 300
+    # Trusted-proxy mode: take the client IP from the FIRST entry of
+    # X-Forwarded-For instead of the socket peer. Enable ONLY when a
+    # reverse proxy you control sets/overwrites that header — trusted
+    # blindly, it lets any client spoof its way around the throttle.
+    trust_proxy_headers: bool = False
 
 
 class WebhookConfig(BaseModel):

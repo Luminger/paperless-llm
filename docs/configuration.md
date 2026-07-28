@@ -169,6 +169,13 @@ so.
 | `auth.session_hours` | `168` (one week) | Signed httpOnly session cookie lifetime |
 | `auth.session_secret` | *(generated)* | HMAC secret for the cookie; empty = generated once and persisted app-side (survives restarts) |
 | `auth.cookie_secure` | `false` | Set the cookie's `Secure` flag — turn on for TLS deployments (the app can't reliably infer HTTPS behind a reverse proxy) |
+| `auth.login_backoff_after` | `5` | Failed logins per (username, client IP) before the throttle kicks in; each further failure doubles the required wait (2 s, 4 s, …) and throttled attempts get a `429` with `Retry-After` |
+| `auth.login_backoff_cap_seconds` | `300` | Upper bound on the backoff wait; a successful login (or a quiet period of one cap-length) clears the counter |
+| `auth.trust_proxy_headers` | `false` | Take the client IP for the login throttle from the first `X-Forwarded-For` entry. Enable **only** behind a reverse proxy you control that sets/overwrites the header — otherwise clients can spoof it |
+
+The throttle keys are deliberately **not** UI-editable: a bad value
+must never lock administrators out of the very settings UI needed to
+fix it. The counters live in-process and reset on restart.
 
 The webhook is separate machine-to-machine auth (shared secret) and is
 unaffected by user auth.

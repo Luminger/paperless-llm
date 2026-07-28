@@ -16,6 +16,7 @@ from app.api.schemas import AuthMeOut, AuthSessionOut
 from app.config import get_settings
 from app.db.models import AuthSession, utcnow
 from app.db.session import get_session
+from app.services import login_throttle
 from app.services.audit import record
 from app.services.auth import (
     COOKIE_NAME,
@@ -35,6 +36,18 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+def client_ip(request: Request) -> str:
+    """Throttle key half: the socket peer — or, in trusted-proxy mode
+    only (``auth.trust_proxy_headers``), the first ``X-Forwarded-For``
+    entry. Never trusted blindly: behind no proxy the header is
+    attacker-controlled and would make the throttle spoofable."""
+    if get_settings().auth.trust_proxy_headers:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 async def resolve_user(request: Request) -> CurrentUser | None:
@@ -61,14 +74,35 @@ async def login(
     db: AsyncSession = Depends(get_session),
 ) -> AuthMeOut:
     cfg = get_settings().auth
+    ip = client_ip(request)
+    # Brute-force brake BEFORE touching paperless — a throttled caller
+    # must not keep using us as a credential oracle.
+    wait = login_throttle.retry_after(body.username, ip)
+    if wait > 0:
+        await record(
+            db, "auth", "login_throttled",
+            user=body.username, ip=ip, retry_after=wait,
+        )
+        await db.commit()
+        raise HTTPException(
+            429,
+            {
+                "code": "too_many_attempts",
+                "message": "too many failed login attempts — "
+                f"try again in {wait} seconds",
+            },
+            headers={"Retry-After": str(wait)},
+        )
     token = await validate_paperless_credentials(body.username, body.password)
     if token is None:
+        login_throttle.record_failure(body.username, ip)
         await record(db, "auth", "login_failed", user=body.username)
         await db.commit()
         raise HTTPException(
             401,
             {"code": "bad_credentials", "message": "invalid username or password"},
         )
+    login_throttle.record_success(body.username, ip)
     role = await resolve_role(body.username)
     # Server-side session row FIRST (AUDIT API-F8): the cookie is only
     # a pointer — revoking the row ends the session, cookie or not.
