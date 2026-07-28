@@ -1,12 +1,20 @@
 # Configuration
 
-Configuration is layered — later wins:
+## Precedence
 
-1. Built-in defaults
-2. TOML file (`paperless-llm.toml` in the working directory, or the
-   path in `PAPERLESS_LLM_CONFIG`)
-3. Environment variables: prefix `PLLM_`, nesting with `__`
-   (`PLLM_LLM__AGENT__BASE_URL` ≙ `llm.agent.base_url`)
+Settings come in four layers — first match wins:
+
+1. **Environment variables** — prefix `PLLM_`, nesting with `__`
+   (`PLLM_LLM__AGENT__BASE_URL` ≙ `llm.agent.base_url`). Authoritative:
+   a key set here is *locked* — the config file cannot override it (the
+   startup log warns about every shadowed file value) and the Settings
+   UI shows it with a lock.
+2. **Settings UI** — a curated whitelist (model endpoints, OCR knobs
+   and sampling, the queue brake, webhook settings) is editable at
+   runtime by administrators and persisted in the app database.
+3. **Config file** — TOML, path in `PAPERLESS_LLM_CONFIG`, default
+   `./paperless-llm.toml` in the working directory.
+4. Built-in defaults.
 
 A minimal TOML file:
 
@@ -20,22 +28,6 @@ base_url = "http://llm.lan:8001/v1"
 model = "qwen3.6-27b"
 ```
 
-
-## Precedence
-
-Settings are layered — first match wins:
-
-1. **Environment variables** (`PLLM_…`) — authoritative. A key set here
-   is *locked*: the config file cannot override it (the startup log
-   warns about every shadowed file value) and the Settings UI shows it
-   with a lock.
-2. **Settings UI** — a curated whitelist (model endpoints, sampling,
-   queue brake, webhook defaults) is editable at runtime by
-   administrators and persisted in the app database.
-3. **Config file** (TOML, path in `PAPERLESS_LLM_CONFIG`, default
-   `./paperless-llm.toml`).
-4. Built-in defaults.
-
 Deliberately *not* runtime-editable: the paperless connection,
 database, auth and worker pool sizes — a bad value there would take
 down the very UI needed to fix it.
@@ -43,7 +35,8 @@ down the very UI needed to fix it.
 ## Model profiles
 
 Every serving-setup quirk is **configuration, not code** — image
-limits, concurrency, streaming support, thinking mode, sampling.
+limits, concurrency, streaming support, thinking mode, sampling,
+timeouts.
 
 ### `llm.agent` — the tool-calling chat model
 
@@ -51,11 +44,13 @@ limits, concurrency, streaming support, thinking mode, sampling.
 | --- | --- | --- |
 | `base_url` | `http://127.0.0.1:8001/v1` | OpenAI-compatible endpoint |
 | `model` | `qwen3.6-27b` | Model name as the server knows it |
+| `api_key` | `unused` | Sent as a bearer token; local endpoints usually ignore it |
 | `max_concurrent` | `2` | App-level cap on concurrent requests to this endpoint. Size it below the server's parallelism, leaving room for other consumers. |
 | `supports_streaming` | `false` | Token-level streaming. Turn off for servers with buggy streaming tool-call parsers; the UI still updates live via events. |
 | `thinking` | `server_default` | `on` / `off` sends `chat_template_kwargs`; `server_default` sends nothing. |
 | `max_input_tokens` | `32768` | Used to clamp tool results (e.g. long documents), not enforced server-side. |
 | `max_tool_iterations` | `12` | Cap on tool-loop rounds per agent turn. |
+| `timeout_seconds` | `600` | Wall-clock cap per LLM call, enforced app-side around the whole request (including streaming) — a wedged server fails the step into the retry machinery instead of hanging a worker forever. |
 | `sampling.*` | server defaults | `temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`, `presence_penalty`, `frequency_penalty`, `repetition_penalty` — standard knobs go natively, server-specific ones (`top_k`, `min_p`, `repetition_penalty`) via `extra_body` (vLLM/SGLang/llama.cpp/Ollama accept them there) |
 
 ### `llm.ocr` — the vision model
@@ -66,11 +61,15 @@ multimodal endpoint needs no extra config.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `base_url`, `model`, `api_key` | *(agent profile)* | Dedicated OCR endpoint if set |
+| `max_concurrent` | *(agent profile)* | Separate admission cap for a dedicated OCR endpoint. Only honored when `base_url` is set — a shared endpoint shares the agent's semaphore. |
+| `timeout_seconds` | *(agent profile)* | Wall-clock cap per OCR call |
 | `max_images_per_request` | `2` | Match your server's multimodal limit (e.g. vLLM `--limit-mm-per-prompt`) |
-| `max_pages` | `0` | Page cap per document (0 = all) |
+| `max_pages` | `0` | Page cap per document (0 = all); a capped run is marked truncated and never auto-resolves the gate |
 | `render_dpi` | `150` | PDF page render resolution |
+| `auto_rotate` | `true` | Detect flipped/sideways scans (tesseract orientation detection, when the binary is present — the container image ships it) and rotate renders upright before the vision model sees them |
 | `native_text` | `true` | Born-digital gate: pages with a real visible text layer are read from the PDF directly (no VLM call); invisible OCR layers over scans still go to the VLM |
 | `native_auto_accept_similarity` | `0.95` | All pages born-digital + text matches stored content at ≥ this → the OCR gate resolves itself; unset to always gate |
+| `sampling.temperature` | `0.1` | The one sampling knob with a non-server default — greedy-ish decoding for faithful transcription |
 | `prompt_version` | `1` | Part of the OCR cache key |
 
 OCR results are cached keyed on document + content checksum + model +
@@ -96,8 +95,9 @@ label for details):
 Start with a presence penalty alone; add the others only if loops
 persist. High `frequency_penalty` values distort documents that are
 GENUINELY repetitive (account statements, tables) — prefer
-`presence_penalty`/`repetition_penalty` for OCR. All knobs default to
-unset (server defaults), and env vars work too, e.g.
+`presence_penalty`/`repetition_penalty` for OCR. Apart from
+`temperature` (see above) all knobs default to unset (server
+defaults), and env vars work too, e.g.
 `PLLM_LLM__OCR__SAMPLING__PRESENCE_PENALTY=1.5`.
 
 ### `llm.embeddings` — optional
@@ -105,6 +105,13 @@ unset (server defaults), and env vars work too, e.g.
 Configuring `base_url` + `model` enables the semantic entity index
 (duplicate detection across tags/correspondents/types by embedding
 cosine, not just string distance).
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `base_url`, `model` | *(empty = disabled)* | OpenAI-compatible `/v1/embeddings` endpoint (e.g. text-embeddings-inference) |
+| `api_key` | `unused` | Bearer token if the endpoint wants one |
+| `dimensions` | *(unset)* | Requested vector size, for models that support truncation |
+| `max_concurrent` | `4` | Declared but not currently enforced — embedding calls run as sequential batches |
 
 ### `llm.reranker` — optional
 
@@ -130,13 +137,14 @@ once per `find_documents` call.
 
 ## Paperless
 
-| Key | Meaning |
-| --- | --- |
-| `paperless.base_url` | Where the *app* reaches paperless |
-| `paperless.external_url` | Where *your browser* reaches paperless (UI deep links); defaults to `base_url` |
-| `paperless.token` | API token for background work |
-| `paperless.username` / `password` | Alternative to a token (one is fetched via `/api/token/`) |
-| `paperless.verify_tls` | TLS certificate/host verification (default `true`); disable only for self-signed setups |
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `paperless.base_url` | `http://127.0.0.1:8000` | Where the *app* reaches paperless |
+| `paperless.external_url` | *(base_url)* | Where *your browser* reaches paperless (UI deep links) |
+| `paperless.token` | | API token for background work |
+| `paperless.username` / `password` | | Alternative to a token (one is fetched via `/api/token/`) |
+| `paperless.timeout_seconds` | `30` | HTTP timeout for paperless requests |
+| `paperless.verify_tls` | `true` | TLS certificate/host verification; disable only for self-signed setups (config/env only, never the UI) |
 
 ## Authentication
 
@@ -154,10 +162,13 @@ administrator here (admin rights gate settings, prompt tuning and
 runtime configuration). The lookup runs under the app's background
 credentials at login — those must belong to a paperless superuser,
 otherwise everyone signs in as a regular user and the server log says
-so. Sessions are signed httpOnly cookies
-(`auth.session_hours`, default one week); the signing secret is
-generated once and persisted, or set explicitly via
-`auth.session_secret`.
+so.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `auth.session_hours` | `168` (one week) | Signed httpOnly session cookie lifetime |
+| `auth.session_secret` | *(generated)* | HMAC secret for the cookie; empty = generated once and persisted app-side (survives restarts) |
+| `auth.cookie_secure` | `false` | Set the cookie's `Secure` flag — turn on for TLS deployments (the app can't reliably infer HTTPS behind a reverse proxy) |
 
 The webhook is separate machine-to-machine auth (shared secret) and is
 unaffected by user auth.
@@ -173,9 +184,11 @@ unaffected by user auth.
 
 All four are runtime-editable on the **Paperless** settings tab, which
 also offers **Set up automatically** (creates or heals the paperless
-workflow: trigger “Document Added”, webhook action posting `{doc_url}`
+workflow: trigger "Document Added", webhook action posting `{doc_url}`
 to this app with the secret header — requires the app's paperless
-account to be a superuser).
+account to be a superuser). The same tab shows whether the workflow's
+*content* still matches the current settings — see
+[Settings → Webhook ingress](usage/settings.md#webhook-ingress).
 
 ## Queue & retries
 
@@ -183,6 +196,7 @@ account to be a superuser).
 | --- | --- | --- |
 | `queue.interactive_concurrency` | `2` | Workers for chat turns / single analyses |
 | `queue.batch_concurrency` | `2` | Workers for bulk jobs |
+| `queue.poll_interval_seconds` | `1` | Worker poll interval over the DB queue (workers are also woken by events) |
 | `queue.retry_attempts` | `2` | Automatic re-runs of a failed step |
 | `queue.retry_delay_seconds` | `60` | Backoff between attempts ("Retry now" in the UI overrides it) |
 | `queue.auto_continuation_limit` | `10` | Runaway brake: max auto-continuation turns per autonomous (auto-apply) session |
