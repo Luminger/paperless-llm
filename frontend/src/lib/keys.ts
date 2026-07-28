@@ -12,7 +12,6 @@ export const keys = {
     stepId == null
       ? (["session-ocr", id] as const)
       : (["session-ocr", id, stepId] as const),
-  proposals: () => ["proposals"] as const,
   proposal: (id: number) => ["proposal", id] as const,
   revertCheck: (id: number) => ["revert-check", id] as const,
   documents: (filter?: object, page?: number) =>
@@ -50,13 +49,6 @@ export const keys = {
 
 import type { QueryClient } from "@tanstack/react-query";
 
-/** Invalidate everything a session mutation can touch. */
-export function invalidateSession(qc: QueryClient, sessionId: number) {
-  qc.invalidateQueries({ queryKey: keys.session(sessionId) });
-  qc.invalidateQueries({ queryKey: keys.sessions() });
-  qc.invalidateQueries({ queryKey: keys.stats() });
-}
-
 /** Invalidate all entity lists of one taxonomy type (+ documents). */
 export function invalidateEntities(qc: QueryClient, type?: string) {
   if (type) qc.invalidateQueries({ queryKey: keys.entities(type) });
@@ -73,7 +65,6 @@ export function invalidateProposalEffects(
   p?: { entity_type?: string | null } | null,
 ) {
   qc.invalidateQueries({ queryKey: ["proposal"] });
-  qc.invalidateQueries({ queryKey: keys.proposals() });
   qc.invalidateQueries({ queryKey: ["session"] });
   qc.invalidateQueries({ queryKey: keys.sessions() });
   qc.invalidateQueries({ queryKey: keys.stats() });
