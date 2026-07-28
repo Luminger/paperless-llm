@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.models import EntityEmbedding
+from app.llm.factory import embeddings_semaphore
 from app.paperless import PaperlessClient
 from app.paperless.taxonomy import TAXONOMY
 
@@ -38,6 +39,10 @@ SEMANTIC_THRESHOLD = 0.80
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Embed via the configured local OpenAI-compatible endpoint (TEI)."""
     prof = get_settings().llm.embeddings
+    # Endpoint admission (llm.embeddings.max_concurrent): batches within
+    # one call are sequential anyway; the semaphore bounds PARALLEL
+    # callers (entity index rebuilds gathering many embed calls).
+    sem = embeddings_semaphore()
     out: list[list[float]] = []
     async with httpx.AsyncClient(timeout=60) as client:
         # TEI happily takes batches; keep them bounded.
@@ -46,11 +51,12 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
             payload: dict[str, Any] = {"model": prof.model, "input": batch}
             if prof.dimensions:
                 payload["dimensions"] = prof.dimensions
-            resp = await client.post(
-                f"{prof.base_url.rstrip('/')}/embeddings",
-                json=payload,
-                headers={"Authorization": f"Bearer {prof.api_key}"},
-            )
+            async with sem:
+                resp = await client.post(
+                    f"{prof.base_url.rstrip('/')}/embeddings",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {prof.api_key}"},
+                )
             resp.raise_for_status()
             data = sorted(resp.json()["data"], key=lambda d: d["index"])
             out += [d["embedding"] for d in data]
