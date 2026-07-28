@@ -24,6 +24,7 @@ import { api, type DocumentHistory, type EntityRef, type PaperlessDocument } fro
 import { keys, invalidateEntities } from "../lib/keys";
 import { formatDate, formatDateTime } from "../lib/format";
 import { matchingDescription, PATTERN_ALGORITHMS } from "../lib/matching";
+import { parseActor } from "../lib/labels";
 import { displayCustomValue } from "../lib/custom-fields";
 import { SessionList } from "../components/SessionList";
 import { errorMessage } from "../lib/errors";
@@ -340,14 +341,14 @@ const HISTORY_KINDS: Record<string, string> = {
 };
 
 function Actor({ actor }: { actor: string }) {
-  const name = actor.startsWith("user:") ? actor.slice(5) : actor;
+  const { label, user } = parseActor(actor);
   return (
     <span className="inline-flex items-center gap-1.5">
       <User className="size-3.5 text-muted-foreground" />
-      {actor === "system" ? (
-        <span className="text-muted-foreground">automatic</span>
+      {user ? (
+        <span className="font-medium">{label}</span>
       ) : (
-        <span className="font-medium">{name}</span>
+        <span className="text-muted-foreground">{label}</span>
       )}
     </span>
   );
