@@ -87,6 +87,49 @@ describe("Settings — Models config", () => {
     expect(secret).toHaveValue("");
   });
 
+  it("typing a secret then erasing it stages nothing — form not dirty", async () => {
+    renderWithProviders(<ModelsConfig />);
+    const secret = await screen.findByLabelText("llm.agent.api_key");
+    await userEvent.type(secret, "sk-oops");
+    // Mid-edit the form is dirty…
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    await userEvent.clear(secret);
+    // …but erasing everything again means "no change", NOT "replace the
+    // configured secret with an empty string" — the draft key is gone
+    // and the save bar disarms.
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(mocked.putConfig).not.toHaveBeenCalled();
+  });
+
+  it("type-and-erase on a secret never lands in a save payload", async () => {
+    mocked.putConfig.mockResolvedValue(ROWS);
+    renderWithProviders(<ModelsConfig />);
+    const secret = await screen.findByLabelText("llm.agent.api_key");
+    await userEvent.type(secret, "sk-oops");
+    await userEvent.clear(secret);
+    // Dirty the form via another field so save is possible at all.
+    await userEvent.type(screen.getByLabelText("llm.ocr.sampling.temperature"), "0.1");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(mocked.putConfig).toHaveBeenCalledWith({
+        "llm.ocr.sampling.temperature": 0.1,
+      }),
+    );
+  });
+
+  it("typing a real secret value still sends it on save", async () => {
+    mocked.putConfig.mockResolvedValue(ROWS);
+    renderWithProviders(<ModelsConfig />);
+    const secret = await screen.findByLabelText("llm.agent.api_key");
+    await userEvent.type(secret, "sk-new-key");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(mocked.putConfig).toHaveBeenCalledWith({
+        "llm.agent.api_key": "sk-new-key",
+      }),
+    );
+  });
+
   it("sampling levers explain themselves on label hover", async () => {
     renderWithProviders(<ModelsConfig />);
     await userEvent.hover(await screen.findByText("Temperature"));

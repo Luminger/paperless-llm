@@ -101,6 +101,25 @@ const NUMERIC_FIELDS = new Set([
   "max_concurrent",
 ]);
 
+/** Draft-set updater shared by ModelsConfig and the Webhook tab:
+ * `undefined` removes the key from the draft (the field is back to "no
+ * change" — used by secret inputs on type-then-erase), anything else
+ * stages it. Keeping erased fields OUT of the draft keeps the dirty
+ * indication (and the save payload) truthful. */
+export function stageDraft(
+  key: string,
+  v: unknown,
+): (d: Record<string, unknown>) => Record<string, unknown> {
+  return (d) => {
+    if (v === undefined) {
+      if (!(key in d)) return d;
+      const { [key]: _dropped, ...rest } = d;
+      return rest;
+    }
+    return { ...d, [key]: v };
+  };
+}
+
 const CHOICES: Record<string, { value: string; label: string }[]> = {
   thinking: ["server_default", "on", "off"].map((v) => ({ value: v, label: v })),
   apply_policy: [
@@ -148,6 +167,12 @@ export function FieldEditor({
     );
   }
   if (row.secret) {
+    // An empty secret draft means "no change", never "replace with \"\"":
+    // type-then-erase must not stage an empty string that would silently
+    // wipe a configured secret on save. Emptying the input hands the
+    // parent `undefined`, which drops the key from the draft (stageDraft)
+    // — the form goes back to NOT dirty. Deliberately clearing a secret
+    // stays on the existing "reset" path (override removal sends null).
     return (
       <Input
         aria-label={row.key}
@@ -155,7 +180,7 @@ export function FieldEditor({
         disabled={disabled}
         placeholder={row.is_set ? "•••••• (set — type to replace)" : "not set"}
         value={typeof draft === "string" ? draft : ""}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
         className="h-8"
       />
     );
@@ -383,7 +408,7 @@ export function ModelsConfig() {
                   <FieldEditor
                     row={row}
                     draft={draft[row.key]}
-                    onChange={(v) => setDraft((d) => ({ ...d, [row.key]: v }))}
+                    onChange={(v) => setDraft(stageDraft(row.key, v))}
                     disabled={!isAdmin || !row.editable}
                   />
                   <span className="flex w-28 justify-end gap-1">

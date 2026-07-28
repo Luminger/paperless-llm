@@ -13,7 +13,7 @@ import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../../api";
 import { keys } from "../../lib/keys";
 import { useAuth } from "../../lib/auth";
-import { FieldEditor, LABELS } from "./Models";
+import { FieldEditor, LABELS, stageDraft } from "./Models";
 import { OnOff, Row, SourceBadge } from "./shared";
 
 export function WebhookCard() {
@@ -128,7 +128,7 @@ export function WebhookCard() {
               <FieldEditor
                 row={row}
                 draft={draft[row.key]}
-                onChange={(v) => setDraft((d) => ({ ...d, [row.key]: v }))}
+                onChange={(v) => setDraft(stageDraft(row.key, v))}
                 disabled={!isAdmin || !row.editable}
               />
               <span className="flex w-28 justify-end gap-1">
