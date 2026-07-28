@@ -49,9 +49,14 @@ describe("Jobs", () => {
     expect(await screen.findByText("Inbox")).toBeInTheDocument();
     expect(screen.getByText("1 ok / 3")).toBeInTheDocument();
 
-    // Cancellation is guarded: the button opens a confirm modal.
+    // Cancellation is guarded: the button opens a confirm modal that
+    // names the job and states the real semantics (running steps are
+    // ABORTED, not left to finish).
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(mocked.cancelJob).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(/"Inbox" — pending sessions are cancelled and running steps aborted/),
+    ).toBeInTheDocument();
     await userEvent.click(
       await screen.findByRole("button", { name: "Cancel the job" }),
     );

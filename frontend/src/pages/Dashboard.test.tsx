@@ -294,6 +294,10 @@ describe("Dashboard inbox block", () => {
     await userEvent.click(screen.getByRole("button", { name: /^re-ocr/i }));
     // OCR-only: no analysis — the dialog says so and nothing runs yet.
     expect(await screen.findByText(/no metadata analysis/i)).toBeInTheDocument();
+    // Instructions steer the transcription, not the agent.
+    expect(
+      screen.getByPlaceholderText(/Optional OCR instructions/),
+    ).toBeInTheDocument();
     expect(mocked.createJob).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: /start re-ocr/i }));
     await waitFor(() =>
