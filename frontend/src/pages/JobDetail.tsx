@@ -22,7 +22,7 @@ import { errorMessage } from "../lib/errors";
 import { useListPage, useClampPage } from "../hooks/useListPage";
 import { useUrlParam } from "../hooks/useUrlState";
 import { StatusBadge } from "../components/StatusBadge";
-import { scopeLabel } from "./Jobs";
+import { scopeLabel } from "../lib/labels";
 
 const STATUS_OPTIONS = [
   { id: "idle", name: "finished / stopped" },

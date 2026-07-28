@@ -10,6 +10,7 @@ import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api } from "../api";
 import { errorMessage } from "../lib/errors";
 import { keys } from "../lib/keys";
+import { scopeLabel } from "../lib/labels";
 import { useSessionEvents } from "../hooks/useSessionEvents";
 import { entityHref } from "./EntityPage";
 import { StepCard } from "../features/session/StepCard";
@@ -45,7 +46,7 @@ function JobFlowBar({ sessionId, jobId }: { sessionId: number; jobId: number }) 
     queryFn: () => api.getJobAttention(jobId, sessionId),
     refetchInterval: 4000,
   });
-  const label = job ? (job.params.label as string) || "job" : "job";
+  const label = job ? scopeLabel(job) : "job";
   const next = attention?.next_session_id;
   return (
     <div className="mb-4 flex items-center gap-3 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm">

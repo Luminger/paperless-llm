@@ -31,6 +31,7 @@ import { useListPage } from "../hooks/useListPage";
 import { EmptyState, ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Job, type JobCreate } from "../api";
 import { keys } from "../lib/keys";
+import { scopeLabel } from "../lib/labels";
 import { StatusBadge } from "../components/StatusBadge";
 
 function JobProgress({ job }: { job: Job }) {
@@ -44,16 +45,6 @@ function JobProgress({ job }: { job: Job }) {
       </span>
     </div>
   );
-}
-
-export function scopeLabel(job: Job): string {
-  const p = job.params;
-  // Jobs carry a human label from creation; fall back to scope facts.
-  if (typeof p.label === "string" && p.label) return p.label;
-  if (p.inbox) return "Inbox";
-  if (p.untagged_only) return "Untagged documents";
-  if (Array.isArray(p.document_ids)) return `${p.document_ids.length} selected documents`;
-  return job.kind.replaceAll("_", " ");
 }
 
 function NewJob({ onDone }: { onDone: () => void }) {
