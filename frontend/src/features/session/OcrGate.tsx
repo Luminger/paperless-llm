@@ -4,6 +4,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorNotice, LoadingState } from "@/components/app/states";
 import { api, type Step } from "../../api";
@@ -94,14 +96,13 @@ export function OcrGateBody({ step }: { step: Step }) {
               the native text layer and send every page to the vision
               model. Only offered when the run actually used it. */}
           {((step.result.native_pages as number | undefined) ?? 0) > 0 && (
-            <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
-              <input
-                type="checkbox"
+            <Label className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
+              <Checkbox
                 checked={forceVlm}
-                onChange={(e) => setForceVlm(e.target.checked)}
+                onCheckedChange={(v) => setForceVlm(v === true)}
               />
               Ignore the PDF's embedded text — OCR every page with the vision model
-            </label>
+            </Label>
           )}
           <Button
             size="sm"
