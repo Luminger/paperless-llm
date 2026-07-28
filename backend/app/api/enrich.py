@@ -11,10 +11,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
-from app.db.models import EntityType
+from sqlalchemy import case, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import EntityType, Proposal, ProposalStatus
 from app.paperless import PaperlessClient
 from app.paperless.taxonomy import TAXONOMY
+from app.proposals.kinds import visible
+
+if TYPE_CHECKING:
+    from app.api.schemas import SessionOut
 
 log = logging.getLogger(__name__)
 
@@ -53,15 +61,12 @@ async def entity_names(
     return out
 
 
-async def proposal_counts(db, session_ids: list[int]) -> dict[int, tuple[int, int, int]]:
+async def proposal_counts(
+    db: AsyncSession, session_ids: list[int]
+) -> dict[int, tuple[int, int, int]]:
     """(total, pending, applied) VISIBLE proposal counts per session —
     the one implementation of the badge numbers (was duplicated verbatim
     in sessions.py and jobs.py)."""
-    from sqlalchemy import case, func, select
-
-    from app.db.models import Proposal, ProposalStatus
-    from app.proposals.kinds import visible
-
     if not session_ids:
         return {}
     pending_case = case(
@@ -87,7 +92,9 @@ async def proposal_counts(db, session_ids: list[int]) -> dict[int, tuple[int, in
     }
 
 
-async def apply_entity_names(paperless, items) -> None:
+async def apply_entity_names(
+    paperless: PaperlessClient, items: list[SessionOut]
+) -> None:
     """Back-fill ``entity_name`` on SessionOut-shaped objects (live
     resolution — snapshots go stale). One loop, not three copies."""
     names = await entity_names(

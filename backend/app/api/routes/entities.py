@@ -240,7 +240,9 @@ async def document_history(
 
 
 @router.get("/documents/{doc_id}/thumb")
-async def get_thumbnail(doc_id: int, paperless: PaperlessClient = Depends(get_paperless)):
+async def get_thumbnail(
+    doc_id: int, paperless: PaperlessClient = Depends(get_paperless)
+) -> Response:
     content, media_type = await paperless.get_thumbnail(doc_id)
     return Response(content=content, media_type=media_type)
 
