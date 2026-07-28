@@ -15,6 +15,8 @@ network**.
 
 - **OCR that's actually good** — a local vision model re-reads scans
   into clean Markdown; you review the diff before anything is written.
+  Born-digital PDFs skip the vision model and read their embedded text
+  directly.
 - **Metadata proposals** — titles, correspondents, types, tags, dates:
   proposed one at a time, applied by you, journaled and revertible.
 - **Taxonomy governance** — duplicate detection, merges, per-entity

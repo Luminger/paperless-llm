@@ -2,7 +2,8 @@
 
 Settings open as a modal from the user menu (or `/settings`). Sections
 are deep-linkable: `/settings#preferences`, `/settings#models`,
-`/settings#prompts`, `/settings#paperless`, `/settings#system`.
+`/settings#prompts`, `/settings#paperless`, `/settings#sessions`,
+`/settings#system`.
 Everything is stored on the server — every browser shows the same.
 Changing models or prompts requires **administrator rights** (a
 paperless superuser account); other sections are for everyone.

@@ -127,7 +127,8 @@ without a resolution is illegal.
 ## Proposal lifecycle
 
 States: `draft`, `pending`, `applying`, `applied`, `superseded`,
-`no_change`, plus `declined` handled by review UI flows.
+`no_change`. There is no "declined": unwanted proposals are revised
+(superseded), left pending, or their session archived.
 
 ```mermaid
 stateDiagram-v2

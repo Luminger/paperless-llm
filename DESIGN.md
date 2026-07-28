@@ -29,8 +29,8 @@ network.
   `content` field only.
 - Protecting re-OCR'd content from being overwritten by a later paperless
   reprocess (tracked as a future concern; the journal at least detects it).
-- Multi-user auth. Deployment sits behind a reverse proxy / VPN. A simple
-  shared token may be added for the webhook endpoint.
+- ~~Multi-user auth~~ — superseded: paperless-credential auth shipped in
+  M6 (see Authentication); the webhook got its shared-secret header.
 
 ## System context
 
@@ -149,7 +149,8 @@ Enabled when `llm.embeddings` is configured.
   existing paperless `content`, chunked, embedded, stored with doc
   metadata for filtered kNN.
 - **Index 2 — entities**: one embedding per tag/correspondent/doctype
-  (name + description + matching rule).
+  (the NAME only — nothing else leaves for the embeddings endpoint;
+  see docs/privacy.md).
 - **Sync**: periodic incremental indexer polling paperless `modified`
   timestamps; full reindex job available from the UI.
 - **Reranker**: optional second stage over kNN candidates
@@ -206,7 +207,8 @@ Proposal          kind, revision, supersedes_id?, step_id,
                   agent_payload  (immutable: exactly what the model emitted)
                   user_payload?  (user's edited version, full edit visibility)
                   base_snapshot  (paperless state of touched fields at emit)
-                  status: draft | pending | applied | superseded |
+                  status: draft | pending | applying (transient apply
+                          claim) | applied | superseded |
                           no_change (apply-time: already matched) — there
                           is no reject: unwanted proposals are revised
                           (superseded), left pending, or archived
@@ -255,7 +257,8 @@ agent then proposes the single next change or finishes; the loop ends
 when a turn yields no proposal. Continuations are skipped when the
 session is archived, other proposals are still open (legacy), or work
 is already in flight; under `apply_policy=auto` the loop runs
-autonomously with a hard brake (max 10 auto-continuations).
+autonomously with a hard brake (`queue.auto_continuation_limit`,
+default 10 auto-continuations).
 Continuation prompts are hidden in the UI (the timeline already shows
 the decision); the step is labeled "Continuation".
 
@@ -390,8 +393,17 @@ and the per-endpoint `max_concurrent` semaphore are settings.
                          /{id}/archive|unarchive, GET /{id}/events (SSE)
 /api/proposals           list/filter, PATCH /{id} (user edits),
                          POST /{id}/apply|revert, GET /{id}/revert-check
-/api/jobs                bulk jobs: create/list/detail/cancel
-/api/settings            read-only config overview (M5)
+/api/jobs                bulk jobs: create/list/detail/cancel/pause/
+                         resume/retry, /{id}/attention (flow review),
+                         /api/corpus (batch-curation progress)
+/api/settings            effective-config overview; /config (runtime
+                         override layer, whitelisted keys);
+                         /webhook + /webhook/setup (status, one-click
+                         workflow); /llm/{profile}/test|detect
+/api/auth                login/logout/me (paperless-validated),
+                         session management
+/api/prefs               server-side user preferences (incl. prompt
+                         tuning)
 /api/entities            proxied browse (+ name-resolved filters), entity
                          detail, /{type}/merge-candidates,
                          PUT /{type}/{id}/instructions

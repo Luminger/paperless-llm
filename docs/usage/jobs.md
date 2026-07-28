@@ -59,12 +59,16 @@ documents. Concurrency per lane is configurable; the model endpoint's
 
 ## The webhook
 
-With `webhook.secret` set, paperless workflows can POST document ids to
-`/api/webhooks/paperless` (header `X-PLLM-Token`). Each ingest becomes
-a job like any other — visible, cancellable, audited. Configure
-`webhook.redo_ocr` and `webhook.apply_policy` for the hands-off
-pipeline of your choice: from "just propose, I'll review over coffee"
-to "fix the metadata and let me spot-check the journal".
+With `webhook.secret` set, paperless workflows can POST document ids
+(or a `{doc_url}` payload) to `/api/webhooks/paperless` (header
+`X-PLLM-Token`). Each ingest becomes a job like any other — visible,
+cancellable, audited. You don't have to build the workflow by hand:
+**Settings → Paperless → Webhook ingress** offers a
+[one-click setup](settings.md#webhook-ingress) that creates (or heals)
+it and keeps a sync status. Configure `webhook.redo_ocr` and
+`webhook.apply_policy` on the same tab for the hands-off pipeline of
+your choice: from "just propose, I'll review over coffee" to "fix the
+metadata and let me spot-check the journal".
 
 ## Reviewing a job's output
 
