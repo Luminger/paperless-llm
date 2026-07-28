@@ -188,8 +188,12 @@ unaffected by user auth.
 | `webhook.public_url` | *(empty)* | Base URL **this app** is reachable at *from paperless* (e.g. `http://paperless-llm:8100` inside a compose network, or the reverse-proxy URL). Env: `PLLM_WEBHOOK__PUBLIC_URL`. Required for the one-click workflow setup |
 | `webhook.redo_ocr` | `false` | Re-OCR webhook-ingested documents |
 | `webhook.apply_policy` | `review` | `review` (proposals wait for you) or `auto` (applied immediately, journaled, revertible) |
+| `webhook.max_body_bytes` | `65536` (64 KiB) | Request bodies larger than this are rejected with `413`. Abuse brake, config/env only |
+| `webhook.max_documents` | `50` | More document ids than this in one request are rejected with `422` (paperless posts one document per workflow event). Abuse brake, config/env only |
+| `webhook.dedup_window_seconds` | `300` | A document id accepted within this window is acknowledged (`200`, `"status": "duplicate"`) but not re-analyzed — brakes workflow replay loops. `0` disables |
 
-All four are runtime-editable on the **Paperless** settings tab, which
+The first four and the dedup window are runtime-editable on the
+**Paperless** settings tab, which
 also offers **Set up automatically** (creates or heals the paperless
 workflow: trigger "Document Added", webhook action posting `{doc_url}`
 to this app with the secret header — requires the app's paperless

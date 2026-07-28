@@ -224,6 +224,16 @@ class WebhookConfig(BaseModel):
     # Defaults for sessions created via webhook ingress.
     redo_ocr: bool = False
     apply_policy: Literal["review", "auto"] = "review"
+    # Ingress caps: reject request bodies larger than this (bytes, 413)
+    # and requests carrying more document ids than this (422). Paperless
+    # posts ONE document per workflow event — these are abuse brakes,
+    # not sizing knobs, and stay file/env-only.
+    max_body_bytes: int = 64 * 1024
+    max_documents: int = 50
+    # Replay dedup: a document id accepted within this window is
+    # acknowledged (200) but not re-enqueued. 0 disables. Recoverable,
+    # so UI-editable like the other webhook knobs.
+    dedup_window_seconds: int = 300
 
 
 class QueueConfig(BaseModel):
@@ -432,6 +442,9 @@ EDITABLE_KEYS: tuple[str, ...] = (
     "webhook.public_url",
     "webhook.redo_ocr",
     "webhook.apply_policy",
+    # Recoverable (worst case: replays re-analyze) — unlike the hard
+    # ingress caps and the login throttle, which stay file/env-only.
+    "webhook.dedup_window_seconds",
 )
 
 
