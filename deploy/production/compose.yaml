@@ -4,6 +4,10 @@
 #   cp .env.example .env   # then edit
 #   podman compose up -d
 #
+# Optional settings (paperless token, OCR/embeddings/reranker
+# endpoints, webhook, …) live in optional.env — uncomment them THERE,
+# not here (see the env_file note below for why).
+#
 # Privacy by construction: the app only ever talks to the endpoints
 # configured here. Point them at machines on your network and no
 # document data can leave it.
@@ -18,37 +22,46 @@ services:
     image: ghcr.io/luminger/paperless-llm:latest
     restart: unless-stopped
     ports:
-      - "${PLLM_PORT:-8100}:8100"
+      # Loopback-only by default — expose via your reverse proxy;
+      # change to 0.0.0.0 deliberately for direct LAN use.
+      - "127.0.0.1:${PLLM_PORT:-8100}:8100"
+    # Hardening: the container runs as a dedicated non-root user and
+    # only writes /data (see deploy/Containerfile) — it needs no Linux
+    # capabilities and no privilege escalation. read_only: true would
+    # be a further option, but the runtime's tmp usage (Python,
+    # tesseract) is unverified — if you enable it, add a tmpfs on /tmp
+    # and test.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
+      # REQUIRED settings only — everything optional lives in
+      # optional.env (env_file below). A ${VAR:-} mapping here would
+      # export an EMPTY STRING even when the host variable is unset;
+      # the backend sees that as env-provided configuration and locks
+      # the key in the Settings UI. (Even once the backend treats
+      # empty env as unset, not creating the variable at all stays the
+      # cleaner contract.)
+
       # --- paperless ------------------------------------------------
       PLLM_PAPERLESS__BASE_URL: ${PLLM_PAPERLESS_BASE_URL:?set the paperless URL}
-      PLLM_PAPERLESS__TOKEN: ${PLLM_PAPERLESS_TOKEN:-}
-      # URL your browser reaches paperless under (UI deep links);
-      # defaults to base_url.
-      PLLM_PAPERLESS__EXTERNAL_URL: ${PLLM_PAPERLESS_EXTERNAL_URL:-}
 
-      # --- local LLM endpoints (OpenAI-compatible) ------------------
+      # --- agent LLM endpoint (OpenAI-compatible) -------------------
       PLLM_LLM__AGENT__BASE_URL: ${PLLM_AGENT_BASE_URL:?set the agent LLM URL}
       PLLM_LLM__AGENT__MODEL: ${PLLM_AGENT_MODEL:?set the agent model name}
-      PLLM_LLM__AGENT__MAX_CONCURRENT: ${PLLM_AGENT_MAX_CONCURRENT:-2}
-      PLLM_LLM__AGENT__SUPPORTS_STREAMING: ${PLLM_AGENT_SUPPORTS_STREAMING:-true}
-      # OCR profile falls back to the agent endpoint when unset.
-      PLLM_LLM__OCR__BASE_URL: ${PLLM_OCR_BASE_URL:-}
-      PLLM_LLM__OCR__MODEL: ${PLLM_OCR_MODEL:-}
-      # Optional embeddings endpoint (entity index / duplicate finder).
-      PLLM_LLM__EMBEDDINGS__BASE_URL: ${PLLM_EMBEDDINGS_BASE_URL:-}
-      PLLM_LLM__EMBEDDINGS__MODEL: ${PLLM_EMBEDDINGS_MODEL:-}
-      PLLM_LLM__RERANKER__BASE_URL: ${PLLM_RERANKER_BASE_URL:-}
-      PLLM_LLM__RERANKER__MODEL: ${PLLM_RERANKER_MODEL:-}
 
-      # --- webhook ingress ------------------------------------------
-      # Shared secret for POST /api/webhooks/paperless (empty disables
-      # the endpoint; the one-click setup in Settings → Paperless
-      # generates one).
-      PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
-      # URL THIS app is reachable at FROM PAPERLESS — what the workflow
-      # webhook posts to. Required for the one-click workflow setup.
-      PLLM_WEBHOOK__PUBLIC_URL: ${PLLM_WEBHOOK_PUBLIC_URL:-}
+      # --- auth -----------------------------------------------------
+      # Session cookie Secure flag. Behind TLS (the expected
+      # reverse-proxy setup) this must stay on; set
+      # PLLM_COOKIE_SECURE=false ONLY for plain-HTTP LAN setups —
+      # with it on, logins over plain HTTP won't stick.
+      PLLM_AUTH__COOKIE_SECURE: ${PLLM_COOKIE_SECURE:-true}
+    # Optional settings: uncomment lines in optional.env. Commented
+    # lines create NO container variable at all, so unset options
+    # never shadow (and UI-lock) the corresponding Settings keys.
+    env_file:
+      - ./optional.env
     volumes:
       - appdata:/data
     healthcheck:
