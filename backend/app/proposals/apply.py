@@ -606,7 +606,12 @@ async def revert_change(
     if claimed.rowcount == 0:
         raise ApplyError("change already reverted")
     await db.commit()
-    await db.refresh(change)
+    # Refresh the claimed timestamp AND the proposal relationship in one
+    # go: _revert_claimed needs change.proposal, and after a refresh an
+    # async lazy-load would raise MissingGreenlet for any caller that
+    # loaded only the AppliedChange (the API routes happen to hold the
+    # Proposal in the identity map — this must not depend on that).
+    await db.refresh(change, attribute_names=["reverted_at", "proposal"])
     try:
         await _revert_claimed(paperless, db, change)
     except Exception:
