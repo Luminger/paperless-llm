@@ -206,6 +206,195 @@ async def test_auto_apply_sees_a_mid_turn_archive(db, monkeypatch):
     assert called["n"] == 0  # the fresh read refused anyway
 
 
+# ----- auto-apply scoping (injection guard) ---------------------------
+#
+# The propose tools accept arbitrary ids, so a prompt injection in one
+# document's text could otherwise auto-apply changes to OTHER documents
+# with zero review. Auto-apply is scoped to the session's own binding.
+
+
+async def _pending_proposal(db, session, step, **kw) -> Proposal:
+    p = Proposal(
+        session_id=session.id,
+        step_id=step.id,
+        status=ProposalStatus.pending,
+        **kw,
+    )
+    db.add(p)
+    await db.commit()
+    return p
+
+
+async def _running_step(db, session) -> Step:
+    step = Step(
+        session_id=session.id, kind=StepKind.analysis, state=StepState.running
+    )
+    db.add(step)
+    await db.commit()
+    return step
+
+
+def _patch_apply(monkeypatch, applied: list):
+    async def fake_apply(paperless, dbs, prop, **kw):
+        prop.status = ProposalStatus.applied
+        applied.append(prop.id)
+        return prop
+
+    monkeypatch.setattr("app.services.pipeline.apply_proposal", fake_apply)
+
+
+async def _deferral_audits(db) -> list:
+    from app.db.models import AuditLog
+
+    return list(
+        (
+            await db.scalars(
+                select(AuditLog).where(AuditLog.action == "auto_apply_deferred")
+            )
+        ).all()
+    )
+
+
+async def test_auto_apply_same_document_proposal_applies(db, monkeypatch):
+    session = await _auto_session(db)  # bound to document 7
+    step = await _running_step(db, session)
+    p = await _pending_proposal(
+        db, session, step,
+        kind="update_document_metadata",
+        agent_payload={"document_id": 7, "title": "T"},
+        entity_type=EntityType.document, entity_id=7,
+    )
+    applied: list = []
+    _patch_apply(monkeypatch, applied)
+    await _maybe_auto_apply(db, None, session, step)
+    assert applied == [p.id]
+    assert not await _deferral_audits(db)
+
+
+async def test_auto_apply_cross_document_proposal_stays_pending_and_audited(
+    db, monkeypatch
+):
+    """The injection scenario: the turn (bound to doc 7) emitted a
+    proposal for doc 99 — it must NOT be applied without review, and
+    the deferral must leave an audit trail."""
+    session = await _auto_session(db)
+    step = await _running_step(db, session)
+    p = await _pending_proposal(
+        db, session, step,
+        kind="update_document_metadata",
+        agent_payload={"document_id": 99, "title": "pwned"},
+        entity_type=EntityType.document, entity_id=99,
+    )
+    applied: list = []
+    _patch_apply(monkeypatch, applied)
+    await _maybe_auto_apply(db, None, session, step)
+    assert applied == []
+    await db.refresh(p)
+    assert p.status == ProposalStatus.pending  # awaits human review
+    audits = await _deferral_audits(db)
+    assert len(audits) == 1
+    assert audits[0].detail["proposal_id"] == p.id
+    assert audits[0].detail["entity_id"] == 99
+    # And no auto-continuation while the deferred proposal is open —
+    # continue_after_decision's open-proposal check keeps the session
+    # honestly waiting for the human.
+    chats = (
+        await db.scalars(
+            select(Step).where(
+                Step.session_id == session.id, Step.kind == StepKind.chat
+            )
+        )
+    ).all()
+    assert list(chats) == []
+
+
+async def test_auto_apply_create_entity_scoped_to_own_document(db, monkeypatch):
+    """create_entity has no target entity id; in a document session it is
+    in scope only when every assigned document is the session's own."""
+    session = await _auto_session(db)
+    step = await _running_step(db, session)
+    own = await _pending_proposal(
+        db, session, step,
+        kind="create_entity",
+        agent_payload={"kind": "create_entity", "entity_type": "tag",
+                       "name": "invoices", "assign_to_documents": [7]},
+        entity_type=EntityType.tag, entity_id=None,
+    )
+    cross = await _pending_proposal(
+        db, session, step,
+        kind="create_entity",
+        agent_payload={"kind": "create_entity", "entity_type": "tag",
+                       "name": "pwned", "assign_to_documents": [7, 99]},
+        entity_type=EntityType.tag, entity_id=None,
+    )
+    applied: list = []
+    _patch_apply(monkeypatch, applied)
+    await _maybe_auto_apply(db, None, session, step)
+    assert applied == [own.id]
+    await db.refresh(cross)
+    assert cross.status == ProposalStatus.pending
+    audits = await _deferral_audits(db)
+    assert [a.detail["proposal_id"] for a in audits] == [cross.id]
+
+
+async def test_auto_apply_internal_kind_unaffected_by_scoping(db, monkeypatch):
+    """Internal proposals (replace_content) carry the session's own
+    binding at creation — the scope guard must not change how they are
+    handled (they always target the session's document)."""
+    session = await _auto_session(db)
+    step = await _running_step(db, session)
+    p = await _pending_proposal(
+        db, session, step,
+        kind="replace_content",
+        agent_payload={"kind": "replace_content", "document_id": 7,
+                       "content": "text"},
+        entity_type=EntityType.document, entity_id=7,
+    )
+    applied: list = []
+    _patch_apply(monkeypatch, applied)
+    await _maybe_auto_apply(db, None, session, step)
+    assert applied == [p.id]
+    assert not await _deferral_audits(db)
+
+
+async def test_auto_apply_entity_session_scoped_to_its_entity(db, monkeypatch):
+    """Entity sessions: proposals targeting the reviewed entity itself
+    (here: merge with the session's tag as SOURCE) keep auto-applying —
+    that fan-out is the queued job. Edits of a DIFFERENT entity stay
+    pending."""
+    session = Session(
+        agent_kind=AgentKind.tag,
+        entity_type=EntityType.tag,
+        entity_id=5,
+        params={"apply_policy": "auto"},
+    )
+    db.add(session)
+    await db.commit()
+    step = await _running_step(db, session)
+    own = await _pending_proposal(
+        db, session, step,
+        kind="merge_entities",
+        agent_payload={"kind": "merge_entities", "entity_type": "tag",
+                       "source_id": 5, "target_id": 9},
+        entity_type=EntityType.tag, entity_id=5,
+    )
+    other = await _pending_proposal(
+        db, session, step,
+        kind="delete_entity",
+        agent_payload={"kind": "delete_entity", "entity_type": "tag",
+                       "entity_id": 12},
+        entity_type=EntityType.tag, entity_id=12,
+    )
+    applied: list = []
+    _patch_apply(monkeypatch, applied)
+    await _maybe_auto_apply(db, None, session, step)
+    assert applied == [own.id]
+    await db.refresh(other)
+    assert other.status == ProposalStatus.pending
+    audits = await _deferral_audits(db)
+    assert [a.detail["proposal_id"] for a in audits] == [other.id]
+
+
 async def test_audit_failure_does_not_poison_the_session(db):
     """AUDIT SV-M4: a failed audit flush must roll back to a savepoint —
     the caller's transaction stays usable (previously every later

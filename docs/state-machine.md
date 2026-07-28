@@ -161,6 +161,19 @@ stateDiagram-v2
 - `pending` belongs to the user (or the auto policy). It always has
   exits: apply, supersede-by-redo, or the failed-attempt sweep.
 
+**Auto-apply scope (injection guard).** Under `apply_policy=auto`
+(webhook, bulk jobs) a turn's fresh `pending` proposals are applied
+without review — but *only* those targeting the session's own bound
+entity (the proposal's `entity_type`/`entity_id` equal the session's;
+for document sessions a `create_entity` also qualifies when every
+document it assigns is the session's own). The propose tools accept
+arbitrary ids, so without this scope a prompt injection embedded in one
+document's text could fan writes out to unrelated documents with zero
+review. Cross-target proposals stay `pending` for the normal human
+review flow and are audit-recorded (`auto_apply_deferred`, with the
+proposal id and target); while any are open, the decision loop refuses
+the auto-continuation, so the session honestly stops and waits.
+
 Archived sessions refuse *forward* apply (409) but their journal keeps
 reverting — archive is a wall for new writes, not a dead end for
 history. Unarchive restores every action.
