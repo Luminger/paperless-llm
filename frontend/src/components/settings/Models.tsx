@@ -75,7 +75,7 @@ export const LABELS: Record<string, string> = {
 // Per-key explanations (hover on the label). The sampling block is the
 // lever set against VLM repetition loops — pages the model can't read
 // make it emit the same lines until the output limit.
-export const HINTS: Record<string, string> = {
+const HINTS: Record<string, string> = {
   "llm.ocr.sampling.temperature": "Unset = server default. Pure greedy decoding (0) is the most loop-prone; a small value like 0.1–0.3 lets the model escape a repetition.",
   "llm.ocr.sampling.top_p": "Nucleus sampling cut-off (0–1). Unset = server default.",
   "llm.ocr.sampling.top_k": "Only sample from the k most likely tokens. Sent via extra_body (vLLM, SGLang, llama.cpp, Ollama).",

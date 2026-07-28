@@ -23,28 +23,6 @@ export const TONE_BADGE: Record<Tone, string> = {
   muted: "bg-muted text-muted-foreground",
 };
 
-/** Plain toned text (icons, inline hints). */
-export const TONE_TEXT: Record<Tone, string> = {
-  success: "text-success",
-  warning: "text-warning",
-  info: "text-info",
-  notice: "text-notice",
-  special: "text-special",
-  destructive: "text-destructive",
-  muted: "text-muted-foreground",
-};
-
-/** Soft panel surface (callouts, edited-value highlights). */
-export const TONE_PANEL: Record<Tone, string> = {
-  success: "bg-success/10",
-  warning: "bg-warning/10",
-  info: "bg-info/10",
-  notice: "bg-notice/10",
-  special: "bg-special/10",
-  destructive: "bg-destructive/10",
-  muted: "bg-muted/40",
-};
-
 /** Session/step/job/proposal status → tone. One map for every badge. */
 export const STATUS_TONE: Record<string, Tone> = {
   draft: "muted",

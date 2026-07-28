@@ -5,11 +5,11 @@
 // reachability and the session view's live stream both render through
 // this; never scattered ad-hoc banners.
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 /** Seconds until `target` (epoch ms), ticking twice a second. */
-export function useCountdown(target: number | null): number {
+function useCountdown(target: number | null): number {
   const [left, setLeft] = useState(0);
   useEffect(() => {
     if (target == null) return;
@@ -65,12 +65,6 @@ export function ConnectionToast({
       )}
     </div>
   );
-}
-
-const BackendDownContext = createContext(false);
-
-export function useBackendDown() {
-  return useContext(BackendDownContext);
 }
 
 // Backoff for health probes: quick first, patient later.
@@ -145,7 +139,7 @@ export function ConnectivityProvider({ children }: { children: React.ReactNode }
   }, [qc]);
 
   return (
-    <BackendDownContext.Provider value={down}>
+    <>
       {children}
       <ConnectionToast
         show={down}
@@ -154,6 +148,6 @@ export function ConnectivityProvider({ children }: { children: React.ReactNode }
         retrying={probing}
         onRetryNow={probe}
       />
-    </BackendDownContext.Provider>
+    </>
   );
 }

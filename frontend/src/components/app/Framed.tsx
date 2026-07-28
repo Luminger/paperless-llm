@@ -19,8 +19,8 @@ export const frameHeaderClass =
   "flex h-10 items-center gap-2.5 bg-muted/30 px-4";
 export const frameFooterClass =
   "flex min-h-10 items-center gap-2 border-t bg-muted/20 px-4 py-1.5";
-export const frameTitleClass = "text-[15px] font-semibold tracking-tight";
-export const frameMetaClass = "font-mono text-[11px] text-muted-foreground/60";
+const frameTitleClass = "text-[15px] font-semibold tracking-tight";
+const frameMetaClass = "font-mono text-[11px] text-muted-foreground/60";
 
 export function FramedCard({
   title,
