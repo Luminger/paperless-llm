@@ -64,6 +64,32 @@ def test_env_overrides_toml(monkeypatch, tmp_path):
     assert s.llm.agent.model == "from-env"
 
 
+def test_empty_env_value_is_unset(monkeypatch, tmp_path):
+    """Compose files export optional vars as ${VAR:-} (an EMPTY string);
+    those must neither override lower layers with "" nor count as
+    env-provided (which would lock the key in the Settings UI)."""
+    from app.config import env_provided_keys
+
+    s = _settings(
+        monkeypatch,
+        tmp_path,
+        """
+        [llm.agent]
+        model = "from-toml"
+        """,
+        env={"PLLM_LLM__AGENT__MODEL": "", "PLLM_WEBHOOK__SECRET": ""},
+    )
+    assert s.llm.agent.model == "from-toml"
+    assert s.webhook.secret == ""
+    assert env_provided_keys() & {"llm.agent.model", "webhook.secret"} == set()
+    # A non-empty value still provides (and locks) the key.
+    monkeypatch.setenv("PLLM_LLM__AGENT__MODEL", "from-env")
+    reset_settings_cache()
+    assert Settings().llm.agent.model == "from-env"
+    assert "llm.agent.model" in env_provided_keys()
+    reset_settings_cache()
+
+
 def test_ocr_fallback_to_agent(monkeypatch, tmp_path):
     _settings(
         monkeypatch,

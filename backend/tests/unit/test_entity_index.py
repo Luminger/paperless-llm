@@ -3,6 +3,7 @@ local TEI endpoint when configured."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -52,6 +53,40 @@ def _mock_tei(vectors: dict[str, list[float]]) -> respx.Route:
         return Response(200, json={"data": data})
 
     return respx.post(f"{TEI_URL}/embeddings").mock(side_effect=responder)
+
+
+@respx.mock
+async def test_embed_admission_bounded_by_max_concurrent(
+    monkeypatch, embeddings_enabled
+):
+    """llm.embeddings.max_concurrent caps in-flight requests to the
+    embeddings endpoint across parallel callers (entity index rebuilds
+    gathering many embed calls)."""
+    from app.llm import factory
+    from app.services.entity_index import embed_texts
+
+    monkeypatch.setenv("PLLM_LLM__EMBEDDINGS__MAX_CONCURRENT", "2")
+    reset_settings_cache()
+    monkeypatch.setattr(factory, "_semaphores", {})
+
+    in_flight = peak = 0
+
+    async def responder(request):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.01)  # let the gathered calls overlap
+        in_flight -= 1
+        inputs = json.loads(request.content)["input"]
+        return Response(
+            200,
+            json={"data": [{"index": i, "embedding": [0.0]} for i in range(len(inputs))]},
+        )
+
+    respx.post(f"{TEI_URL}/embeddings").mock(side_effect=responder)
+    vectors = await asyncio.gather(*(embed_texts([f"text {i}"]) for i in range(8)))
+    assert len(vectors) == 8
+    assert peak == 2  # saturated the cap, never exceeded it
 
 
 def test_string_similarity_catches_legal_form_suffixes():

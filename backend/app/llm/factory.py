@@ -36,6 +36,20 @@ def llm_semaphore(base_url: str, max_concurrent: int) -> asyncio.Semaphore:
     return entry[1]
 
 
+def embeddings_semaphore() -> asyncio.Semaphore:
+    """Endpoint admission for embeddings calls, honoring
+    ``llm.embeddings.max_concurrent``. Same shared-endpoint reasoning
+    as ocr_model: when embeddings point at the agent's endpoint, a
+    distinct cap would make the two consumers alternately REPLACE the
+    shared semaphore (over-admitting on every swap) — shared endpoint =
+    shared admission, keyed on the agent's URL string."""
+    s = get_settings().llm
+    emb = s.embeddings
+    if emb.base_url.rstrip("/") == s.agent.base_url.rstrip("/"):
+        return llm_semaphore(s.agent.base_url, s.agent.max_concurrent)
+    return llm_semaphore(emb.base_url, emb.max_concurrent)
+
+
 def _settings_from(
     sampling: SamplingOverrides,
     thinking: str = "server_default",
