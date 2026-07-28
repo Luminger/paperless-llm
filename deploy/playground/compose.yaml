@@ -34,6 +34,7 @@ services:
       PAPERLESS_CSRF_TRUSTED_ORIGINS: "http://127.0.0.1:8210,http://localhost:8210,http://ares:8210,http://ares.home.brakhane.net:8210,http://192.168.128.6:8210"
       PAPERLESS_OCR_LANGUAGE: deu+eng
       PAPERLESS_TIME_ZONE: Europe/Berlin
+      # Keep the playground instance lean.
       PAPERLESS_TASK_WORKERS: "1"
       PAPERLESS_THREADS_PER_WORKER: "1"
     volumes:

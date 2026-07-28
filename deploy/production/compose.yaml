@@ -10,10 +10,12 @@
 
 services:
   app:
-    image: paperless-llm
-    build:
-      context: ../..
-      dockerfile: deploy/Containerfile
+    # Published image: :latest tracks releases; pin a version tag
+    # (e.g. :0.1) or :sha-<commit> for reproducible deployments.
+    # To run from source instead:
+    #   podman build -f deploy/Containerfile -t paperless-llm ../..
+    # and set image: paperless-llm here.
+    image: ghcr.io/luminger/paperless-llm:latest
     restart: unless-stopped
     ports:
       - "${PLLM_PORT:-8100}:8100"
@@ -39,10 +41,14 @@ services:
       PLLM_LLM__RERANKER__BASE_URL: ${PLLM_RERANKER_BASE_URL:-}
       PLLM_LLM__RERANKER__MODEL: ${PLLM_RERANKER_MODEL:-}
 
-      # --- access ---------------------------------------------------
-      # none (trusted network) | proxy (Remote-User header) | paperless
-      # Enables POST /api/webhooks/paperless with this shared secret.
+      # --- webhook ingress ------------------------------------------
+      # Shared secret for POST /api/webhooks/paperless (empty disables
+      # the endpoint; the one-click setup in Settings → Paperless
+      # generates one).
       PLLM_WEBHOOK__SECRET: ${PLLM_WEBHOOK_SECRET:-}
+      # URL THIS app is reachable at FROM PAPERLESS — what the workflow
+      # webhook posts to. Required for the one-click workflow setup.
+      PLLM_WEBHOOK__PUBLIC_URL: ${PLLM_WEBHOOK_PUBLIC_URL:-}
     volumes:
       - appdata:/data
     healthcheck:
