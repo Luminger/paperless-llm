@@ -15,10 +15,11 @@ from app.api.schemas import (
     ProposalPatch,
     RevertCheckOut,
 )
-from app.db.models import AppliedChange, Proposal, ProposalStatus
+from app.db.models import AppliedChange, Proposal, ProposalStatus, Session
 from app.db.session import get_session
 from app.paperless import PaperlessClient
 from app.proposals import apply_proposal, revert_change, validate_payload
+from app.proposals.apply import revert_is_noop
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
 
@@ -103,8 +104,6 @@ async def apply(
 ) -> ProposalOut:
     p = await _load(db, proposal_id)
     # Archived sessions never forward-apply; their journal only reverts.
-    from app.db.models import Session
-
     session = await db.get(Session, p.session_id)
     if session is not None and session.archived_at is not None:
         raise HTTPException(
@@ -141,8 +140,6 @@ async def revert_check(
     )
     if change is None or change.reverted_at is not None:
         raise HTTPException(409, "proposal has no revertible change")
-    from app.proposals.apply import revert_is_noop
-
     return RevertCheckOut(revert_noop=await revert_is_noop(paperless, p, change))
 
 

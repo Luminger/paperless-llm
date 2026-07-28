@@ -6,10 +6,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# NB: app.api.deps defers ITS import of this module into require_user's
+# body, which is what keeps this top-level import cycle-free.
+from app.api.deps import require_user
 from app.api.schemas import AuthMeOut, AuthSessionOut
 from app.config import get_settings
+from app.db.models import AuthSession, utcnow
 from app.db.session import get_session
 from app.services.audit import record
 from app.services.auth import (
@@ -116,11 +121,6 @@ async def list_auth_sessions(
 ) -> list[AuthSessionOut]:
     """Live login sessions: the caller's own — admins see everyone's.
     Revoked and expired sessions don't appear."""
-    from sqlalchemy import select
-
-    from app.api.deps import require_user
-    from app.db.models import AuthSession, utcnow
-
     user = await require_user(request, db)
     q = (
         select(AuthSession)
@@ -153,11 +153,6 @@ async def revoke_session(
 ) -> AuthMeOut:
     """End a login session server-side. The CURRENT session is refused
     (sign out instead) — a one-click self-lockout helps nobody."""
-    from sqlalchemy import select
-
-    from app.api.deps import require_user
-    from app.db.models import AuthSession
-
     user = await require_user(request, db)
     if sid == user.sid:
         raise HTTPException(

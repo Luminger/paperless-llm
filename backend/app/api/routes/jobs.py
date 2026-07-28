@@ -18,10 +18,12 @@ from app.api.schemas import (
     StatsOut,
 )
 from app.db.models import (
+    EntityType,
     Job,
     JobStatus,
     Proposal,
     ProposalStatus,
+    QueueLane,
     Session,
     SessionPhase,
     SessionStatus,
@@ -31,8 +33,24 @@ from app.db.models import (
 from app.db.session import get_session
 from app.paperless import PaperlessClient
 from app.proposals.kinds import visible
-from app.services.jobs import ACTIVE_PHASES, apply_live, live_job_counts
+from app.services.audit import record
+from app.services.counters import get_all
+from app.services.jobs import (
+    ACTIVE_PHASES,
+    apply_live,
+    create_entities_job,
+    live_job_counts,
+    processed_document_ids,
+    resolve_next_batch,
+)
 from app.services.jobs import create_job as create_job_service
+from app.services.steps import (
+    StepActionError,
+    cancel_job_steps,
+    publish_step_changed,
+    workers,
+)
+from app.services.steps import retry_step as engine_retry
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -44,9 +62,6 @@ async def create_job(
     paperless: PaperlessClient = Depends(get_paperless),
 ) -> JobOut:
     if body.entity_type and body.entity_ids:
-        from app.db.models import EntityType
-        from app.services.jobs import create_entities_job
-
         job, _ = await create_entities_job(
             db,
             paperless,
@@ -58,8 +73,6 @@ async def create_job(
     document_ids = body.document_ids
     label: str | None = None
     if body.next_batch:
-        from app.services.jobs import resolve_next_batch
-
         document_ids = await resolve_next_batch(db, paperless, body.next_batch)
         if not document_ids:
             raise HTTPException(
@@ -144,8 +157,6 @@ async def corpus_status(
 ) -> CorpusOut:
     """How much of the archive ever went through a completed analysis —
     feeds the dashboard's batch-by-batch curation block."""
-    from app.services.jobs import processed_document_ids
-
     page = await paperless.search_documents(page_size=1)
     return CorpusOut(total=page.count, processed=len(await processed_document_ids(db)))
 
@@ -200,8 +211,6 @@ async def pause_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Job
         return live_out
     if live_out.status in (JobStatus.completed, JobStatus.cancelled):
         raise HTTPException(409, f"job is already {live_out.status}")
-    from app.services.audit import record
-
     job.status = JobStatus.paused
     await record(db, "job", "paused", job_id=job.id)
     await db.commit()
@@ -219,10 +228,6 @@ async def resume_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
         raise HTTPException(404, "job not found")
     if job.status != JobStatus.paused:
         raise HTTPException(409, "job is not paused")
-    from app.db.models import QueueLane
-    from app.services.audit import record
-    from app.services.steps import workers
-
     job.status = JobStatus.queued  # derived status recomputes at read
     await record(db, "job", "resumed", job_id=job.id)
     await db.commit()
@@ -255,9 +260,6 @@ async def retry_job_sessions(
     session_ids narrow it (the list multiselect)."""
     if await db.get(Job, job_id) is None:
         raise HTTPException(404, "job not found")
-    from app.services.steps import StepActionError
-    from app.services.steps import retry_step as engine_retry
-
     wanted = (body.session_ids if body else None) or None
     q = (
         select(Step)
@@ -282,8 +284,6 @@ async def retry_job_sessions(
             retried += 1
         except StepActionError:  # raced into an ineligible state — skip
             continue
-    from app.services.audit import record
-
     await record(db, "job", "bulk_retry", job_id=job_id, retried=retried,
                  requested=len(wanted) if wanted else None)
     await db.commit()
@@ -305,8 +305,6 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_session)) -> Jo
     )
     if live_out.status in (JobStatus.completed, JobStatus.cancelled):
         raise HTTPException(409, f"job is already {live_out.status}")
-    from app.services.steps import cancel_job_steps, publish_step_changed
-
     cancelled = await cancel_job_steps(db, job_id)
     job.status = JobStatus.cancelled
     await db.commit()
@@ -351,8 +349,6 @@ async def stats(db: AsyncSession = Depends(get_session)) -> StatsOut:
             ),
         )
     )
-    from app.services.counters import get_all
-
     return StatsOut(
         pending_proposals=pending_proposals or 0,
         active_sessions=active_sessions or 0,

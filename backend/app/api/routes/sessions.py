@@ -33,12 +33,14 @@ from app.db.models import (
     OcrResult,
     Proposal,
     ProposalStatus,
+    QueueLane,
     Session,
     SessionPhase,
     SessionStatus,
     Step,
     StepKind,
     StepState,
+    utcnow,
 )
 from app.db.session import get_session
 from app.paperless import PaperlessClient
@@ -46,6 +48,8 @@ from app.proposals.kinds import visible
 from app.services import steps as engine
 from app.services.audit import record
 from app.services.events import bus
+from app.services.jobs import create_entity_job
+from app.services.jobs import create_job as create_job_service
 from app.services.transcript import derive_transcript
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -222,9 +226,6 @@ async def analyze_document(
     """Start a document analysis. Even a single analysis is a tracked
     job (total=1); it runs on the interactive lane."""
     body = body or AnalyzeRequest()
-    from app.db.models import QueueLane
-    from app.services.jobs import create_job as create_job_service
-
     job, _ids = await create_job_service(
         db,
         paperless,
@@ -240,7 +241,7 @@ async def analyze_document(
     s = await db.scalar(
         select(Session).where(Session.job_id == job.id).order_by(Session.id)
     )
-    if s is None:  # pragma: no cover — guarded by the 404 above
+    if s is None:  # pragma: no cover — create_job always creates the session
         raise HTTPException(404, "session not found")
     return SessionOut.model_validate(s)
 
@@ -265,8 +266,6 @@ async def analyze_entity(
                 422, "the inbox tag is a workflow marker and cannot be analyzed"
             )
     body = body or AnalyzeEntityRequest()
-    from app.services.jobs import create_entity_job
-
     _job, s = await create_entity_job(
         db,
         paperless,
@@ -339,12 +338,8 @@ async def archive_session(
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "session not found")
-    from app.db.models import utcnow
-
     if s.archived_at is None:
         s.archived_at = utcnow()
-        from app.services.audit import record
-
         await record(db, "session", "archived", session_id=s.id, title=s.title)
         await db.commit()
     return SessionOut.model_validate(s)
@@ -359,8 +354,6 @@ async def unarchive_session(
         raise HTTPException(404, "session not found")
     if s.archived_at is not None:
         s.archived_at = None
-        from app.services.audit import record
-
         await record(db, "session", "unarchived", session_id=s.id, title=s.title)
     await db.commit()
     return SessionOut.model_validate(s)
@@ -376,15 +369,12 @@ async def cancel_session(
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "session not found")
-    from app.services.audit import record
-    from app.services.steps import cancel_session_steps, publish_step_changed
-
-    cancelled = await cancel_session_steps(db, session_id)
+    cancelled = await engine.cancel_session_steps(db, session_id)
     await record(db, "session", "cancel_requested", session_id=s.id, title=s.title)
     await db.commit()
     # Announce only committed state; the running step's own worker
     # publishes its cancellation when it lands (AUDIT SV-M2).
-    publish_step_changed(cancelled)
+    engine.publish_step_changed(cancelled)
     await db.refresh(s)
     return SessionOut.model_validate(s)
 
