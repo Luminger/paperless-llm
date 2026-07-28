@@ -276,12 +276,8 @@ async def webhook_setup(
     secret_generated = False
     secret = cfg.secret
     if not secret:
-        if "webhook.secret" in env_provided_keys():
-            return WebhookSetupOut(
-                ok=False,
-                message="webhook.secret is locked (empty) by the environment "
-                "— set PLLM_WEBHOOK__SECRET to a value first",
-            )
+        # An EMPTY PLLM_WEBHOOK__SECRET counts as unset (compose ${VAR:-}
+        # exports) and never locks — generation proceeds.
         secret = secrets.token_urlsafe(32)
         merged = runtime_overrides()
         merged["webhook.secret"] = secret

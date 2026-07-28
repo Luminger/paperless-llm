@@ -1662,6 +1662,26 @@ async def test_config_rows_and_admin_override(client, db, monkeypatch):
     set_runtime_overrides({})
 
 
+async def test_empty_env_value_neither_locks_nor_overrides(client, db, monkeypatch):
+    """Compose files export optional vars as ${VAR:-} (an EMPTY string).
+    Those must behave as unset: no environment lock, no "" shadowing —
+    a runtime override then wins."""
+    from app.config import get_settings, set_runtime_overrides
+
+    set_runtime_overrides({})
+    monkeypatch.setenv("PLLM_LLM__AGENT__MODEL", "")
+    r = await client.get("/api/settings/config")
+    row = next(x for x in r.json() if x["key"] == "llm.agent.model")
+    assert row["source"] == "default" and row["editable"] is True
+
+    r = await client.put(
+        "/api/settings/config", json={"values": {"llm.agent.model": "ui-model"}}
+    )
+    assert r.status_code == 200
+    assert get_settings().llm.agent.model == "ui-model"
+    set_runtime_overrides({})
+
+
 async def test_config_write_needs_admin(client, db):
     """Non-admins can read the config rows but not change them."""
     from app.api.deps import require_user

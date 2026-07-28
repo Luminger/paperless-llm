@@ -8,7 +8,12 @@ defaults.
 
 Environment variables are authoritative: a key set there cannot be
 overridden by the config file (the startup log warns about the
-shadowed value) or the UI (the key shows as locked). Only a curated
+shadowed value) or the UI (the key shows as locked). Empty
+environment values are treated as unset — compose files export
+optional vars as ``${VAR:-}`` (an EMPTY string), which must neither
+override lower layers with ``""`` nor lock the key in the Settings
+UI. No config field's meaningful value is the empty string (secrets
+use empty=disabled, but those default to ``""`` anyway). Only a curated
 whitelist is UI-editable at all — anything whose misconfiguration
 could brick the app (paperless connection, database, auth) stays
 file/env-only, because a broken value there would take down the very
@@ -238,6 +243,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="PLLM_",
         env_nested_delimiter="__",
+        # PLLM_FOO="" behaves as unset (compose ${VAR:-} exports); see
+        # the module docstring. Must stay in sync with
+        # env_provided_keys(), which drives the UI's lock state.
+        env_ignore_empty=True,
         extra="ignore",
     )
 
@@ -345,10 +354,13 @@ class _OverridesSource(PydanticBaseSettingsSource):
 
 def env_provided_keys() -> set[str]:
     """Dotted keys the environment sets (PLLM_LLM__AGENT__MODEL ->
-    "llm.agent.model"). These are locked everywhere else."""
+    "llm.agent.model"). These are locked everywhere else. Empty values
+    count as unset (mirrors ``env_ignore_empty``): compose files export
+    optional vars as ``${VAR:-}``, and an empty lock would block the
+    very UI meant to fill the value in."""
     out = set()
-    for k in os.environ:
-        if k.startswith("PLLM_") and k != "PLLM_":
+    for k, v in os.environ.items():
+        if k.startswith("PLLM_") and k != "PLLM_" and v != "":
             out.add(k[len("PLLM_"):].lower().replace("__", "."))
     return out
 
