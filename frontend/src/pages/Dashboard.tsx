@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "../api";
 import { keys } from "../lib/keys";
-import { formatDate } from "../lib/format";
+import { formatCompact, formatDate } from "../lib/format";
 import { entityName, useEntityList } from "../hooks/useTaxonomy";
 import { SessionList } from "../components/SessionList";
 
@@ -217,14 +217,6 @@ function CorpusBlock() {
   );
 }
 
-function fmt(n: number | undefined): string {
-  if (n == null) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 10_000) return `${(n / 1_000).toFixed(0)}k`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
 function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
     <Card className="py-3">
@@ -261,10 +253,13 @@ export default function Dashboard() {
             value={Object.values(stats.queue_pending).reduce((a, b) => a + b, 0)}
           />
           <StatCard label="active jobs" value={stats.active_jobs} />
-          <StatCard label="OCR runs (lifetime)" value={fmt(lifetime.ocr_runs)} />
+          <StatCard
+            label="OCR runs (lifetime)"
+            value={formatCompact(lifetime.ocr_runs)}
+          />
           <StatCard
             label="LLM tokens generated (lifetime)"
-            value={fmt(lifetime.llm_output_tokens)}
+            value={formatCompact(lifetime.llm_output_tokens)}
           />
         </div>
       )}

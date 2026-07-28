@@ -1,4 +1,5 @@
 import type { CallTiming, TranscriptItem } from "../../api";
+import { formatCompact } from "../../lib/format";
 
 export function timingLabel(t: CallTiming): string {
   if (t.duration_s == null) return "";
@@ -39,16 +40,13 @@ export function aggregateTimings(items: TranscriptItem[]): {
   };
 }
 
-const fmtTokens = (n: number) =>
-  n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-
 /** "3 calls · 812 tokens · 41 tok/s · 24.1s" for a turn's footer. */
 export function StepTimingSummary({ items }: { items: TranscriptItem[] }) {
   const agg = aggregateTimings(items);
   if (!agg) return null;
   const parts = [
     `${agg.calls} LLM call${agg.calls !== 1 ? "s" : ""}`,
-    ...(agg.tokens > 0 ? [`${fmtTokens(agg.tokens)} tokens`] : []),
+    ...(agg.tokens > 0 ? [`${formatCompact(agg.tokens)} tokens`] : []),
     ...(agg.tps != null ? [`${agg.tps.toFixed(0)} tok/s`] : []),
     `${agg.duration.toFixed(1)}s`,
   ];

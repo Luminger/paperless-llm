@@ -1,5 +1,6 @@
 import {
   formatClock,
+  formatCompact,
   formatDate,
   formatDateTime,
   hydrateDateTimePrefs,
@@ -67,6 +68,22 @@ describe("AUDIT FP-M2: invalid timezone never crashes a render", () => {
     } finally {
       localStorage.removeItem("pllm.pref.timeZone");
     }
+  });
+});
+
+describe("formatCompact", () => {
+  it("shortens counts the way the dashboard always did", () => {
+    expect(formatCompact(0)).toBe("0");
+    expect(formatCompact(812)).toBe("812");
+    expect(formatCompact(1_234)).toBe("1.2k");
+    expect(formatCompact(12_345)).toBe("12k");
+    expect(formatCompact(123_456)).toBe("123k");
+    expect(formatCompact(1_234_567)).toBe("1.2M");
+  });
+
+  it("treats missing values as zero", () => {
+    expect(formatCompact(null)).toBe("0");
+    expect(formatCompact(undefined)).toBe("0");
   });
 });
 
