@@ -1959,6 +1959,40 @@ async def test_webhook_setup_generates_secret_when_missing(client, db, monkeypat
         from app.config import runtime_overrides
 
         assert runtime_overrides()["webhook.secret"] == token
+        # ...and COMMITTED before paperless ever learned it — a crash
+        # after the workflow call must not leave paperless posting a
+        # secret a restarted app no longer knows.
+        from app.services.runtime_config import load_overrides
+
+        assert (await load_overrides(db))["webhook.secret"] == token
+    finally:
+        set_runtime_overrides({})
+
+
+@respx.mock
+async def test_webhook_setup_persists_secret_even_when_paperless_rejects(
+    client, db, monkeypatch
+):
+    """The generated secret is committed BEFORE the workflow call, so a
+    paperless-side failure (or crash) leaves a durable secret behind —
+    re-running setup reuses it instead of racing a half-configured
+    state."""
+    from app.config import get_settings, runtime_overrides, set_runtime_overrides
+
+    cfg = get_settings().webhook
+    monkeypatch.setattr(cfg, "public_url", "http://pllm.self.test")
+    monkeypatch.setattr(cfg, "secret", "")
+    respx.get(f"{PAPERLESS_URL}/api/workflows/").mock(
+        return_value=httpx.Response(403, json={"detail": "nope"})
+    )
+    try:
+        body = (await client.post("/api/settings/webhook/setup")).json()
+        assert body["ok"] is False
+        assert body["secret_generated"] is True
+        from app.services.runtime_config import load_overrides
+
+        stored = (await load_overrides(db)).get("webhook.secret")
+        assert stored and stored == runtime_overrides()["webhook.secret"]
     finally:
         set_runtime_overrides({})
 

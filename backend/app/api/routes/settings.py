@@ -283,11 +283,25 @@ async def webhook_setup(
                 "— set PLLM_WEBHOOK__SECRET to a value first",
             )
         secret = secrets.token_urlsafe(32)
-        merged = runtime_overrides()
-        merged["webhook.secret"] = secret
+        previous = runtime_overrides()
+        merged = {**previous, "webhook.secret": secret}
+        # The secret must be DURABLE before paperless ever learns it:
+        # the workflow below posts it on every new document, and a
+        # crash after that call but before a commit would leave
+        # paperless sending a secret our restarted ingress no longer
+        # knows — every webhook would 401 until someone re-runs setup.
+        # So: validate, persist, COMMIT, and only then contact
+        # paperless. Any failure rolls both layers back, so re-running
+        # setup heals (a fresh secret is simply generated again).
         set_runtime_overrides(merged)
-        get_settings()  # revalidate with the new layer active
-        await save_overrides(db, merged)
+        try:
+            get_settings()  # revalidate with the new layer active
+            await save_overrides(db, merged)
+            await db.commit()
+        except Exception:
+            set_runtime_overrides(previous)
+            await db.rollback()
+            raise
         secret_generated = True
 
     url = f"{cfg.public_url.rstrip('/')}{_WEBHOOK_PATH}"
