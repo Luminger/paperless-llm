@@ -30,8 +30,10 @@ jobs:
         run: uv sync --frozen
       - name: Lint (ruff)
         run: uv run ruff check .
-      - name: Test (unit + integration)
-        run: uv run pytest tests/unit tests/integration
+      # Unit tests only: the integration/live_llm markers need a running
+      # paperless / LLM endpoint and are deselected by the default addopts.
+      - name: Test (unit)
+        run: uv run pytest -q tests/unit
 
   frontend:
     runs-on: ubuntu-latest
