@@ -33,12 +33,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+
+# Install-layout anchors. ``app/config.py`` sits in the backend directory
+# in a source checkout and in the container image, so its parent is the
+# historical root the rest of the app resolves against. A packager that
+# installs the tree elsewhere (e.g. the nix package, which keeps
+# ``alembic.ini``/``alembic/`` in its own root) overrides both with
+# ``PLLM_ROOT_DIR`` / ``PLLM_FRONTEND_DIST``.
+_DEFAULT_ROOT_DIR = Path(__file__).resolve().parent.parent
+_DEFAULT_FRONTEND_DIST = _DEFAULT_ROOT_DIR.parent / "frontend" / "dist"
 
 
 class SamplingOverrides(BaseModel):
@@ -165,6 +174,14 @@ class LlmConfig(BaseModel):
     ocr: OcrProfile = OcrProfile()
     embeddings: EmbeddingsProfile = EmbeddingsProfile()
     reranker: RerankerProfile = RerankerProfile()
+    # Safety net for ENDPOINT ADMISSION — not the per-request wall clock,
+    # which is each profile's `timeout_seconds`. This bounds how long a
+    # caller may WAIT for a permit. Deliberately far above a turn's wall
+    # clock: a legitimate wait is bounded by the in-flight request, so
+    # tripping it means a bug (see EndpointSemaphore in app/llm/factory.py)
+    # or gross over-subscription — and failing the step beats parking it in
+    # 'running' with no timeout at all. Env/file only (not UI-editable).
+    admission_timeout_seconds: float = Field(default=1800.0, gt=0)
 
 
 class PaperlessConfig(BaseModel):
@@ -314,6 +331,25 @@ class Settings(BaseSettings):
     # Where OCR page renders / caches live.
     data_dir: Path = Path("./data")
 
+    # Root of the install layout: where ``alembic.ini`` and ``alembic/``
+    # live (see app/db/migrations.py). Env: PLLM_ROOT_DIR.
+    root_dir: Path = _DEFAULT_ROOT_DIR
+    # Built SPA assets served at "/". Defaults to the sibling of
+    # root_dir, i.e. ``<root_dir>/../frontend/dist`` — the container and
+    # source layouts. Env: PLLM_FRONTEND_DIST.
+    frontend_dist: Path = _DEFAULT_FRONTEND_DIST
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_frontend_dist(cls, data: object) -> object:
+        # frontend_dist follows root_dir unless it is set itself, so
+        # relocating the tree needs one variable, not two. Runs on the
+        # merged source layers, hence "before".
+        if isinstance(data, dict) and not data.get("frontend_dist"):
+            root = data.get("root_dir") or _DEFAULT_ROOT_DIR
+            data = {**data, "frontend_dist": Path(root).parent / "frontend" / "dist"}
+        return data
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -415,7 +451,7 @@ def env_provided_keys() -> set[str]:
     out = set()
     for k, v in os.environ.items():
         if k.startswith("PLLM_") and k != "PLLM_" and v != "":
-            out.add(k[len("PLLM_"):].lower().replace("__", "."))
+            out.add(k[len("PLLM_") :].lower().replace("__", "."))
     return out
 
 

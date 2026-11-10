@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 
 from app.config import Settings, reset_settings_cache
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 def _settings(monkeypatch, tmp_path, toml: str = "", env: dict[str, str] | None = None):
@@ -121,3 +124,34 @@ def test_embeddings_enabled_flag(monkeypatch, tmp_path):
         """,
     )
     assert s.llm.embeddings.enabled
+
+
+def test_install_layout_defaults_to_the_checkout(monkeypatch, tmp_path):
+    """root_dir is the backend directory (alembic tree), and
+    frontend_dist its sibling — the container/source layout."""
+    s = _settings(monkeypatch, tmp_path)
+    assert s.root_dir == BACKEND_DIR
+    assert (s.root_dir / "alembic.ini").is_file()
+    assert (s.root_dir / "alembic").is_dir()
+    assert s.frontend_dist == BACKEND_DIR.parent / "frontend" / "dist"
+
+
+def test_root_dir_relocates_both_paths(monkeypatch, tmp_path):
+    """PLLM_ROOT_DIR alone moves root_dir AND frontend_dist — one
+    variable for a package that installs the tree elsewhere."""
+    root = tmp_path / "lib" / "paperless-llm"
+    s = _settings(monkeypatch, tmp_path, env={"PLLM_ROOT_DIR": str(root)})
+    assert s.root_dir == root
+    assert s.frontend_dist == root.parent / "frontend" / "dist"
+
+
+def test_frontend_dist_override(monkeypatch, tmp_path):
+    root = tmp_path / "root"
+    dist = tmp_path / "share" / "paperless-llm" / "dist"
+    s = _settings(
+        monkeypatch,
+        tmp_path,
+        env={"PLLM_ROOT_DIR": str(root), "PLLM_FRONTEND_DIST": str(dist)},
+    )
+    assert s.root_dir == root
+    assert s.frontend_dist == dist

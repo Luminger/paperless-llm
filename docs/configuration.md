@@ -135,6 +135,24 @@ A 0.5–1B multilingual reranker (e.g. `BAAI/bge-reranker-v2-m3` via
 even runs fine on CPU: ~6 s for 50 candidates on a desktop Ryzen,
 once per `find_documents` call.
 
+### Endpoint admission (shared by all profiles)
+
+Each distinct `base_url` gets ONE admission semaphore, shared by every
+consumer that resolves to it — agent turns, OCR, embeddings. A profile's
+`max_concurrent` sizes it when the profile owns the endpoint; profiles
+that fall back to the agent's `base_url` share the agent's cap instead of
+replacing it. Admission counts *concurrent requests*, not queued ones.
+
+An agent turn keeps its permit for the whole run, and tools run inside
+that run may need the same endpoint (`find_similar_entities` → embeddings,
+`ocr_document` → vision). Those calls re-enter the permit the turn already
+holds instead of queueing behind it; independent work (another turn, a
+bulk job) still waits its turn, which is what the cap is for.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `llm.admission_timeout_seconds` | `1800` | How long a caller may WAIT for a permit before the step fails with `AdmissionTimeout`. Not the per-request wall clock — that is each profile's `timeout_seconds`. Keep it far above a turn's wall clock: a legitimate wait only lasts as long as another in-flight request, so tripping this means over-subscription or a bug, and a failed step (with the error visible + retries) beats one parked in `running` forever. |
+
 ## Paperless
 
 | Key | Default | Meaning |

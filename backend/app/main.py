@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -53,9 +52,7 @@ async def lifespan(app: FastAPI):
     traffic_writer = asyncio.create_task(writer_loop())
     # Data-retention sweeper (docs/privacy.md "Retention"): only
     # started when some retention.* window is configured.
-    retention_task = (
-        asyncio.create_task(sweeper_loop()) if sweeper_enabled() else None
-    )
+    retention_task = asyncio.create_task(sweeper_loop()) if sweeper_enabled() else None
     await workers.start()
     yield
     await workers.stop()
@@ -124,9 +121,10 @@ def create_app() -> FastAPI:
             paperless_url=(p.external_url or p.base_url).rstrip("/"),
         )
 
-    # Serve the built frontend when present (production container),
-    # with an SPA fallback so deep links (/sessions/2) survive reloads.
-    dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    # Serve the built frontend when present (production container, or a
+    # packaged install pointing PLLM_FRONTEND_DIST at its dist dir), with
+    # an SPA fallback so deep links (/sessions/2) survive reloads.
+    dist = get_settings().frontend_dist
     if dist.is_dir():
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 

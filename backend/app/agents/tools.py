@@ -51,11 +51,7 @@ def _int_list(v: IntList) -> list[int]:
             return [v]
         if isinstance(v, str):
             cleaned = v.strip().strip("[]")
-            return [
-                int(part)
-                for part in cleaned.replace(";", ",").split(",")
-                if part.strip()
-            ]
+            return [int(part) for part in cleaned.replace(";", ",").split(",") if part.strip()]
         return [int(x) for x in v]
     except (ValueError, TypeError) as e:
         # AUDIT BC-F4: garbage like "1, 2 and 5" must be a ModelRetry
@@ -174,17 +170,21 @@ async def search_documents(
         # behavior (DRF answers 404 "Invalid page."), not a turn
         # failure.
         if e.status_code == 404 and page > 1:
-            return {"total": 0, "page": page, "documents": [],
-                    "note": "page is beyond the last page of results"}
+            return {
+                "total": 0,
+                "page": page,
+                "documents": [],
+                "note": "page is beyond the last page of results",
+            }
         raise
-    return {"total": result.count, "page": page, "documents": [
-        _doc_summary(d) for d in result.results
-    ]}
+    return {
+        "total": result.count,
+        "page": page,
+        "documents": [_doc_summary(d) for d in result.results],
+    }
 
 
-async def find_documents(
-    ctx: RunContext[AgentDeps], query: str, top_k: int = 8
-) -> dict[str, Any]:
+async def find_documents(ctx: RunContext[AgentDeps], query: str, top_k: int = 8) -> dict[str, Any]:
     """Find the documents most RELEVANT to a natural-language query, in
     an archive of any size. Two stages: full-text recall across all
     documents, then a semantic relevance rerank (when configured).
@@ -215,8 +215,7 @@ async def find_documents(
         "total_matches": page.count,
         "reranked": reranked,
         "documents": [
-            _doc_summary(d) | {"snippet": clamp_text(d.content or "", 240)}
-            for d in picked
+            _doc_summary(d) | {"snippet": clamp_text(d.content or "", 240)} for d in picked
         ],
     }
 
@@ -235,9 +234,7 @@ async def get_document(ctx: RunContext[AgentDeps], document_id: int) -> dict[str
             {
                 "field": cf.field,
                 "name": registry[cf.field].name if cf.field in registry else None,
-                "data_type": (
-                    registry[cf.field].data_type if cf.field in registry else None
-                ),
+                "data_type": (registry[cf.field].data_type if cf.field in registry else None),
                 "value": cf.value,
             }
             for cf in d.custom_fields
@@ -279,9 +276,7 @@ async def _summaries_with_instructions(
 async def list_tags(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
     """List all tags with document counts, matching rules, and any
     user_instructions attached to them (these are binding)."""
-    return await _summaries_with_instructions(
-        ctx, "tag", await ctx.deps.paperless.list_tags()
-    )
+    return await _summaries_with_instructions(ctx, "tag", await ctx.deps.paperless.list_tags())
 
 
 async def list_custom_fields(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
@@ -296,9 +291,7 @@ async def list_custom_fields(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]
         options = (f.extra_data or {}).get("select_options") or []
         if options:
             row["select_options"] = [
-                {"id": o.get("id"), "label": o.get("label")}
-                for o in options
-                if isinstance(o, dict)
+                {"id": o.get("id"), "label": o.get("label")} for o in options if isinstance(o, dict)
             ]
         out.append(row)
     return out
@@ -387,9 +380,13 @@ async def _require_document(ctx: RunContext[AgentDeps], document_id: int):
         raise
 
 
-async def _persist(ctx: RunContext[AgentDeps], p: AnyProposal,
-                   entity_type: EntityType | None, entity_id: int | None,
-                   snapshot: dict[str, Any] | None = None) -> str:
+async def _persist(
+    ctx: RunContext[AgentDeps],
+    p: AnyProposal,
+    entity_type: EntityType | None,
+    entity_id: int | None,
+    snapshot: dict[str, Any] | None = None,
+) -> str:
     if ctx.deps.emitted:
         raise ModelRetry(
             "One proposal per turn: you already emitted a proposal in this "
@@ -504,9 +501,7 @@ async def propose_update_document_metadata(
     note = f" (no-op fields dropped: {', '.join(dropped)})" if dropped else ""
     # What the agent looked at, for the review UI and the apply-time
     # staleness check.
-    snapshot: dict[str, Any] = {
-        k: current for k, (_, current) in scalars.items() if k in fields
-    }
+    snapshot: dict[str, Any] = {k: current for k, (_, current) in scalars.items() if k in fields}
     if add or remove:
         snapshot["tags"] = list(doc.tags)
     if cf_changes:
@@ -529,10 +524,7 @@ async def _coerce_custom_fields(
         except ValueError as e:
             raise ModelRetry(f"custom_fields is not valid JSON: {e}") from e
     if not isinstance(raw, dict):
-        raise ModelRetry(
-            "custom_fields must be an object keyed by field id, "
-            'e.g. {"3": "value"}.'
-        )
+        raise ModelRetry('custom_fields must be an object keyed by field id, e.g. {"3": "value"}.')
     registry = {f.id: f for f in await ctx.deps.custom_fields()}
     current = {cf.field: cf.value for cf in doc.custom_fields}
     out: dict[int, Any] = {}
@@ -542,15 +534,13 @@ async def _coerce_custom_fields(
             fid = int(key)
         except (TypeError, ValueError) as e:
             raise ModelRetry(
-                f"custom_fields key {key!r} is not a field id. Use the ids "
-                "from list_custom_fields."
+                f"custom_fields key {key!r} is not a field id. Use the ids from list_custom_fields."
             ) from e
         field = registry.get(fid)
         if field is None:
             known = ", ".join(f"{f.id}={f.name!r}" for f in registry.values())
             raise ModelRetry(
-                f"Unknown custom field id {fid}. Existing fields: "
-                f"{known or '(none defined)'}."
+                f"Unknown custom field id {fid}. Existing fields: {known or '(none defined)'}."
             )
         if value is not None:
             value = _coerce_custom_value(field, value)
@@ -588,21 +578,15 @@ def _coerce_custom_value(field, value: Any) -> Any:
                 if value == o.get("id") or value == o.get("label"):
                     return o.get("id")
             labels = ", ".join(
-                f"{o.get('id')!r} ({o.get('label')!r})"
-                for o in options
-                if isinstance(o, dict)
+                f"{o.get('id')!r} ({o.get('label')!r})" for o in options if isinstance(o, dict)
             )
             raise ValueError(
-                f"{value!r} is not an option of {field.name!r}. "
-                f"Options: {labels or '(none)'}"
+                f"{value!r} is not an option of {field.name!r}. Options: {labels or '(none)'}"
             )
         # string / url / monetary: strings pass through
         return value
     except (TypeError, ValueError) as e:
-        raise ModelRetry(
-            f"Invalid value for custom field {field.name!r} "
-            f"({dt}): {e}"
-        ) from e
+        raise ModelRetry(f"Invalid value for custom field {field.name!r} ({dt}): {e}") from e
 
 
 async def propose_create_entity(
@@ -670,7 +654,9 @@ async def propose_update_entity(
     only the fields to change — values identical to the entity's current
     state are rejected as no-ops."""
     entity = await _require_entity(ctx, entity_type, entity_id)
-    changes = {
+    # Mixed value types by construction (str / int / bool): the dict is a
+    # change-set, not a column map — hence the Any values.
+    changes: dict[str, Any] = {
         k: v
         for k, v in (
             ("name", name),
@@ -697,9 +683,7 @@ async def propose_update_entity(
         )
     # AUDIT BC-F6: only the CHANGED keys enter the payload (see
     # propose_create_entity).
-    p = UpdateEntity.model_validate(
-        {"entity_type": entity_type, "entity_id": entity_id, **changes}
-    )
+    p = UpdateEntity.model_validate({"entity_type": entity_type, "entity_id": entity_id, **changes})
     snapshot = {k: getattr(entity, k) for k in changes}
     return await _persist(ctx, p, EntityType(entity_type), entity_id, snapshot)
 
@@ -717,14 +701,10 @@ async def propose_merge_entities(
         raise ModelRetry("Proposal rejected: source and target are the same entity.")
     source = await _require_entity(ctx, entity_type, source_id)
     target = await _require_entity(ctx, entity_type, target_id)
-    p = MergeEntities(
-        entity_type=entity_type, source_id=source_id, target_id=target_id
-    )
+    p = MergeEntities(entity_type=entity_type, source_id=source_id, target_id=target_id)
     snapshot = {
-        "source": {"id": source.id, "name": source.name,
-                   "document_count": source.document_count},
-        "target": {"id": target.id, "name": target.name,
-                   "document_count": target.document_count},
+        "source": {"id": source.id, "name": source.name, "document_count": source.document_count},
+        "target": {"id": target.id, "name": target.name, "document_count": target.document_count},
     }
     return await _persist(ctx, p, EntityType(entity_type), source_id, snapshot)
 
@@ -778,8 +758,7 @@ ALL_TOOLS = READ_TOOLS + PROPOSE_TOOLS
 DOCUMENT_AGENT_TOOLS = [
     t
     for t in ALL_TOOLS
-    if t
-    not in (ocr_document, propose_update_entity, propose_merge_entities, propose_delete_entity)
+    if t not in (ocr_document, propose_update_entity, propose_merge_entities, propose_delete_entity)
 ]
 
 # Taxonomy agents (tag/correspondent/document_type) review ONE entity:

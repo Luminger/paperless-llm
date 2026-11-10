@@ -46,6 +46,10 @@ podman compose up -d   # (docker compose works too)
 
 Open `http://your-host:8100`.
 
+Running it natively instead? `nix run github:Luminger/paperless-llm -- serve` —
+the flake also ships a NixOS module, see [docs/nix.md](docs/nix.md). The
+container image stays the default artifact.
+
 ## Documentation
 
 Full documentation (setup, configuration, usage, architecture) is

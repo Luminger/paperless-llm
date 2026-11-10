@@ -7,7 +7,8 @@ nothing here assumes a particular server beyond OpenAI compatibility.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import contextvars
+from typing import Any, Literal
 
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -25,18 +26,114 @@ from app.llm.timing import TimedModel, TimeLimitedModel
 # max_concurrent changed at runtime (brief over-admission + stale
 # entries). A size change replaces the semaphore: old holders drain on
 # the old object, a bounded one-time overlap.
-_semaphores: dict[str, tuple[int, asyncio.Semaphore]] = {}
 
 
-def llm_semaphore(base_url: str, max_concurrent: int) -> asyncio.Semaphore:
+class AdmissionTimeout(RuntimeError):
+    """No endpoint permit inside ``llm.admission_timeout_seconds``.
+
+    Raised instead of waiting forever, so the step engine can record a
+    failed attempt (the alternative — the pre-fix behaviour — was a step
+    parked in ``running`` with no timeout covering the acquire)."""
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__(
+            f"no LLM endpoint permit within {seconds:g}s — another request "
+            "holds it, or a tool ran inside this task's own admission window"
+        )
+
+
+class EndpointSemaphore(asyncio.Semaphore):
+    """Semaphore that is reentrant for the work already holding a permit.
+
+    ``run_agent_turn`` keeps a permit for the WHOLE ``agent.run``, and the
+    tools executed inside that run may need the SAME endpoint: when
+    embeddings (or OCR) share the agent's base_url, `embeddings_semaphore()`
+    resolves to this very object. `asyncio.Semaphore` is not reentrant, so
+    the turn waited on a permit only it could ever release — and nothing
+    times out an acquire, so the step sat in ``running`` forever while the
+    UI showed "working" (incident: the first taxonomy session, tag "Rente",
+    with ``llm.agent.max_concurrent=1`` -> every embedding-backed tool).
+
+    Ownership is tracked in a ContextVar, NOT by task identity: pydantic-ai
+    runs each graph step (model request + the tool calls it triggers) in a
+    task of its own (`pydantic_graph.graph_builder` -> anyio task group),
+    so the tool body is a different task than the one that took the
+    permit — only the inherited context tells them apart. Every unrelated
+    task still queues, so the cross-task admission the shared endpoint
+    needs is unchanged. A child task that outlives the hold keeps the
+    reentrant view (a bounded overlap, like the size-change case above).
+
+    ``admission_timeout`` bounds the wait for callers that do NOT already
+    hold a permit (a nesting bug or over-subscription then fails the step
+    instead of parking it). It never applies to the reentrant path.
+    """
+
+    def __init__(self, value: int = 1, *, admission_timeout: float | None = None):
+        super().__init__(value)
+        self.admission_timeout = admission_timeout
+
+    async def acquire(self) -> Literal[True]:
+        if self in _held_permits.get():
+            # Re-entrant: this context (including any task created while
+            # the permit is held) reuses the permit instead of queueing
+            # behind itself. Only the bookkeeping counter moves.
+            _held_permits.set((*_held_permits.get(), self))
+            return True
+        await self._acquire_permit()
+        _held_permits.set((*_held_permits.get(), self))
+        return True
+
+    async def _acquire_permit(self) -> None:
+        # Outside a task (callbacks, sync bootstrap) asyncio.timeout() is
+        # unusable — the unbounded acquire is the only option there.
+        if self.admission_timeout is None or asyncio.current_task() is None:
+            await super().acquire()
+            return
+        try:
+            async with asyncio.timeout(self.admission_timeout):
+                await super().acquire()
+        except TimeoutError as exc:
+            # asyncio.Semaphore unwinds its waiter on cancellation, so the
+            # count and the wake-up order stay consistent.
+            raise AdmissionTimeout(self.admission_timeout) from exc
+
+    def release(self) -> None:
+        held = _held_permits.get()
+        if self in held:
+            # Unwind one level. Only the LAST level returns the permit.
+            idx = held.index(self)
+            remaining = held[:idx] + held[idx + 1 :]
+            _held_permits.set(remaining)
+            if self in remaining:
+                return
+        # Released from a context that never marked the hold (defensive:
+        # a cross-task release, or an acquire that did not complete).
+        super().release()
+
+
+# Which endpoint permits the CURRENT context holds. Propagated into tasks
+# created while a permit is held, which is what makes the reentrancy work
+# for tool calls (see EndpointSemaphore).
+_held_permits: contextvars.ContextVar[tuple[EndpointSemaphore, ...]] = contextvars.ContextVar(
+    "llm_endpoint_permits", default=()
+)
+
+
+_semaphores: dict[str, tuple[int, EndpointSemaphore]] = {}
+
+
+def llm_semaphore(base_url: str, max_concurrent: int) -> EndpointSemaphore:
     entry = _semaphores.get(base_url)
     if entry is None or entry[0] != max_concurrent:
-        entry = (max_concurrent, asyncio.Semaphore(max_concurrent))
+        entry = (max_concurrent, EndpointSemaphore(max_concurrent))
         _semaphores[base_url] = entry
+    # Re-read the safety-net budget: it is configurable at runtime, and
+    # the semaphore object survives until the size changes.
+    entry[1].admission_timeout = get_settings().llm.admission_timeout_seconds
     return entry[1]
 
 
-def embeddings_semaphore() -> asyncio.Semaphore:
+def embeddings_semaphore() -> EndpointSemaphore:
     """Endpoint admission for embeddings calls, honoring
     ``llm.embeddings.max_concurrent``. Same shared-endpoint reasoning
     as ocr_model: when embeddings point at the agent's endpoint, a
@@ -96,9 +193,7 @@ def _build_model(base_url: str, model: str, api_key: str, timeout: float | None)
     # catch a stream that keeps dribbling tokens).
     return TimeLimitedModel(
         TimedModel(
-            OpenAIChatModel(
-                model, provider=OpenAIProvider(base_url=base_url, api_key=api_key)
-            )
+            OpenAIChatModel(model, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
         ),
         wall_timeout=timeout,
     )

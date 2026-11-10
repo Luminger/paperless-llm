@@ -122,9 +122,7 @@ def _page_png(dpi: int) -> bytes:
     from PIL import Image
 
     buf = io.BytesIO()
-    Image.new("RGB", (round(8.27 * dpi), round(11.69 * dpi)), "white").save(
-        buf, format="PNG"
-    )
+    Image.new("RGB", (round(8.27 * dpi), round(11.69 * dpi)), "white").save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -261,9 +259,9 @@ async def detect_context_length(
             r = await client.get(f"{base}/models")
             if r.status_code == 200:
                 data = r.json().get("data") or []
-                entry = next(
-                    (d for d in data if d.get("id") == model), None
-                ) or (data[0] if len(data) == 1 else None)
+                entry = next((d for d in data if d.get("id") == model), None) or (
+                    data[0] if len(data) == 1 else None
+                )
                 if entry:
                     for key, label in _CONTEXT_KEYS:
                         v = entry.get(key)
@@ -366,9 +364,7 @@ async def run_llm_detect(profile: ProfileName) -> LlmDetectResult:
                 result.context_length
             )
         else:
-            result.error = (
-                "server exposes no context metadata (/models, /props, /api/show)"
-            )
+            result.error = "server exposes no context metadata (/models, /props, /api/show)"
         return result
 
     # Vision profile: probe the images-per-request limit with tiny
@@ -406,8 +402,11 @@ async def run_llm_detect(profile: ProfileName) -> LlmDetectResult:
         page = BinaryContent(data=_page_png(dpi), media_type="image/png")
         async with sem:
             page_run = await agent.run(["Reply with the single word: ok", page])
-        overhead = text_run.usage().input_tokens or 0
-        with_page = page_run.usage().input_tokens or 0
+        # `AgentRunResult.usage` is a PROPERTY (pydantic-ai >= 2.x);
+        # calling it raised TypeError into the best-effort except below,
+        # so the per-page cost was never measured.
+        overhead = text_run.usage.input_tokens or 0
+        with_page = page_run.usage.input_tokens or 0
         if with_page > overhead > 0:
             result.tokens_per_image = with_page - overhead
             if result.context_length:

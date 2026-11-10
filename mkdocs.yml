@@ -49,6 +49,7 @@ nav:
   - Home: index.md
   - Getting started: getting-started.md
   - Configuration: configuration.md
+  - Nix & NixOS: nix.md
   - Using it:
       - Analysis sessions: usage/sessions.md
       - Proposals & the journal: usage/proposals.md

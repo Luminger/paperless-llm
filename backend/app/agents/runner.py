@@ -12,11 +12,12 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai.usage import UsageLimits
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.deps import AgentDeps
@@ -28,6 +29,7 @@ from app.paperless import PaperlessClient
 from app.services.events import bus
 
 log = logging.getLogger(__name__)
+
 
 @dataclass
 class RunOutcome:
@@ -76,9 +78,13 @@ def _progress_handler(session_id: int, step_id: int | None):
             for i in sorted(dirty):
                 kind, content = parts[i]
                 bus.publish(
-                    session_id, "step_progress",
-                    step_id=step_id, part=i, part_kind=kind,
-                    content=content[-6000:], tokens=tokens,
+                    session_id,
+                    "step_progress",
+                    step_id=step_id,
+                    part=i,
+                    part_kind=kind,
+                    content=content[-6000:],
+                    tokens=tokens,
                 )
             dirty.clear()
             last_publish = now
@@ -110,8 +116,7 @@ def _steering_preamble(session: Session, db_proposals: list[Proposal]) -> str | 
     user edits are injected into context so 'fix it yourself' and 'agent,
     fix it' compose)."""
     edited = [
-        p for p in db_proposals
-        if p.user_payload is not None and p.status == ProposalStatus.pending
+        p for p in db_proposals if p.user_payload is not None and p.status == ProposalStatus.pending
     ]
     if not edited:
         return None
@@ -154,9 +159,7 @@ async def run_agent_turn(
     )
 
     open_proposals = list(
-        (
-            await db.scalars(select(Proposal).where(Proposal.session_id == session.id))
-        ).all()
+        (await db.scalars(select(Proposal).where(Proposal.session_id == session.id))).all()
     )
     # The steering preamble (user hand-edits) travels as run-time
     # instructions, NOT prompt prefix — keeps the stored user message
@@ -251,9 +254,7 @@ async def run_agent_turn(
                     )
                     await db.commit()
             except Exception:
-                log.exception(
-                    "could not promote draft proposals after turn failure"
-                )
+                log.exception("could not promote draft proposals after turn failure")
                 await db.rollback()
         raise
 
@@ -286,15 +287,16 @@ async def run_agent_turn(
                 and old.entity_type == p.entity_type
                 and old.entity_id == p.entity_id
             ):
-                res = await db.execute(
-                    update(Proposal)
-                    .where(
-                        Proposal.id == old.id,
-                        Proposal.status.in_(
-                            (ProposalStatus.draft, ProposalStatus.pending)
-                        ),
-                    )
-                    .values(status=ProposalStatus.superseded)
+                res = cast(
+                    "CursorResult[Any]",
+                    await db.execute(
+                        update(Proposal)
+                        .where(
+                            Proposal.id == old.id,
+                            Proposal.status.in_((ProposalStatus.draft, ProposalStatus.pending)),
+                        )
+                        .values(status=ProposalStatus.superseded)
+                    ),
                 )
                 if res.rowcount:
                     p.supersedes_id = old.id
